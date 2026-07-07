@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    db_dsn: str = "postgresql://habitus:habitus@localhost:5433/habitus"
+    db_dsn: str = "postgresql://habitus:habitus@localhost:5544/habitus"
     city_region_code: int = 3
     poi_radius_m: int = 500
     embed_model: str = "BAAI/bge-m3"
