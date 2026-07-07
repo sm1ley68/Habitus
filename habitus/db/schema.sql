@@ -49,3 +49,20 @@ CREATE INDEX IF NOT EXISTS listings_embedding_hnsw
     ON listings USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS poi_geom_gix ON poi USING GIST (geom);
 CREATE INDEX IF NOT EXISTS poi_kind_ix ON poi (kind);
+
+CREATE TABLE IF NOT EXISTS raw_listings (
+    external_id   TEXT PRIMARY KEY,
+    source        TEXT NOT NULL,
+    price         BIGINT,
+    area          REAL,
+    kitchen_area  REAL,
+    rooms         INTEGER,
+    level         INTEGER,
+    levels        INTEGER,
+    building_type INTEGER,
+    object_type   INTEGER,
+    lat           DOUBLE PRECISION,
+    lon           DOUBLE PRECISION,
+    description   TEXT,
+    ingested_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
