@@ -22,7 +22,10 @@ def encode_texts(texts: list[str], model=None) -> list[dict]:
                    return_colbert_vecs=False)
     results = []
     for dense, lex in zip(out["dense_vecs"], out["lexical_weights"]):
-        sparse = {int(k): float(v) for k, v in lex.items()}
+        # pgvector sparsevec требует индексы в диапазоне 1..dim. BGE-M3 отбрасывает
+        # спец-токены (id 0–3), поэтому id 0 не появляется; фильтр — защита от
+        # редкого id=0, чтобы невалидный индекс не ронял UPDATE всего батча.
+        sparse = {int(k): float(v) for k, v in lex.items() if int(k) >= 1}
         results.append({"dense": list(map(float, dense)), "sparse": sparse})
     return results
 

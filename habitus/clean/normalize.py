@@ -35,7 +35,7 @@ def promote_to_listings(conn: psycopg.Connection) -> int:
            ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326), %(description)s)
         ON CONFLICT (external_id) DO UPDATE SET
            price=EXCLUDED.price, area=EXCLUDED.area, geom=EXCLUDED.geom,
-           description=EXCLUDED.description, updated_at=now();
+           description=EXCLUDED.description, is_active=true, updated_at=now();
     """
     with conn.cursor() as cur:
         cur.executemany(sql, valid)

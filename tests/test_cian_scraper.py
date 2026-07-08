@@ -14,3 +14,13 @@ def test_parse_listing_html():
     assert r["rooms"] == 2
     assert "школа рядом" in r["description"]
     assert abs(r["lat"] - 55.7558) < 1e-4
+
+
+def test_card_without_id_is_skipped():
+    html = ('<div data-testid="offer-card" data-price="5000000" data-area="30">'
+            '<div class="descr">без id</div></div>'
+            '<div data-testid="offer-card" data-price="6000000" data-area="35" '
+            'data-id="cian-2002"><div class="descr">с id</div></div>')
+    rows = parse_listing_html(html)
+    assert len(rows) == 1
+    assert rows[0]["external_id"] == "cian_cian-2002"

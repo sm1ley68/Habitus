@@ -25,12 +25,13 @@ def _refresh_doc_text(conn) -> int:
     return len(rows)
 
 
-def run_offline(csv_path: Path, conn, model=None, fetch_osm=True) -> dict:
+def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None) -> dict:
     init_db(conn)
     stats = {}
     stats["raw"] = load_to_raw(parse_csv(csv_path), conn)
     stats["listings"] = promote_to_listings(conn)
-    stats["geocoded"] = backfill_missing_coords(conn)
+    geo_kwargs = {} if geocoder is None else {"geocoder": geocoder}
+    stats["geocoded"] = backfill_missing_coords(conn, **geo_kwargs)
     if fetch_osm:
         for kind in OVERPASS_QUERIES:
             upsert_poi(fetch_kind(kind), conn)

@@ -16,9 +16,12 @@ def parse_listing_html(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     rows = []
     for card in soup.select('[data-testid="offer-card"]'):
+        card_id = card.get("data-id")
+        if not card_id:
+            continue  # без стабильного id — пропускаем (иначе коллизия external_id)
         descr_el = card.select_one(".descr")
         rows.append({
-            "external_id": "cian_" + card.get("data-id", ""),
+            "external_id": "cian_" + card_id,
             "source": "cian",
             "price": _int(card.get("data-price")),
             "area": float(card["data-area"]) if card.get("data-area") else None,

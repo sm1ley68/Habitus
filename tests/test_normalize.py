@@ -14,6 +14,25 @@ def test_is_valid_rejects_garbage():
     assert not is_valid({"price": 12000000, "area": 54.0, "lat": 0.0, "lon": 0.0})
     assert not is_valid({"price": 12000000, "area": 2.0, "lat": 55.75, "lon": 37.61})
 
+def test_promote_reactivates_reappeared_listing():
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE raw_listings, listings;")
+        conn.commit()
+        load_to_raw(parse_csv(FIX), conn)
+        promote_to_listings(conn)
+        # объявление ушло из выдачи → деактивировано
+        with conn.cursor() as cur:
+            cur.execute("UPDATE listings SET is_active=false;")
+        conn.commit()
+        # повторный прогон источника → снова появилось → реактивируется
+        promote_to_listings(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT bool_and(is_active) FROM listings;")
+            assert cur.fetchone()[0] is True
+
+
 def test_promote_sets_geom_and_is_idempotent():
     with psycopg.connect(settings.db_dsn) as conn:
         init_db(conn)
