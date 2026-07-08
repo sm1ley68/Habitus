@@ -1,0 +1,15 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    environment:
+      POSTGRES_USER: habitus
+      POSTGRES_PASSWORD: habitus
+      POSTGRES_DB: habitus
+    ports:
+      - "5544:5432"
+    volumes:
+      - habitus_pg:/var/lib/postgresql/data
+volumes:
+  habitus_pg:
