@@ -15,6 +15,9 @@ dependencies = [
     "beautifulsoup4>=4.12",
 ]
 
+[project.scripts]
+habitus = "habitus.cli:main"
+
 [dependency-groups]
 dev = ["pytest>=8.3", "pytest-postgresql>=6.1"]
 
