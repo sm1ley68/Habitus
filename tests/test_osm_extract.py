@@ -1,7 +1,7 @@
 import psycopg
 from habitus.config import settings
 from habitus.db.init_db import init_db
-from habitus.geo.osm_extract import parse_overpass, upsert_poi
+from habitus.geo.osm_extract import HEADERS, fetch_kind, parse_overpass, upsert_poi
 
 SAMPLE = {"elements": [
     {"type": "node", "id": 111, "lat": 55.76, "lon": 37.62, "tags": {"name": "Бар А"}},
@@ -14,6 +14,23 @@ def test_parse_overpass_maps_fields():
     assert rows[0] == {"osm_id": 111, "kind": "bar", "name": "Бар А",
                        "lat": 55.76, "lon": 37.62}
     assert rows[1]["name"] is None
+
+def test_fetch_kind_sends_user_agent():
+    # Overpass отвечает 406 без User-Agent — фетч обязан слать заголовок.
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self): pass
+        def json(self): return {"elements": []}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        captured["headers"] = headers
+        return _Resp()
+
+    fetch_kind("bar", http_get=fake_get)
+    assert captured["headers"] == HEADERS
+    assert "User-Agent" in captured["headers"]
+
 
 def test_upsert_poi_idempotent():
     with psycopg.connect(settings.db_dsn) as conn:
