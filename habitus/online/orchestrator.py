@@ -50,7 +50,8 @@ def retrieve_with_relaxation(
     geo_params: Sequence = ()
     if point is not None:
         geo_sql, geo_params = point_predicate(point.lon, point.lat,
-                                              point.minutes, provider)
+                                              point.minutes, provider,
+                                              point.mode)
 
     relaxed: list[str] = []
     cur_pq = pq

@@ -21,5 +21,10 @@ def search(req: SearchRequest) -> SearchResponse:
     if settings.openrouter_api_key:
         from habitus.online.llm import OpenRouterLLM
         llm = OpenRouterLLM()
+    provider = None
+    if settings.ors_api_key:
+        from habitus.online.geo import ORSProvider
+        provider = ORSProvider()
     with get_conn() as conn:
-        return run_search(req.query, conn, llm=llm, point=req.point)
+        return run_search(req.query, conn, llm=llm, point=req.point,
+                          provider=provider)

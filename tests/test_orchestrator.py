@@ -93,3 +93,26 @@ def test_custom_point_builds_geo_predicate():
                              search_fn=fake_search, min_results=1)
     assert "ST_DWithin" in captured["geo_sql"]
     assert captured["geo_params"] == (37.6, 55.7, 800.0)   # 10 мин * 80 м
+
+
+def test_custom_point_mode_reaches_provider():
+    class RecordingIsochrone:
+        def __init__(self):
+            self.seen_mode = None
+
+        def isochrone(self, lon, lat, minutes, mode="foot-walking"):
+            self.seen_mode = mode
+            return {"type": "Polygon",
+                   "coordinates": [[[37, 55], [38, 55], [38, 56], [37, 55]]]}
+
+    fake_provider = RecordingIsochrone()
+
+    def fake_search(conn, q, *, geo_sql=None, geo_params=(), **kw):
+        return [_cand("A")] * 5
+
+    retrieve_with_relaxation(
+        None, ParsedQuery(semantic_text="x"),
+        point=PointConstraint(lon=37.6, lat=55.7, minutes=10,
+                              mode="driving-car"),
+        provider=fake_provider, search_fn=fake_search, min_results=1)
+    assert fake_provider.seen_mode == "driving-car"

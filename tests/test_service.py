@@ -30,3 +30,41 @@ def test_search_endpoint_calls_pipeline(monkeypatch):
 def test_search_endpoint_validates_input():
     r = TestClient(service.app).post("/search", json={"query": ""})
     assert r.status_code == 422
+
+
+def test_search_endpoint_injects_ors_provider_when_key_set(monkeypatch):
+    from habitus.online.geo import ORSProvider
+
+    fake_resp = SearchResponse(results=[], explanation="пусто",
+                               parsed=ParsedQuery(), data_freshness="нет данных")
+    seen = {}
+
+    def fake_run_search(query, conn, **kw):
+        seen["provider"] = kw.get("provider")
+        return fake_resp
+
+    monkeypatch.setattr(service.settings, "ors_api_key", "test-key")
+    monkeypatch.setattr(service, "run_search", fake_run_search)
+    monkeypatch.setattr(service, "get_conn",
+                        lambda: contextlib.nullcontext(None))
+    r = TestClient(service.app).post("/search", json={"query": "тихо"})
+    assert r.status_code == 200
+    assert isinstance(seen["provider"], ORSProvider)
+
+
+def test_search_endpoint_no_provider_when_key_empty(monkeypatch):
+    fake_resp = SearchResponse(results=[], explanation="пусто",
+                               parsed=ParsedQuery(), data_freshness="нет данных")
+    seen = {}
+
+    def fake_run_search(query, conn, **kw):
+        seen["provider"] = kw.get("provider")
+        return fake_resp
+
+    monkeypatch.setattr(service.settings, "ors_api_key", "")
+    monkeypatch.setattr(service, "run_search", fake_run_search)
+    monkeypatch.setattr(service, "get_conn",
+                        lambda: contextlib.nullcontext(None))
+    r = TestClient(service.app).post("/search", json={"query": "тихо"})
+    assert r.status_code == 200
+    assert seen["provider"] is None

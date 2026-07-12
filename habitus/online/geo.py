@@ -37,15 +37,16 @@ def midpoint(a: tuple[float, float], b: tuple[float, float]) -> tuple[float, flo
 
 
 def point_predicate(lon: float, lat: float, minutes: int,
-                    provider: IsochroneProvider | None = None) -> tuple[str, tuple]:
+                    provider: IsochroneProvider | None = None,
+                    mode: str = "foot-walking") -> tuple[str, tuple]:
     """SQL-предикат гео-фильтра для build_where(extra_sql=..., extra_params=...).
     Без провайдера — Precomputed-путь: круг по прямой (без сети).
-    С провайдером — честный изохрон-полигон."""
+    С провайдером — честный изохрон-полигон с учётом режима передвижения."""
     if provider is None:
         radius_m = minutes * WALK_SPEED_M_PER_MIN
         return ("ST_DWithin(geom::geography, "
                 "ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
                 (lon, lat, radius_m))
-    poly = provider.isochrone(lon, lat, minutes)
+    poly = provider.isochrone(lon, lat, minutes, mode)
     return ("ST_Within(geom, ST_SetSRID(ST_GeomFromGeoJSON(%s),4326))",
             (json.dumps(poly),))

@@ -25,6 +25,23 @@ def test_point_predicate_with_provider_uses_polygon():
     assert json.loads(params[0])["type"] == "Polygon"
 
 
+class RecordingIsochrone:
+    """Фейковый провайдер, фиксирующий полученный mode."""
+    def __init__(self):
+        self.seen_mode = None
+
+    def isochrone(self, lon, lat, minutes, mode="foot-walking"):
+        self.seen_mode = mode
+        return {"type": "Polygon",
+                "coordinates": [[[37, 55], [38, 55], [38, 56], [37, 55]]]}
+
+
+def test_point_predicate_passes_mode_to_provider():
+    fake = RecordingIsochrone()
+    point_predicate(37.6, 55.7, 15, provider=fake, mode="cycling-regular")
+    assert fake.seen_mode == "cycling-regular"
+
+
 class _FakeResp:
     status_code = 200
     def raise_for_status(self): pass
