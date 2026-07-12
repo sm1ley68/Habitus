@@ -1,3 +1,5 @@
+import time
+
 import requests
 import psycopg
 
@@ -7,6 +9,10 @@ MSK_AREA = "(55.48,37.30,55.95,37.95)"  # bbox: south,west,north,east
 # Overpass отдаёт 406 Not Acceptable на дефолтный python-requests UA — нужен
 # осмысленный User-Agent, иначе живой фетч POI не работает.
 HEADERS = {"User-Agent": "Habitus/1.0 (real-estate research)"}
+
+# публичный Overpass под нагрузкой отдаёт транзиентные 429/502/503/504 —
+# ретраим с backoff, иначе один timeout роняет весь offline-прогон.
+RETRY_STATUS = {429, 502, 503, 504}
 
 OVERPASS_QUERIES = {
     "school":     f'node["amenity"="school"]{MSK_AREA};',
@@ -30,11 +36,24 @@ def parse_overpass(kind: str, payload: dict) -> list[dict]:
         })
     return rows
 
-def fetch_kind(kind: str, http_get=requests.get) -> list[dict]:
-    q = f"[out:json][timeout:60];{OVERPASS_QUERIES[kind]}out;"
-    r = http_get(OVERPASS_URL, params={"data": q}, headers=HEADERS, timeout=90)
-    r.raise_for_status()
-    return parse_overpass(kind, r.json())
+def fetch_kind(kind: str, http_post=requests.post, retries: int = 4,
+               backoff: float = 3.0) -> list[dict]:
+    # POST надёжнее GET на крупных запросах; [timeout:120] — серверный лимит Overpass.
+    q = f"[out:json][timeout:120];{OVERPASS_QUERIES[kind]}out;"
+    last = ""
+    for attempt in range(retries):
+        try:
+            r = http_post(OVERPASS_URL, data={"data": q}, headers=HEADERS,
+                          timeout=180)
+            if r.status_code in RETRY_STATUS:
+                last = f"HTTP {r.status_code}"
+            else:
+                r.raise_for_status()
+                return parse_overpass(kind, r.json())
+        except requests.exceptions.RequestException as e:
+            last = f"{type(e).__name__}: {e}"
+        time.sleep(backoff * (attempt + 1))
+    raise RuntimeError(f"Overpass '{kind}' не удался за {retries} попыток: {last}")
 
 def upsert_poi(rows: list[dict], conn: psycopg.Connection) -> int:
     sql = """
