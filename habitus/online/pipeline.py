@@ -1,4 +1,6 @@
 # habitus/online/pipeline.py — сборка end-to-end + деградация по слоям
+import logging
+
 from habitus.config import settings
 from habitus.online import trace
 from habitus.online.cache import embed_cache, explain_cache, parse_cache
@@ -11,6 +13,8 @@ from habitus.online.rerank import rerank
 from habitus.online.retrieval import Candidate, encode_query
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
                                    SearchResponse)
+
+log = logging.getLogger("habitus.online.pipeline")
 
 
 def to_result_item(c: Candidate) -> ResultItem:
@@ -49,7 +53,9 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
                 with trace.span("encode"):
                     query_vec = encode_query(pq.semantic_text, model=model)
                 embed_cache.put(pq.semantic_text, query_vec)
-            except Exception:
+            except Exception as exc:
+                log.warning("деградация слоя encode-вектора запроса: %s",
+                           exc, exc_info=True)
                 degraded.append("vector")
                 search_pq = pq.model_copy(update={"semantic_text": ""})
 
@@ -63,7 +69,8 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     try:
         with trace.span("rerank", n=len(cands)):
             top = rerank(query, cands, reranker=reranker)
-    except Exception:
+    except Exception as exc:
+        log.warning("деградация слоя reranker: %s", exc, exc_info=True)
         degraded.append("reranker")
         top = cands[: settings.rerank_top_n]
 

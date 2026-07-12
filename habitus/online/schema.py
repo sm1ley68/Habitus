@@ -42,12 +42,12 @@ class SearchResponse(BaseModel):
 
 class PointConstraint(BaseModel):
     """Кастомная гео-точка (компромисс «Сколково↔Сити»)."""
-    lon: float
-    lat: float
-    minutes: int = 15
-    mode: str = "foot-walking"
+    lon: float = Field(ge=-180, le=180)
+    lat: float = Field(ge=-90, le=90)
+    minutes: int = Field(default=15, gt=0, le=60)
+    mode: Literal["foot-walking", "cycling-regular", "driving-car"] = "foot-walking"
 
 
 class SearchRequest(BaseModel):
-    query: str = Field(min_length=1)
+    query: str = Field(min_length=1, max_length=2000)
     point: PointConstraint | None = None

@@ -42,3 +42,34 @@ def test_search_request_requires_query():
         SearchRequest(query="")
     req = SearchRequest(query="тихо", point=PointConstraint(lon=37.6, lat=55.7))
     assert req.point.minutes == 15 and req.point.mode == "foot-walking"
+
+
+def test_search_request_query_max_length():
+    with pytest.raises(ValidationError):
+        SearchRequest(query="а" * 2001)
+    req = SearchRequest(query="а" * 2000)   # ровно граница — валидно
+    assert len(req.query) == 2000
+
+
+def test_point_constraint_rejects_out_of_range_lon_lat():
+    with pytest.raises(ValidationError):
+        PointConstraint(lon=200, lat=55)
+    with pytest.raises(ValidationError):
+        PointConstraint(lon=37.6, lat=100)
+
+
+def test_point_constraint_rejects_bad_minutes():
+    with pytest.raises(ValidationError):
+        PointConstraint(lon=37.6, lat=55.7, minutes=0)
+    with pytest.raises(ValidationError):
+        PointConstraint(lon=37.6, lat=55.7, minutes=61)
+
+
+def test_point_constraint_rejects_unknown_mode():
+    with pytest.raises(ValidationError):
+        PointConstraint(lon=37.6, lat=55.7, mode="rocket")
+
+
+def test_point_constraint_valid_defaults():
+    pc = PointConstraint(lon=37.6, lat=55.7)
+    assert pc.mode == "foot-walking" and pc.minutes == 15
