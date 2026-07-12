@@ -1,4 +1,5 @@
 import psycopg
+import requests
 from habitus.config import settings
 from habitus.db.init_db import init_db
 from habitus.geo.osm_extract import HEADERS, fetch_kind, parse_overpass, upsert_poi
@@ -15,21 +16,45 @@ def test_parse_overpass_maps_fields():
                        "lat": 55.76, "lon": 37.62}
     assert rows[1]["name"] is None
 
+class _Resp:
+    def __init__(self, status=200, payload=None):
+        self.status_code = status
+        self._payload = payload or {"elements": []}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.exceptions.HTTPError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._payload
+
+
 def test_fetch_kind_sends_user_agent():
     # Overpass отвечает 406 без User-Agent — фетч обязан слать заголовок.
     captured = {}
 
-    class _Resp:
-        def raise_for_status(self): pass
-        def json(self): return {"elements": []}
-
-    def fake_get(url, params=None, headers=None, timeout=None):
+    def fake_post(url, data=None, headers=None, timeout=None):
         captured["headers"] = headers
+        captured["data"] = data
         return _Resp()
 
-    fetch_kind("bar", http_get=fake_get)
-    assert captured["headers"] == HEADERS
-    assert "User-Agent" in captured["headers"]
+    fetch_kind("bar", http_post=fake_post)
+    assert captured["headers"] == HEADERS and "User-Agent" in captured["headers"]
+    assert "data" in captured["data"]  # тело POST, а не query-string
+
+
+def test_fetch_kind_retries_transient_504():
+    # первый ответ 504 (транзиент), второй — успех: ретрай обязан вытащить.
+    calls = {"n": 0}
+
+    def flaky_post(url, data=None, headers=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _Resp(status=504)
+        return _Resp(payload=SAMPLE)
+
+    rows = fetch_kind("bar", http_post=flaky_post, backoff=0)
+    assert calls["n"] == 2 and len(rows) == 2
 
 
 def test_upsert_poi_idempotent():
