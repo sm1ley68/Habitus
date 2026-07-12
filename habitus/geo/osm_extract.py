@@ -4,6 +4,10 @@ import psycopg
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 MSK_AREA = "(55.48,37.30,55.95,37.95)"  # bbox: south,west,north,east
 
+# Overpass отдаёт 406 Not Acceptable на дефолтный python-requests UA — нужен
+# осмысленный User-Agent, иначе живой фетч POI не работает.
+HEADERS = {"User-Agent": "Habitus/1.0 (real-estate research)"}
+
 OVERPASS_QUERIES = {
     "school":     f'node["amenity"="school"]{MSK_AREA};',
     "bar":        f'node["amenity"~"bar|pub"]{MSK_AREA};',
@@ -28,7 +32,7 @@ def parse_overpass(kind: str, payload: dict) -> list[dict]:
 
 def fetch_kind(kind: str, http_get=requests.get) -> list[dict]:
     q = f"[out:json][timeout:60];{OVERPASS_QUERIES[kind]}out;"
-    r = http_get(OVERPASS_URL, params={"data": q}, timeout=90)
+    r = http_get(OVERPASS_URL, params={"data": q}, headers=HEADERS, timeout=90)
     r.raise_for_status()
     return parse_overpass(kind, r.json())
 
