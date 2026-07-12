@@ -7,7 +7,7 @@
     geo: [{kind: school, walk_minutes: 10}]
     noise_max: low
     stop_factors: [bars]
-  relevant_ids: []
+  relevant_ids: [kaggle_0e472a4f1e689546, kaggle_98c32db754a2f01e, kaggle_45de23cb04c376d4, kaggle_551856c1dc05bc0e, kaggle_b8c6447c8f22d646, kaggle_f27a760ae4ebe8f8]
 
 - id: q02
   lang: ru
@@ -26,7 +26,7 @@
     noise_max: low
     geo: [{kind: school, walk_minutes: 15}]
     lang: en
-  relevant_ids: []
+  relevant_ids: [kaggle_c3f56200475aebec, kaggle_c100db0a166505f9, kaggle_6125a8288852dcbe, kaggle_2c96e993865e5ecf, kaggle_e0b266aee4ab80d0, kaggle_96dfc8972b9b21e9]
 
 - id: q04
   lang: ru
@@ -61,7 +61,7 @@
   expected_parse:
     noise_max: low
     stop_factors: [bars]
-  relevant_ids: []
+  relevant_ids: [kaggle_c6a9cb74e78f5529, kaggle_2cc9c2652e7f1130, kaggle_7a557acec3fb8d7f, kaggle_ccf68e2449d76978, kaggle_5b8d429fa059f39c, kaggle_8a53430042e5e4af]
 
 - id: q08
   lang: ru
@@ -72,7 +72,7 @@
     area_max: 55.0
     price_min: 10000000
     price_max: 14000000
-  relevant_ids: []
+  relevant_ids: [kaggle_f6b14110ded705d1, kaggle_8bb6e4d0e5da0822, kaggle_0c602ad06ad73a88, kaggle_0dfe57dc4413cd2e, kaggle_ec43fcefd385ac4e, kaggle_b79baf6c1a5d70b7]
 
 - id: q09
   lang: en
@@ -104,7 +104,7 @@
     area_min: 45.0
     area_max: 60.0
     price_max: 12000000
-  relevant_ids: []
+  relevant_ids: [kaggle_9e037b8243b296a9, kaggle_b8784fa051bb45d8, kaggle_4410ab269601615a, kaggle_291a9a769cc31a0b, kaggle_0ea88e6ca404f4b6, kaggle_daaf2d00f8b10588]
 
 - id: q12
   lang: ru
@@ -113,7 +113,7 @@
     rooms: [3, 4]
     price_min: 18000000
     price_max: 30000000
-  relevant_ids: []
+  relevant_ids: [kaggle_3d59095fb80f5581, kaggle_d9a5967c120314f7, kaggle_73c0036816f62393, kaggle_01fcf7d58821b854, kaggle_603a29e929adf1ce, kaggle_408cd5f64682beb1]
 
 - id: q13
   lang: en
@@ -122,7 +122,7 @@
     rooms: [1]
     price_max: 8000000
     lang: en
-  relevant_ids: []
+  relevant_ids: [kaggle_d25b7deb4e04bf6e, kaggle_80d168af4a62e311, kaggle_a6b4e49b3e2241ba, kaggle_d196e6e770511f86, kaggle_24a5e6cadba3082a, kaggle_c2d9ca42c6addb6a]
 
 - id: q14
   lang: ru
@@ -132,7 +132,7 @@
     area_min: 30.0
     area_max: 50.0
     price_max: 40000000
-  relevant_ids: []
+  relevant_ids: [kaggle_d25b7deb4e04bf6e, kaggle_80d168af4a62e311, kaggle_a6b4e49b3e2241ba, kaggle_d196e6e770511f86, kaggle_4410ab269601615a, kaggle_291a9a769cc31a0b]
 
 # --- категория 2: только гео (school/metro/park, разные walk_minutes) ---
 
@@ -141,14 +141,14 @@
   query: "школа в 5 минутах пешком"
   expected_parse:
     geo: [{kind: school, walk_minutes: 5}]
-  relevant_ids: []
+  relevant_ids: [kaggle_c3f56200475aebec, kaggle_c100db0a166505f9, kaggle_6125a8288852dcbe, kaggle_2c96e993865e5ecf, kaggle_96dfc8972b9b21e9, kaggle_e0b266aee4ab80d0]
 
 - id: q16
   lang: ru
   query: "метро рядом"
   expected_parse:
     geo: [{kind: metro, walk_minutes: 15}]
-  relevant_ids: []
+  relevant_ids: [kaggle_38ab299120cd1fc7, kaggle_1ef75e3e1ef4b578, kaggle_0fbea15f6dfa8f42, kaggle_9e2f5e6c8d52115c, kaggle_c6a9cb74e78f5529, kaggle_a99dfa95163c662e]
 
 - id: q17
   lang: en
@@ -163,7 +163,7 @@
   query: "школа в 12 минутах и метро в 3 минутах"
   expected_parse:
     geo: [{kind: school, walk_minutes: 12}, {kind: metro, walk_minutes: 3}]
-  relevant_ids: []
+  relevant_ids: [kaggle_efbfcd76aaa0db76, kaggle_cf38ab6cf6bf5c93, kaggle_8a78db9bcaa0c671, kaggle_a5b2d84479f3abfe, kaggle_2967463a848ff3f7, kaggle_d20c32001a39c942]
 
 # --- категория 3: только семантика (образы, без жёстких фильтров) ---
 
@@ -220,7 +220,7 @@
   expected_parse:
     noise_max: low
     stop_factors: [bars]
-  relevant_ids: []
+  relevant_ids: [kaggle_c6a9cb74e78f5529, kaggle_2cc9c2652e7f1130, kaggle_7a557acec3fb8d7f, kaggle_ccf68e2449d76978, kaggle_5b8d429fa059f39c, kaggle_8a53430042e5e4af]
 
 - id: q24
   lang: ru
@@ -237,14 +237,14 @@
     noise_max: low
     stop_factors: [bars]
     lang: en
-  relevant_ids: []
+  relevant_ids: [kaggle_c6a9cb74e78f5529, kaggle_2cc9c2652e7f1130, kaggle_7a557acec3fb8d7f, kaggle_ccf68e2449d76978, kaggle_5b8d429fa059f39c, kaggle_8a53430042e5e4af]
 
 - id: q26
   lang: ru
   query: "шум не важен, но баров быть не должно"
   expected_parse:
     stop_factors: [bars]
-  relevant_ids: []
+  relevant_ids: [kaggle_c6a9cb74e78f5529, kaggle_2cc9c2652e7f1130, kaggle_7a557acec3fb8d7f, kaggle_ccf68e2449d76978, kaggle_5b8d429fa059f39c, kaggle_8a53430042e5e4af]
 
 # --- категория 5: смешанные «всё сразу» (фильтры+гео+семантика+стоп-факторы) ---
 
@@ -257,7 +257,7 @@
     geo: [{kind: school, walk_minutes: 8}]
     noise_max: low
     stop_factors: [bars]
-  relevant_ids: []
+  relevant_ids: [kaggle_0e472a4f1e689546, kaggle_98c32db754a2f01e, kaggle_45de23cb04c376d4, kaggle_551856c1dc05bc0e, kaggle_b8c6447c8f22d646, kaggle_f27a760ae4ebe8f8]
 
 - id: q28
   lang: ru
@@ -293,4 +293,4 @@
     geo: [{kind: school, walk_minutes: 15}, {kind: metro, walk_minutes: 15}]
     stop_factors: [bars]
     price_max: 15000000
-  relevant_ids: []
+  relevant_ids: [kaggle_98c32db754a2f01e, kaggle_cd6e9bd9bc0d8ca7, kaggle_ae04ee110cc98243, kaggle_5b8d429fa059f39c, kaggle_e5f7ca7583d74009, kaggle_0e441ac2e915166e]
