@@ -18,28 +18,38 @@ OVERPASS_QUERIES = {
     "school":     f'node["amenity"="school"]{MSK_AREA};',
     "bar":        f'node["amenity"~"bar|pub"]{MSK_AREA};',
     "alcohol":    f'node["shop"="alcohol"]{MSK_AREA};',
-    "park":       f'node["leisure"="park"]{MSK_AREA};',
+    # парки в OSM — полигоны (way/relation), а не точки; берём и их центроид.
+    "park":       f'(node["leisure"="park"]{MSK_AREA};'
+                  f'way["leisure"="park"]{MSK_AREA};'
+                  f'relation["leisure"="park"]{MSK_AREA};);',
     "metro":      f'node["station"="subway"]{MSK_AREA};',
 }
 
 def parse_overpass(kind: str, payload: dict) -> list[dict]:
     rows = []
     for el in payload.get("elements", []):
-        if el.get("type") != "node":
+        # node — координаты прямо; way/relation при `out center` — в el["center"].
+        if el.get("type") == "node":
+            lat, lon = el.get("lat"), el.get("lon")
+        else:
+            center = el.get("center") or {}
+            lat, lon = center.get("lat"), center.get("lon")
+        if lat is None or lon is None:
             continue
         rows.append({
             "osm_id": el["id"],
             "kind": kind,
             "name": el.get("tags", {}).get("name"),
-            "lat": el["lat"],
-            "lon": el["lon"],
+            "lat": lat,
+            "lon": lon,
         })
     return rows
 
 def fetch_kind(kind: str, http_post=requests.post, retries: int = 4,
                backoff: float = 3.0) -> list[dict]:
     # POST надёжнее GET на крупных запросах; [timeout:120] — серверный лимит Overpass.
-    q = f"[out:json][timeout:120];{OVERPASS_QUERIES[kind]}out;"
+    # `out center;` — для way/relation отдаёт центроид, для node просто координаты.
+    q = f"[out:json][timeout:120];{OVERPASS_QUERIES[kind]}out center;"
     last = ""
     for attempt in range(retries):
         try:

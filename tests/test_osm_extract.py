@@ -16,6 +16,22 @@ def test_parse_overpass_maps_fields():
                        "lat": 55.76, "lon": 37.62}
     assert rows[1]["name"] is None
 
+
+def test_parse_overpass_way_uses_center():
+    # парки — way/relation; координаты берём из center (`out center`).
+    payload = {"elements": [
+        {"type": "way", "id": 900, "center": {"lat": 55.80, "lon": 37.50},
+         "tags": {"name": "Парк Горького"}},
+        {"type": "relation", "id": 901, "center": {"lat": 55.70, "lon": 37.55},
+         "tags": {}},
+        {"type": "way", "id": 902, "tags": {"name": "без center"}},  # пропускаем
+    ]}
+    rows = parse_overpass("park", payload)
+    assert len(rows) == 2
+    assert rows[0] == {"osm_id": 900, "kind": "park", "name": "Парк Горького",
+                       "lat": 55.80, "lon": 37.50}
+    assert rows[1]["osm_id"] == 901 and rows[1]["name"] is None
+
 class _Resp:
     def __init__(self, status=200, payload=None):
         self.status_code = status
