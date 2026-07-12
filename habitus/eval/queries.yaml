@@ -1,0 +1,296 @@
+- id: q01
+  lang: ru
+  query: "тихая двушка до 15 млн, школа в 10 минутах пешком, без баров"
+  expected_parse:
+    price_max: 15000000
+    rooms: [2]
+    geo: [{kind: school, walk_minutes: 10}]
+    noise_max: low
+    stop_factors: [bars]
+  relevant_ids: []
+
+- id: q02
+  lang: ru
+  query: "трёшка от 60 метров, окна на юго-запад, метро в 7 минутах"
+  expected_parse:
+    rooms: [3]
+    area_min: 60.0
+    window_orientation: [SW]
+    geo: [{kind: metro, walk_minutes: 7}]
+  relevant_ids: []
+
+- id: q03
+  lang: en
+  query: "quiet flat near a strong school"
+  expected_parse:
+    noise_max: low
+    geo: [{kind: school, walk_minutes: 15}]
+    lang: en
+  relevant_ids: []
+
+- id: q04
+  lang: ru
+  query: "однушка до 9 млн, парк в 10 минутах"
+  expected_parse:
+    rooms: [1]
+    price_max: 9000000
+    geo: [{kind: park, walk_minutes: 10}]
+  relevant_ids: []
+
+- id: q05
+  lang: ru
+  query: "сталинка с высокими потолками, тихий зелёный двор"
+  expected_parse:
+    noise_max: low
+  relevant_ids: []
+
+- id: q06
+  lang: en
+  query: "2-room flat under 20 million rubles, metro within 5 minutes, windows to the west"
+  expected_parse:
+    rooms: [2]
+    price_max: 20000000
+    geo: [{kind: metro, walk_minutes: 5}]
+    window_orientation: [W]
+    lang: en
+  relevant_ids: []
+
+- id: q07
+  lang: ru
+  query: "работаем в Сколково и в Сити, нужен компромисс, тихий двор без баров"
+  expected_parse:
+    noise_max: low
+    stop_factors: [bars]
+  relevant_ids: []
+
+- id: q08
+  lang: ru
+  query: "1-2 комнаты, 35-55 метров, бюджет от 10 до 14 млн"
+  expected_parse:
+    rooms: [1, 2]
+    area_min: 35.0
+    area_max: 55.0
+    price_min: 10000000
+    price_max: 14000000
+  relevant_ids: []
+
+- id: q09
+  lang: en
+  query: "family apartment, park and school walkable, low noise"
+  expected_parse:
+    geo: [{kind: park, walk_minutes: 15}, {kind: school, walk_minutes: 15}]
+    noise_max: low
+    lang: en
+  relevant_ids: []
+
+- id: q10
+  lang: ru
+  query: "тихо, юго-запад, школа рядом, без баров, бюджет бизнес"
+  expected_parse:
+    noise_max: low
+    window_orientation: [SW]
+    geo: [{kind: school, walk_minutes: 15}]
+    stop_factors: [bars]
+    price_max: 40000000
+  relevant_ids: []
+
+# --- категория 1: только бюджет/комнаты/площадь (без гео и семантики) ---
+
+- id: q11
+  lang: ru
+  query: "двушка, 45-60 метров, бюджет до 12 млн"
+  expected_parse:
+    rooms: [2]
+    area_min: 45.0
+    area_max: 60.0
+    price_max: 12000000
+  relevant_ids: []
+
+- id: q12
+  lang: ru
+  query: "трёшка или четвёрка, бюджет от 18 до 30 млн"
+  expected_parse:
+    rooms: [3, 4]
+    price_min: 18000000
+    price_max: 30000000
+  relevant_ids: []
+
+- id: q13
+  lang: en
+  query: "one-room apartment, budget up to 8 million rubles"
+  expected_parse:
+    rooms: [1]
+    price_max: 8000000
+    lang: en
+  relevant_ids: []
+
+- id: q14
+  lang: ru
+  query: "1-2 комнаты, площадь от 30 до 50 метров, бюджет бизнес"
+  expected_parse:
+    rooms: [1, 2]
+    area_min: 30.0
+    area_max: 50.0
+    price_max: 40000000
+  relevant_ids: []
+
+# --- категория 2: только гео (school/metro/park, разные walk_minutes) ---
+
+- id: q15
+  lang: ru
+  query: "школа в 5 минутах пешком"
+  expected_parse:
+    geo: [{kind: school, walk_minutes: 5}]
+  relevant_ids: []
+
+- id: q16
+  lang: ru
+  query: "метро рядом"
+  expected_parse:
+    geo: [{kind: metro, walk_minutes: 15}]
+  relevant_ids: []
+
+- id: q17
+  lang: en
+  query: "park within 8 minutes walk"
+  expected_parse:
+    geo: [{kind: park, walk_minutes: 8}]
+    lang: en
+  relevant_ids: []
+
+- id: q18
+  lang: ru
+  query: "школа в 12 минутах и метро в 3 минутах"
+  expected_parse:
+    geo: [{kind: school, walk_minutes: 12}, {kind: metro, walk_minutes: 3}]
+  relevant_ids: []
+
+# --- категория 3: только семантика (образы, без жёстких фильтров) ---
+
+- id: q19
+  lang: ru
+  query: "двор-колодец, атмосфера старого центра, брусчатка во дворе"
+  expected_parse:
+    price_max: null
+    rooms: null
+    geo: []
+    noise_max: null
+    stop_factors: []
+  relevant_ids: []
+
+- id: q20
+  lang: ru
+  query: "хочу лофт с бетонными стенами и большими окнами"
+  expected_parse:
+    price_max: null
+    rooms: null
+    geo: []
+    noise_max: null
+    stop_factors: []
+  relevant_ids: []
+
+- id: q21
+  lang: ru
+  query: "квартира с видом на реку из окна"
+  expected_parse:
+    price_max: null
+    rooms: null
+    geo: []
+    noise_max: null
+    stop_factors: []
+  relevant_ids: []
+
+- id: q22
+  lang: en
+  query: "loft with high ceilings and exposed brick"
+  expected_parse:
+    price_max: null
+    rooms: null
+    geo: []
+    noise_max: null
+    stop_factors: []
+    lang: en
+  relevant_ids: []
+
+# --- категория 4: стоп-факторы + шум (комбинации bars/noise_max) ---
+
+- id: q23
+  lang: ru
+  query: "тихо, без баров"
+  expected_parse:
+    noise_max: low
+    stop_factors: [bars]
+  relevant_ids: []
+
+- id: q24
+  lang: ru
+  query: "не хочу коммуналок и шумных дворов по соседству"
+  expected_parse:
+    noise_max: low
+    stop_factors: [communal_flats]
+  relevant_ids: []
+
+- id: q25
+  lang: en
+  query: "quiet neighborhood, no bars nearby"
+  expected_parse:
+    noise_max: low
+    stop_factors: [bars]
+    lang: en
+  relevant_ids: []
+
+- id: q26
+  lang: ru
+  query: "шум не важен, но баров быть не должно"
+  expected_parse:
+    stop_factors: [bars]
+  relevant_ids: []
+
+# --- категория 5: смешанные «всё сразу» (фильтры+гео+семантика+стоп-факторы) ---
+
+- id: q27
+  lang: ru
+  query: "двушка до 16 млн, школа в 8 минутах, тихий двор без баров, вид на закат"
+  expected_parse:
+    rooms: [2]
+    price_max: 16000000
+    geo: [{kind: school, walk_minutes: 8}]
+    noise_max: low
+    stop_factors: [bars]
+  relevant_ids: []
+
+- id: q28
+  lang: ru
+  query: "трёшка 55-80 метров, метро рядом, окна на юг, бюджет бизнес, без коммуналок"
+  expected_parse:
+    rooms: [3]
+    area_min: 55.0
+    area_max: 80.0
+    geo: [{kind: metro, walk_minutes: 15}]
+    window_orientation: [S]
+    price_max: 40000000
+    stop_factors: [communal_flats]
+  relevant_ids: []
+
+- id: q29
+  lang: en
+  query: "2-3 room flat, park within 10 minutes, quiet, budget under 25 million, windows facing east"
+  expected_parse:
+    rooms: [2, 3]
+    geo: [{kind: park, walk_minutes: 10}]
+    noise_max: low
+    price_max: 25000000
+    window_orientation: [E]
+    lang: en
+  relevant_ids: []
+
+- id: q30
+  lang: ru
+  query: "однушка или двушка от 40 метров, школа и метро рядом, без баров, лофт с высокими потолками, бюджет эконом"
+  expected_parse:
+    rooms: [1, 2]
+    area_min: 40.0
+    geo: [{kind: school, walk_minutes: 15}, {kind: metro, walk_minutes: 15}]
+    stop_factors: [bars]
+    price_max: 15000000
+  relevant_ids: []

@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
+from habitus.config import settings
 from habitus.db.init_db import init_db
 from habitus.db.connection import get_conn
 from habitus.ingest.kaggle_loader import parse_csv, load_to_raw
@@ -48,12 +49,37 @@ def main():
     off.add_argument("--csv", type=Path, required=True)
     off.add_argument("--no-osm", action="store_true")
     sub.add_parser("update")
+    s = sub.add_parser("search")
+    s.add_argument("query")
+    ev = sub.add_parser("eval")
+    ev.add_argument("--golden", type=Path, default=None)
     args = ap.parse_args()
     with get_conn() as conn:
         if args.cmd == "offline":
             print(run_offline(args.csv, conn, fetch_osm=not args.no_osm))
         elif args.cmd == "update":
             print("update: запускать по cron (инкрементал)")
+        elif args.cmd == "search":
+            from habitus.online.llm import OpenRouterLLM
+            from habitus.online.pipeline import run_search
+            llm = OpenRouterLLM() if settings.openrouter_api_key else None
+            resp = run_search(args.query, conn, llm=llm)
+            for i, r in enumerate(resp.results, 1):
+                print(f"{i}. {r.external_id} | {r.price} ₽ | {r.rooms}-комн | "
+                      f"{r.area} м² | score={r.score:.3f}")
+            print("\n" + resp.explanation)
+            if resp.relaxed:
+                print("Ослаблено: " + "; ".join(resp.relaxed))
+            if resp.degraded:
+                print("Деградация: " + ", ".join(resp.degraded))
+            print(resp.data_freshness)
+        elif args.cmd == "eval":
+            from habitus.eval.runner import (DEFAULT_GOLDEN, format_report,
+                                             load_golden, run_eval)
+            from habitus.online.llm import OpenRouterLLM
+            llm = OpenRouterLLM() if settings.openrouter_api_key else None
+            golden = load_golden(args.golden or DEFAULT_GOLDEN)
+            print(format_report(run_eval(conn, llm, golden)))
 
 
 if __name__ == "__main__":
