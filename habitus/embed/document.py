@@ -20,6 +20,12 @@ def build_doc_text(row: dict) -> str:
     ws = row.get("walk_min_school")
     if ws is not None:
         parts.append(f"школа в {ws:.0f} мин пешком")
+    wm = row.get("walk_min_metro")
+    if wm is not None:
+        parts.append(f"метро в {wm:.0f} мин пешком")
+    wp = row.get("walk_min_park")
+    if wp is not None:
+        parts.append(f"парк в {wp:.0f} мин пешком")
     bd = row.get("bar_density_500m")
     if bd is not None:
         parts.append("баров в 500 м нет" if bd == 0 else f"баров рядом: {bd}")
