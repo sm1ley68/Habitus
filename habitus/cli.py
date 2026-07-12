@@ -51,6 +51,8 @@ def main():
     sub.add_parser("update")
     s = sub.add_parser("search")
     s.add_argument("query")
+    ev = sub.add_parser("eval")
+    ev.add_argument("--golden", type=Path, default=None)
     args = ap.parse_args()
     with get_conn() as conn:
         if args.cmd == "offline":
@@ -71,6 +73,13 @@ def main():
             if resp.degraded:
                 print("Деградация: " + ", ".join(resp.degraded))
             print(resp.data_freshness)
+        elif args.cmd == "eval":
+            from habitus.eval.runner import (DEFAULT_GOLDEN, format_report,
+                                             load_golden, run_eval)
+            from habitus.online.llm import OpenRouterLLM
+            llm = OpenRouterLLM() if settings.openrouter_api_key else None
+            golden = load_golden(args.golden or DEFAULT_GOLDEN)
+            print(format_report(run_eval(conn, llm, golden)))
 
 
 if __name__ == "__main__":
