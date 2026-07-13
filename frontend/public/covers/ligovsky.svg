@@ -1,0 +1,75 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="ligSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f6f2ea"/>
+      <stop offset="55%" stop-color="#eee9f2"/>
+      <stop offset="100%" stop-color="#dedbf0"/>
+    </linearGradient>
+    <radialGradient id="ligGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7c8cff" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#7c8cff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="ligBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#ligSky)"/>
+  <circle cx="270" cy="260" r="170" fill="url(#ligGlow)" filter="url(#ligBlur)"/>
+
+  <!-- low courtyard building, wide and calm -->
+  <g fill="#292a31">
+    <rect x="120" y="430" width="620" height="260" rx="4"/>
+    <rect x="780" y="500" width="300" height="190" rx="4"/>
+  </g>
+
+  <!-- window grid, accent tint -->
+  <g fill="#6f7cc8" opacity="0.5">
+    <g>
+      <rect x="160" y="470" width="26" height="34"/>
+      <rect x="210" y="470" width="26" height="34"/>
+      <rect x="260" y="470" width="26" height="34"/>
+      <rect x="310" y="470" width="26" height="34"/>
+      <rect x="360" y="470" width="26" height="34"/>
+      <rect x="410" y="470" width="26" height="34"/>
+      <rect x="460" y="470" width="26" height="34"/>
+      <rect x="510" y="470" width="26" height="34"/>
+      <rect x="560" y="470" width="26" height="34"/>
+      <rect x="610" y="470" width="26" height="34"/>
+      <rect x="660" y="470" width="26" height="34"/>
+    </g>
+    <g>
+      <rect x="160" y="540" width="26" height="34"/>
+      <rect x="210" y="540" width="26" height="34"/>
+      <rect x="260" y="540" width="26" height="34"/>
+      <rect x="310" y="540" width="26" height="34"/>
+      <rect x="360" y="540" width="26" height="34"/>
+      <rect x="410" y="540" width="26" height="34"/>
+      <rect x="460" y="540" width="26" height="34"/>
+      <rect x="510" y="540" width="26" height="34"/>
+      <rect x="560" y="540" width="26" height="34"/>
+      <rect x="610" y="540" width="26" height="34"/>
+      <rect x="660" y="540" width="26" height="34"/>
+    </g>
+    <g opacity="0.85">
+      <rect x="820" y="540" width="26" height="34"/>
+      <rect x="870" y="540" width="26" height="34"/>
+      <rect x="920" y="540" width="26" height="34"/>
+      <rect x="970" y="540" width="26" height="34"/>
+      <rect x="1020" y="540" width="26" height="34"/>
+    </g>
+  </g>
+
+  <!-- courtyard ground -->
+  <rect x="0" y="690" width="1200" height="110" fill="#e4e0d3"/>
+
+  <!-- tree silhouettes, organic, foreground -->
+  <g fill="#23242b">
+    <ellipse cx="960" cy="600" rx="70" ry="86"/>
+    <rect x="950" y="660" width="20" height="60"/>
+    <ellipse cx="1080" cy="640" rx="46" ry="58"/>
+    <rect x="1072" y="682" width="14" height="42"/>
+    <ellipse cx="70" cy="630" rx="52" ry="64"/>
+    <rect x="62" y="676" width="16" height="46"/>
+  </g>
+</svg>
