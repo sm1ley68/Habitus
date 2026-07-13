@@ -1,296 +1,402 @@
-- id: q01
+- id: a01
   lang: ru
-  query: "тихая двушка до 15 млн, школа в 10 минутах пешком, без баров"
+  query: тихая двушка до 15 млн, школа в 10 минутах пешком, без баров
   expected_parse:
+    rooms:
+    - 2
     price_max: 15000000
-    rooms: [2]
-    geo: [{kind: school, walk_minutes: 10}]
     noise_max: low
-    stop_factors: [bars]
-  relevant_ids: [kaggle_0e472a4f1e689546, kaggle_98c32db754a2f01e, kaggle_45de23cb04c376d4, kaggle_b8c6447c8f22d646, kaggle_f27a760ae4ebe8f8, kaggle_551856c1dc05bc0e, kaggle_4bad05089835059c, kaggle_a94dd6ae02c2fd10]
-
-- id: q02
+    stop_factors:
+    - bars
+    geo:
+    - kind: school
+      walk_minutes: 10
+  relevant_ids:
+  - kaggle_0e472a4f1e689546
+  - kaggle_98c32db754a2f01e
+  - kaggle_551856c1dc05bc0e
+  - kaggle_45de23cb04c376d4
+  - kaggle_f27a760ae4ebe8f8
+  - kaggle_b8c6447c8f22d646
+  - kaggle_4bad05089835059c
+  - kaggle_a94dd6ae02c2fd10
+  - kaggle_91774bad1526b920
+  - kaggle_9806d16ef9ab4043
+  relevance:
+    kaggle_0e472a4f1e689546: 3
+    kaggle_98c32db754a2f01e: 3
+    kaggle_551856c1dc05bc0e: 3
+    kaggle_45de23cb04c376d4: 3
+    kaggle_f27a760ae4ebe8f8: 3
+    kaggle_b8c6447c8f22d646: 3
+    kaggle_4bad05089835059c: 3
+    kaggle_a94dd6ae02c2fd10: 3
+    kaggle_91774bad1526b920: 2
+    kaggle_9806d16ef9ab4043: 2
+- id: a02
   lang: ru
-  query: "трёшка от 60 метров, окна на юго-запад, метро в 7 минутах"
+  query: двушка до 18 млн, метро в 7 минутах, без баров, тихо
   expected_parse:
-    rooms: [3]
-    area_min: 60.0
-    window_orientation: [SW]
-    geo: [{kind: metro, walk_minutes: 7}]
-  relevant_ids: []
-
-- id: q03
+    rooms:
+    - 2
+    price_max: 18000000
+    noise_max: low
+    stop_factors:
+    - bars
+    geo:
+    - kind: metro
+      walk_minutes: 7
+  relevant_ids:
+  - kaggle_ccf68e2449d76978
+  - kaggle_5b8d429fa059f39c
+  - kaggle_5ba1e9e6ac19a65d
+  - kaggle_87bd9e70449fd56f
+  - kaggle_2381f53904f643db
+  - kaggle_0c4eab3fc892b398
+  - kaggle_fe2b6f2ede4fe02f
+  - kaggle_3d235b7c4602404f
+  - kaggle_f826433bae1f6d96
+  - kaggle_63bc4fda74b2f1b9
+  relevance:
+    kaggle_ccf68e2449d76978: 3
+    kaggle_5b8d429fa059f39c: 3
+    kaggle_5ba1e9e6ac19a65d: 3
+    kaggle_87bd9e70449fd56f: 3
+    kaggle_2381f53904f643db: 3
+    kaggle_0c4eab3fc892b398: 3
+    kaggle_fe2b6f2ede4fe02f: 3
+    kaggle_3d235b7c4602404f: 3
+    kaggle_f826433bae1f6d96: 3
+    kaggle_63bc4fda74b2f1b9: 3
+- id: a03
+  lang: ru
+  query: однушка до 11 млн, парк в 8 минутах, без баров
+  expected_parse:
+    rooms:
+    - 1
+    price_max: 11000000
+    stop_factors:
+    - bars
+    geo:
+    - kind: park
+      walk_minutes: 8
+  relevant_ids:
+  - kaggle_35ce0a6d4e8b42c2
+  - kaggle_db5646cf921cc99f
+  - kaggle_510cfb5492c3ddfc
+  - kaggle_4f10c0b6de43dc6a
+  - kaggle_5d5f8c5570aede9d
+  - kaggle_a2481a898b62476c
+  - kaggle_425711caa05c16e6
+  - kaggle_5d0bd0ddf8859d27
+  - kaggle_1e621234735aa827
+  - kaggle_4f0ab1496b4fa8c3
+  relevance:
+    kaggle_35ce0a6d4e8b42c2: 3
+    kaggle_db5646cf921cc99f: 3
+    kaggle_510cfb5492c3ddfc: 3
+    kaggle_4f10c0b6de43dc6a: 3
+    kaggle_5d5f8c5570aede9d: 3
+    kaggle_a2481a898b62476c: 3
+    kaggle_425711caa05c16e6: 3
+    kaggle_5d0bd0ddf8859d27: 3
+    kaggle_1e621234735aa827: 3
+    kaggle_4f0ab1496b4fa8c3: 3
+- id: a04
   lang: en
-  query: "quiet flat near a strong school"
+  query: two-room flat under 18M, metro within 7 minutes, no bars, quiet
   expected_parse:
+    rooms:
+    - 2
+    price_max: 18000000
     noise_max: low
-    geo: [{kind: school, walk_minutes: 15}]
-    lang: en
-  relevant_ids: [kaggle_c3f56200475aebec, kaggle_c100db0a166505f9, kaggle_6125a8288852dcbe, kaggle_2c96e993865e5ecf, kaggle_e0b266aee4ab80d0, kaggle_96dfc8972b9b21e9, kaggle_fd7f57b1a428caf0, kaggle_0e472a4f1e689546]
-
-- id: q04
+    stop_factors:
+    - bars
+    geo:
+    - kind: metro
+      walk_minutes: 7
+  relevant_ids:
+  - kaggle_ccf68e2449d76978
+  - kaggle_5b8d429fa059f39c
+  - kaggle_5ba1e9e6ac19a65d
+  - kaggle_87bd9e70449fd56f
+  - kaggle_2381f53904f643db
+  - kaggle_0c4eab3fc892b398
+  - kaggle_fe2b6f2ede4fe02f
+  - kaggle_3d235b7c4602404f
+  - kaggle_f826433bae1f6d96
+  - kaggle_63bc4fda74b2f1b9
+  relevance:
+    kaggle_ccf68e2449d76978: 3
+    kaggle_5b8d429fa059f39c: 3
+    kaggle_5ba1e9e6ac19a65d: 3
+    kaggle_87bd9e70449fd56f: 3
+    kaggle_2381f53904f643db: 3
+    kaggle_0c4eab3fc892b398: 3
+    kaggle_fe2b6f2ede4fe02f: 3
+    kaggle_3d235b7c4602404f: 3
+    kaggle_f826433bae1f6d96: 3
+    kaggle_63bc4fda74b2f1b9: 3
+- id: a05
   lang: ru
-  query: "однушка до 9 млн, парк в 10 минутах"
+  query: трёшка до 30 млн, метро в 8 минутах, без баров
   expected_parse:
-    rooms: [1]
-    price_max: 9000000
-    geo: [{kind: park, walk_minutes: 10}]
-  relevant_ids: []
-
-- id: q05
+    rooms:
+    - 3
+    price_max: 30000000
+    stop_factors:
+    - bars
+    geo:
+    - kind: metro
+      walk_minutes: 8
+  relevant_ids:
+  - kaggle_8a53430042e5e4af
+  - kaggle_62c739e86bf0504a
+  - kaggle_d72c0dd50024fb2e
+  - kaggle_b8bfb22039b517e9
+  - kaggle_e9d64b9a406b7d94
+  - kaggle_7c0d645336ced6fc
+  - kaggle_b1244062f5eb5752
+  - kaggle_6fecd00cf1607f0b
+  - kaggle_b76b1bf729ed0906
+  - kaggle_89f9badf99c83788
+  relevance:
+    kaggle_8a53430042e5e4af: 3
+    kaggle_62c739e86bf0504a: 3
+    kaggle_d72c0dd50024fb2e: 2
+    kaggle_b8bfb22039b517e9: 2
+    kaggle_e9d64b9a406b7d94: 2
+    kaggle_7c0d645336ced6fc: 2
+    kaggle_b1244062f5eb5752: 2
+    kaggle_6fecd00cf1607f0b: 1
+    kaggle_b76b1bf729ed0906: 1
+    kaggle_89f9badf99c83788: 1
+- id: a06
   lang: ru
-  query: "сталинка с высокими потолками, тихий зелёный двор"
+  query: однушка или двушка до 15 млн, школа и метро рядом, без баров
   expected_parse:
+    rooms:
+    - 1
+    - 2
+    price_max: 15000000
+    stop_factors:
+    - bars
+    geo:
+    - kind: school
+      walk_minutes: 15
+    - kind: metro
+      walk_minutes: 15
+  relevant_ids:
+  - kaggle_576e3307b9ad99a1
+  - kaggle_c328297d0eb356c3
+  - kaggle_98c32db754a2f01e
+  - kaggle_45177b795ffa98cd
+  - kaggle_cd6e9bd9bc0d8ca7
+  - kaggle_ae04ee110cc98243
+  - kaggle_5b8d429fa059f39c
+  - kaggle_e5f7ca7583d74009
+  - kaggle_0e441ac2e915166e
+  - kaggle_6d8022f63fe7114a
+  relevance:
+    kaggle_576e3307b9ad99a1: 2
+    kaggle_c328297d0eb356c3: 2
+    kaggle_98c32db754a2f01e: 2
+    kaggle_45177b795ffa98cd: 2
+    kaggle_cd6e9bd9bc0d8ca7: 2
+    kaggle_ae04ee110cc98243: 1
+    kaggle_5b8d429fa059f39c: 1
+    kaggle_e5f7ca7583d74009: 1
+    kaggle_0e441ac2e915166e: 1
+    kaggle_6d8022f63fe7114a: 1
+- id: a07
+  lang: ru
+  query: двушка до 16 млн, школа в 8 минутах, тихий двор без баров
+  expected_parse:
+    rooms:
+    - 2
+    price_max: 16000000
     noise_max: low
-  relevant_ids: []
-
-- id: q06
+    stop_factors:
+    - bars
+    geo:
+    - kind: school
+      walk_minutes: 10
+  relevant_ids:
+  - kaggle_0e472a4f1e689546
+  - kaggle_98c32db754a2f01e
+  - kaggle_551856c1dc05bc0e
+  - kaggle_45de23cb04c376d4
+  - kaggle_f27a760ae4ebe8f8
+  - kaggle_b8c6447c8f22d646
+  - kaggle_4bad05089835059c
+  - kaggle_a94dd6ae02c2fd10
+  - kaggle_91774bad1526b920
+  - kaggle_9806d16ef9ab4043
+  relevance:
+    kaggle_0e472a4f1e689546: 3
+    kaggle_98c32db754a2f01e: 3
+    kaggle_551856c1dc05bc0e: 3
+    kaggle_45de23cb04c376d4: 3
+    kaggle_f27a760ae4ebe8f8: 3
+    kaggle_b8c6447c8f22d646: 3
+    kaggle_4bad05089835059c: 3
+    kaggle_a94dd6ae02c2fd10: 3
+    kaggle_91774bad1526b920: 2
+    kaggle_9806d16ef9ab4043: 2
+- id: a08
   lang: en
-  query: "2-room flat under 20 million rubles, metro within 5 minutes, windows to the west"
+  query: one or two room flat up to 13M, school within 9 minutes, no bars
   expected_parse:
-    rooms: [2]
+    rooms:
+    - 1
+    - 2
+    price_max: 13000000
+    stop_factors:
+    - bars
+    geo:
+    - kind: school
+      walk_minutes: 9
+  relevant_ids:
+  - kaggle_0e472a4f1e689546
+  - kaggle_576e3307b9ad99a1
+  - kaggle_98c32db754a2f01e
+  - kaggle_1209aa31808bb734
+  - kaggle_afa0dee288dcffad
+  - kaggle_551856c1dc05bc0e
+  - kaggle_4bad05089835059c
+  - kaggle_f27a760ae4ebe8f8
+  - kaggle_6e6eb492208742f2
+  - kaggle_8145cc55fa1b4ed5
+  relevance:
+    kaggle_0e472a4f1e689546: 3
+    kaggle_576e3307b9ad99a1: 3
+    kaggle_98c32db754a2f01e: 3
+    kaggle_1209aa31808bb734: 3
+    kaggle_afa0dee288dcffad: 3
+    kaggle_551856c1dc05bc0e: 3
+    kaggle_4bad05089835059c: 3
+    kaggle_f27a760ae4ebe8f8: 3
+    kaggle_6e6eb492208742f2: 3
+    kaggle_8145cc55fa1b4ed5: 3
+- id: a09
+  lang: ru
+  query: трёшка или четвёрка до 28 млн, парк и метро в 10 минутах, без баров
+  expected_parse:
+    rooms:
+    - 3
+    - 4
+    price_max: 28000000
+    stop_factors:
+    - bars
+    geo:
+    - kind: park
+      walk_minutes: 10
+    - kind: metro
+      walk_minutes: 10
+  relevant_ids:
+  - kaggle_62c739e86bf0504a
+  - kaggle_e9d64b9a406b7d94
+  - kaggle_6fecd00cf1607f0b
+  - kaggle_6b2af5044221054d
+  - kaggle_8a53430042e5e4af
+  - kaggle_25e21e991bb6a877
+  - kaggle_b76b1bf729ed0906
+  - kaggle_650ceb233a67e265
+  - kaggle_28c162b548c5d040
+  - kaggle_b1244062f5eb5752
+  relevance:
+    kaggle_62c739e86bf0504a: 3
+    kaggle_e9d64b9a406b7d94: 2
+    kaggle_6fecd00cf1607f0b: 2
+    kaggle_6b2af5044221054d: 2
+    kaggle_8a53430042e5e4af: 2
+    kaggle_25e21e991bb6a877: 2
+    kaggle_b76b1bf729ed0906: 2
+    kaggle_650ceb233a67e265: 1
+    kaggle_28c162b548c5d040: 1
+    kaggle_b1244062f5eb5752: 1
+- id: a10
+  lang: ru
+  query: двушка до 20 млн, метро в 10 минутах, без баров
+  expected_parse:
+    rooms:
+    - 2
     price_max: 20000000
-    geo: [{kind: metro, walk_minutes: 5}]
-    window_orientation: [W]
-    lang: en
-  relevant_ids: []
-
-- id: q07
+    stop_factors:
+    - bars
+    geo:
+    - kind: metro
+      walk_minutes: 10
+  relevant_ids:
+  - kaggle_c6a9cb74e78f5529
+  - kaggle_ccf68e2449d76978
+  - kaggle_5b8d429fa059f39c
+  - kaggle_5ba1e9e6ac19a65d
+  - kaggle_87bd9e70449fd56f
+  - kaggle_2381f53904f643db
+  - kaggle_3d235b7c4602404f
+  - kaggle_0c4eab3fc892b398
+  - kaggle_fe2b6f2ede4fe02f
+  - kaggle_f826433bae1f6d96
+  relevance:
+    kaggle_c6a9cb74e78f5529: 3
+    kaggle_ccf68e2449d76978: 3
+    kaggle_5b8d429fa059f39c: 3
+    kaggle_5ba1e9e6ac19a65d: 3
+    kaggle_87bd9e70449fd56f: 3
+    kaggle_2381f53904f643db: 3
+    kaggle_3d235b7c4602404f: 3
+    kaggle_0c4eab3fc892b398: 3
+    kaggle_fe2b6f2ede4fe02f: 3
+    kaggle_f826433bae1f6d96: 3
+- id: b01
   lang: ru
-  query: "работаем в Сколково и в Сити, нужен компромисс, тихий двор без баров"
+  query: двушка, 45-60 метров, бюджет до 12 млн
   expected_parse:
-    noise_max: low
-    stop_factors: [bars]
-  relevant_ids: [kaggle_c6a9cb74e78f5529, kaggle_2cc9c2652e7f1130, kaggle_7a557acec3fb8d7f, kaggle_ccf68e2449d76978, kaggle_5b8d429fa059f39c, kaggle_8a53430042e5e4af, kaggle_62c739e86bf0504a, kaggle_2e166a902c2722a7]
-
-- id: q08
-  lang: ru
-  query: "1-2 комнаты, 35-55 метров, бюджет от 10 до 14 млн"
-  expected_parse:
-    rooms: [1, 2]
-    area_min: 35.0
-    area_max: 55.0
-    price_min: 10000000
-    price_max: 14000000
-  relevant_ids: [kaggle_b79baf6c1a5d70b7, kaggle_1fdf84d0b4763509, kaggle_98c32db754a2f01e, kaggle_fc11eb81d680e8df, kaggle_2489721736b2f50e, kaggle_f6b14110ded705d1, kaggle_8bb6e4d0e5da0822, kaggle_0c602ad06ad73a88]
-
-- id: q09
-  lang: en
-  query: "family apartment, park and school walkable, low noise"
-  expected_parse:
-    geo: [{kind: park, walk_minutes: 15}, {kind: school, walk_minutes: 15}]
-    noise_max: low
-    lang: en
-  relevant_ids: [kaggle_c8692bbb22a0fd93, kaggle_e97b2c63cd877e63, kaggle_d4c0209c8450b80a, kaggle_3719963e7414250f, kaggle_87033087a8c03f79, kaggle_e0b266aee4ab80d0, kaggle_96dfc8972b9b21e9, kaggle_bdd52a7da28ccf06]
-
-- id: q10
-  lang: ru
-  query: "тихо, юго-запад, школа рядом, без баров, бюджет бизнес"
-  expected_parse:
-    noise_max: low
-    window_orientation: [SW]
-    geo: [{kind: school, walk_minutes: 15}]
-    stop_factors: [bars]
-    price_max: 40000000
-  relevant_ids: []
-
-# --- категория 1: только бюджет/комнаты/площадь (без гео и семантики) ---
-
-- id: q11
-  lang: ru
-  query: "двушка, 45-60 метров, бюджет до 12 млн"
-  expected_parse:
-    rooms: [2]
+    rooms:
+    - 2
     area_min: 45.0
     area_max: 60.0
     price_max: 12000000
-  relevant_ids: [kaggle_9e037b8243b296a9, kaggle_b8784fa051bb45d8, kaggle_4410ab269601615a, kaggle_291a9a769cc31a0b, kaggle_0ea88e6ca404f4b6, kaggle_daaf2d00f8b10588, kaggle_14cd6983c99e2c88, kaggle_a5fe750aa4f293bf]
-
-- id: q12
-  lang: ru
-  query: "трёшка или четвёрка, бюджет от 18 до 30 млн"
-  expected_parse:
-    rooms: [3, 4]
-    price_min: 18000000
-    price_max: 30000000
-  relevant_ids: [kaggle_01fcf7d58821b854, kaggle_603a29e929adf1ce, kaggle_3d59095fb80f5581, kaggle_d9a5967c120314f7, kaggle_73c0036816f62393, kaggle_408cd5f64682beb1, kaggle_d9c67b38cc3043a0, kaggle_4bab683849dced64]
-
-- id: q13
+  relevant_ids: []
+- id: b02
   lang: en
-  query: "one-room apartment, budget up to 8 million rubles"
+  query: one-room apartment, budget up to 8 million rubles
   expected_parse:
-    rooms: [1]
+    rooms:
+    - 1
     price_max: 8000000
     lang: en
-  relevant_ids: [kaggle_d25b7deb4e04bf6e, kaggle_80d168af4a62e311, kaggle_a6b4e49b3e2241ba, kaggle_d196e6e770511f86, kaggle_24a5e6cadba3082a, kaggle_c2d9ca42c6addb6a, kaggle_72baa9750d28a6fc, kaggle_9cd44ca7b02da664]
-
-- id: q14
-  lang: ru
-  query: "1-2 комнаты, площадь от 30 до 50 метров, бюджет бизнес"
-  expected_parse:
-    rooms: [1, 2]
-    area_min: 30.0
-    area_max: 50.0
-    price_max: 40000000
-  relevant_ids: [kaggle_d25b7deb4e04bf6e, kaggle_80d168af4a62e311, kaggle_a6b4e49b3e2241ba, kaggle_d196e6e770511f86, kaggle_4410ab269601615a, kaggle_291a9a769cc31a0b, kaggle_c2d9ca42c6addb6a, kaggle_72baa9750d28a6fc]
-
-# --- категория 2: только гео (school/metro/park, разные walk_minutes) ---
-
-- id: q15
-  lang: ru
-  query: "школа в 5 минутах пешком"
-  expected_parse:
-    geo: [{kind: school, walk_minutes: 5}]
   relevant_ids: []
-
-- id: q16
+- id: b03
   lang: ru
-  query: "метро рядом"
+  query: трёшка от 60 метров, окна на юго-запад, метро в 7 минутах
   expected_parse:
-    geo: [{kind: metro, walk_minutes: 15}]
+    rooms:
+    - 3
+    area_min: 60.0
+    window_orientation:
+    - SW
+    geo:
+    - kind: metro
+      walk_minutes: 7
   relevant_ids: []
-
-- id: q17
+- id: b04
+  lang: ru
+  query: двор-колодец, атмосфера старого центра, брусчатка во дворе
+  expected_parse: {}
+  relevant_ids: []
+- id: b05
   lang: en
-  query: "park within 8 minutes walk"
+  query: loft with high ceilings and exposed brick
   expected_parse:
-    geo: [{kind: park, walk_minutes: 8}]
     lang: en
   relevant_ids: []
-
-- id: q18
+- id: b06
   lang: ru
-  query: "школа в 12 минутах и метро в 3 минутах"
-  expected_parse:
-    geo: [{kind: school, walk_minutes: 12}, {kind: metro, walk_minutes: 3}]
-  relevant_ids: [kaggle_efbfcd76aaa0db76, kaggle_cf38ab6cf6bf5c93, kaggle_8a78db9bcaa0c671, kaggle_a5b2d84479f3abfe, kaggle_2967463a848ff3f7, kaggle_d20c32001a39c942, kaggle_38ab299120cd1fc7, kaggle_5eb2fffcde0df9d7]
-
-# --- категория 3: только семантика (образы, без жёстких фильтров) ---
-
-- id: q19
-  lang: ru
-  query: "двор-колодец, атмосфера старого центра, брусчатка во дворе"
-  expected_parse:
-    price_max: null
-    rooms: null
-    geo: []
-    noise_max: null
-    stop_factors: []
-  relevant_ids: []
-
-- id: q20
-  lang: ru
-  query: "хочу лофт с бетонными стенами и большими окнами"
-  expected_parse:
-    price_max: null
-    rooms: null
-    geo: []
-    noise_max: null
-    stop_factors: []
-  relevant_ids: []
-
-- id: q21
-  lang: ru
-  query: "квартира с видом на реку из окна"
-  expected_parse:
-    price_max: null
-    rooms: null
-    geo: []
-    noise_max: null
-    stop_factors: []
-  relevant_ids: []
-
-- id: q22
-  lang: en
-  query: "loft with high ceilings and exposed brick"
-  expected_parse:
-    price_max: null
-    rooms: null
-    geo: []
-    noise_max: null
-    stop_factors: []
-    lang: en
-  relevant_ids: []
-
-# --- категория 4: стоп-факторы + шум (комбинации bars/noise_max) ---
-
-- id: q23
-  lang: ru
-  query: "тихо, без баров"
+  query: не хочу коммуналок и шумных дворов
   expected_parse:
     noise_max: low
-    stop_factors: [bars]
-  relevant_ids: [kaggle_c6a9cb74e78f5529, kaggle_2cc9c2652e7f1130, kaggle_7a557acec3fb8d7f, kaggle_ccf68e2449d76978, kaggle_5b8d429fa059f39c, kaggle_8a53430042e5e4af, kaggle_62c739e86bf0504a, kaggle_2e166a902c2722a7]
-
-- id: q24
-  lang: ru
-  query: "не хочу коммуналок и шумных дворов по соседству"
-  expected_parse:
-    noise_max: low
-    stop_factors: [communal_flats]
+    stop_factors:
+    - communal_flats
   relevant_ids: []
-
-- id: q25
-  lang: en
-  query: "quiet neighborhood, no bars nearby"
-  expected_parse:
-    noise_max: low
-    stop_factors: [bars]
-    lang: en
-  relevant_ids: [kaggle_c6a9cb74e78f5529, kaggle_2cc9c2652e7f1130, kaggle_7a557acec3fb8d7f, kaggle_ccf68e2449d76978, kaggle_5b8d429fa059f39c, kaggle_8a53430042e5e4af, kaggle_62c739e86bf0504a, kaggle_2e166a902c2722a7]
-
-- id: q26
-  lang: ru
-  query: "шум не важен, но баров быть не должно"
-  expected_parse:
-    stop_factors: [bars]
-  relevant_ids: []
-
-# --- категория 5: смешанные «всё сразу» (фильтры+гео+семантика+стоп-факторы) ---
-
-- id: q27
-  lang: ru
-  query: "двушка до 16 млн, школа в 8 минутах, тихий двор без баров, вид на закат"
-  expected_parse:
-    rooms: [2]
-    price_max: 16000000
-    geo: [{kind: school, walk_minutes: 8}]
-    noise_max: low
-    stop_factors: [bars]
-  relevant_ids: [kaggle_0e472a4f1e689546, kaggle_98c32db754a2f01e, kaggle_45de23cb04c376d4, kaggle_4bad05089835059c, kaggle_f27a760ae4ebe8f8, kaggle_551856c1dc05bc0e, kaggle_b8c6447c8f22d646, kaggle_a94dd6ae02c2fd10]
-
-- id: q28
-  lang: ru
-  query: "трёшка 55-80 метров, метро рядом, окна на юг, бюджет бизнес, без коммуналок"
-  expected_parse:
-    rooms: [3]
-    area_min: 55.0
-    area_max: 80.0
-    geo: [{kind: metro, walk_minutes: 15}]
-    window_orientation: [S]
-    price_max: 40000000
-    stop_factors: [communal_flats]
-  relevant_ids: []
-
-- id: q29
-  lang: en
-  query: "2-3 room flat, park within 10 minutes, quiet, budget under 25 million, windows facing east"
-  expected_parse:
-    rooms: [2, 3]
-    geo: [{kind: park, walk_minutes: 10}]
-    noise_max: low
-    price_max: 25000000
-    window_orientation: [E]
-    lang: en
-  relevant_ids: []
-
-- id: q30
-  lang: ru
-  query: "однушка или двушка от 40 метров, школа и метро рядом, без баров, лофт с высокими потолками, бюджет эконом"
-  expected_parse:
-    rooms: [1, 2]
-    area_min: 40.0
-    geo: [{kind: school, walk_minutes: 15}, {kind: metro, walk_minutes: 15}]
-    stop_factors: [bars]
-    price_max: 15000000
-  relevant_ids: [kaggle_98c32db754a2f01e, kaggle_cd6e9bd9bc0d8ca7, kaggle_ae04ee110cc98243, kaggle_5b8d429fa059f39c, kaggle_e5f7ca7583d74009, kaggle_0e441ac2e915166e, kaggle_9fdf24a404d64f95, kaggle_31cfdcdd29ff083c]

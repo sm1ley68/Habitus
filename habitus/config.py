@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     ors_base_url: str = "https://api.openrouteservice.org"
     ors_api_key: str = ""
-    rrf_k: int = 60
+    rrf_k: int = 40  # сетка на golden-set: 40 стабильно ≥ 60/80 по recall/NDCG
     retrieval_top_k: int = 50
     rerank_top_n: int = 10
     min_results: int = 5              # порог relaxation-петли
