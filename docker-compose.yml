@@ -11,5 +11,60 @@ services:
       - "5544:5432"
     volumes:
       - habitus_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U habitus -d habitus"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ml-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ml
+    environment:
+      DB_DSN: postgresql://habitus:habitus@db:5432/habitus
+      # OPENROUTER_API_KEY / ORS_API_KEY intentionally omitted here — the
+      # service degrades gracefully (template explanation, no isochrone) per
+      # habitus/online/service.py, which is fine without live API keys. Set
+      # them in a .env file passed to `docker compose --env-file` if needed.
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # NOTE: 200 here does NOT prove BGE-M3/reranker are loaded — those load
+      # lazily on the first /search call (see habitus/embed/encode.py,
+      # habitus/online/rerank.py). The Go backend compensates with a
+      # generous ML_SEARCH_TIMEOUT_S and its own warm-up call at startup.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=2).status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DB_DSN: postgresql://habitus:habitus@db:5432/habitus
+      ML_SERVICE_URL: http://ml-service:8000
+      ML_SEARCH_TIMEOUT_S: "60"
+      HTTP_PORT: "8080"
+      SESSION_COOKIE_SECURE: "false"
+      CORS_ALLOWED_ORIGIN: "http://localhost:3000"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   habitus_pg:
