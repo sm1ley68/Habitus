@@ -12,9 +12,10 @@ RUN pip install --no-cache-dir uv
 # change — this stack pulls in torch/transformers/FlagEmbedding, a genuinely
 # heavy image, so layer ordering matters for iteration speed.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY habitus ./habitus
+RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
 

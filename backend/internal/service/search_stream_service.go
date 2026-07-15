@@ -44,6 +44,7 @@ type ErrorEvent struct {
 type FinalResultEvent struct {
 	SuggestedAreasGeoJSON any                 `json:"suggested_areas_geojson"`
 	Objects               []FinalResultObject `json:"objects"`
+	DataFreshness         string              `json:"data_freshness"`
 }
 
 type SearchStreamService struct {
@@ -106,7 +107,7 @@ type mlOutcome struct {
 // error to the caller — every failure path is itself an `error` SSE event (or,
 // once the peer is gone, a silent early return). Callers must have already
 // verified chat ownership and acquired the per-chat lock before calling this.
-func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text string, w *sse.Writer) {
+func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text string, point *client.PointConstraint, w *sse.Writer) {
 	_ = s.chats.SetStreamActive(ctx, chat.ID, true)
 	defer func() { _ = s.chats.SetStreamActive(ctx, chat.ID, false) }()
 
@@ -126,7 +127,7 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 
 	resultCh := make(chan mlOutcome, 1)
 	go func() {
-		resp, err := s.ml.Search(mlCtx, client.SearchRequest{Query: text})
+		resp, err := s.ml.Search(mlCtx, client.SearchRequest{Query: text, Point: point})
 		resultCh <- mlOutcome{resp: resp, err: err}
 	}()
 
@@ -211,7 +212,7 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 		return
 	}
 
-	finalResult, objectIDs := s.buildFinalResult(ctx, resp)
+	finalResult, objectIDs := s.buildFinalResult(ctx, resp, point)
 	if !s.emit(w, "final_result", finalResult) {
 		return
 	}
@@ -309,7 +310,7 @@ func renameTitle(parsed client.ParsedQuery, rawText string) string {
 	return string(runes)
 }
 
-func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client.SearchResponse) (FinalResultEvent, []string) {
+func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client.SearchResponse, pointConstraint *client.PointConstraint) (FinalResultEvent, []string) {
 	ids := make([]string, len(resp.Results))
 	for i, r := range resp.Results {
 		ids[i] = r.ExternalID
@@ -330,14 +331,23 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 		coords = append(coords, [2]float64{obj.Coordinates[0], obj.Coordinates[1]})
 	}
 
-	areas := BuildSuggestedAreas(coords, nil)
+	var customPoint *[2]float64
+	if pointConstraint != nil {
+		p := [2]float64{pointConstraint.Lon, pointConstraint.Lat}
+		customPoint = &p
+	}
+	areas := BuildSuggestedAreas(coords, customPoint)
 
 	objectIDs := make([]string, len(objects))
 	for i, o := range objects {
 		objectIDs[i] = o.ID
 	}
 
-	return FinalResultEvent{SuggestedAreasGeoJSON: areas, Objects: objects}, objectIDs
+	return FinalResultEvent{
+		SuggestedAreasGeoJSON: areas,
+		Objects:               objects,
+		DataFreshness:         resp.DataFreshness,
+	}, objectIDs
 }
 
 func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uuid.UUID, rawQuery string, resp *client.SearchResponse, objectIDs []string) {

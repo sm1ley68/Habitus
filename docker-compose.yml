@@ -1,3 +1,9 @@
+x-ml-image: &ml-image
+  image: habitus-ml:local
+  build:
+    context: .
+    dockerfile: Dockerfile.ml
+
 services:
   db:
     build:
@@ -17,26 +23,35 @@ services:
       timeout: 3s
       retries: 10
 
+  ml-model-cache:
+    <<: *ml-image
+    command: ["python", "-m", "habitus.online.preload_models"]
+    environment:
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - habitus_hf:/root/.cache/huggingface
+    restart: "no"
+
   ml-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.ml
+    <<: *ml-image
     environment:
       DB_DSN: postgresql://habitus:habitus@db:5432/habitus
-      # OPENROUTER_API_KEY / ORS_API_KEY intentionally omitted here — the
-      # service degrades gracefully (template explanation, no isochrone) per
-      # habitus/online/service.py, which is fine without live API keys. Set
-      # them in a .env file passed to `docker compose --env-file` if needed.
+      HF_HOME: /root/.cache/huggingface
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ORS_API_KEY: ${ORS_API_KEY:-}
+    volumes:
+      - habitus_hf:/root/.cache/huggingface
     depends_on:
       db:
         condition: service_healthy
+      ml-model-cache:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     healthcheck:
-      # NOTE: 200 here does NOT prove BGE-M3/reranker are loaded — those load
-      # lazily on the first /search call (see habitus/embed/encode.py,
-      # habitus/online/rerank.py). The Go backend compensates with a
-      # generous ML_SEARCH_TIMEOUT_S and its own warm-up call at startup.
+      # Model files are downloaded by ml-model-cache. The Go backend performs
+      # one synchronous /search before opening its HTTP listener so this
+      # process has also loaded the cached weights into memory.
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=2).status==200 else 1)"]
       interval: 10s
       timeout: 3s
@@ -50,6 +65,7 @@ services:
       DB_DSN: postgresql://habitus:habitus@db:5432/habitus
       ML_SERVICE_URL: http://ml-service:8000
       ML_SEARCH_TIMEOUT_S: "60"
+      ML_WARMUP_TIMEOUT_S: "600"
       HTTP_PORT: "8080"
       SESSION_COOKIE_SECURE: "false"
       CORS_ALLOWED_ORIGIN: "http://localhost:3000"
@@ -68,3 +84,4 @@ services:
 
 volumes:
   habitus_pg:
+  habitus_hf:

@@ -7,14 +7,13 @@ import (
 
 	"habitus-backend/internal/domain"
 	"habitus-backend/internal/geojson"
-	"habitus-backend/internal/repository"
 )
 
 // AllowedLayers is the closed enum from frontend/Пайплайн фронт.md §5.
 // Unknown values are silently dropped by the handler, per spec.
 var AllowedLayers = map[string]bool{
 	"communal": true, "noise": true, "schools": true,
-	"bars": true, "ecology": true, "parks": true,
+	"bars": true, "ecology": true, "parks": true, "metro": true,
 }
 
 // layerKinds maps a frontend layer name to the poi.kind values that back it.
@@ -27,13 +26,18 @@ var layerKinds = map[string][]string{
 	"schools": {"school"},
 	"bars":    {"bar", "alcohol"},
 	"parks":   {"park"},
+	"metro":   {"metro"},
+}
+
+type poiLister interface {
+	ListByKinds(ctx context.Context, kinds []string) ([]domain.POI, error)
 }
 
 type GeoLayersService struct {
-	pois *repository.POIRepo
+	pois poiLister
 }
 
-func NewGeoLayersService(pois *repository.POIRepo) *GeoLayersService {
+func NewGeoLayersService(pois poiLister) *GeoLayersService {
 	return &GeoLayersService{pois: pois}
 }
 

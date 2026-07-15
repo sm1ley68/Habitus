@@ -14,6 +14,7 @@ type Settings struct {
 	HTTPPort            string
 	MLServiceURL        string
 	MLSearchTimeoutS    int
+	MLWarmupTimeoutS    int
 	SessionCookieSecure bool
 	CORSAllowedOrigin   string
 	StaticDir           string
@@ -26,6 +27,7 @@ func Load() Settings {
 		HTTPPort:            getenv("HTTP_PORT", "8080"),
 		MLServiceURL:        getenv("ML_SERVICE_URL", "http://localhost:8000"),
 		MLSearchTimeoutS:    getenvInt("ML_SEARCH_TIMEOUT_S", 60),
+		MLWarmupTimeoutS:    getenvInt("ML_WARMUP_TIMEOUT_S", 600),
 		SessionCookieSecure: getenvBool("SESSION_COOKIE_SECURE", false),
 		CORSAllowedOrigin:   getenv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 		StaticDir:           getenv("STATIC_DIR", "static"),

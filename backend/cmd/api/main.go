@@ -36,13 +36,16 @@ func main() {
 	mlTimeout := time.Duration(cfg.MLSearchTimeoutS) * time.Second
 	mlClient := client.NewMLClient(cfg.MLServiceURL, mlTimeout+10*time.Second)
 
-	go func() {
-		warmCtx, cancel := context.WithTimeout(context.Background(), mlTimeout+30*time.Second)
-		defer cancel()
-		log.Info().Msg("warming up ML service (forces lazy model load at startup)")
-		mlClient.WarmUp(warmCtx)
-		log.Info().Msg("ML warm-up call finished")
-	}()
+	warmupTimeout := time.Duration(cfg.MLWarmupTimeoutS) * time.Second
+	warmupClient := client.NewMLClient(cfg.MLServiceURL, warmupTimeout)
+	warmCtx, cancelWarmup := context.WithTimeout(context.Background(), warmupTimeout)
+	log.Info().Dur("timeout", warmupTimeout).Msg("warming up ML service before accepting traffic")
+	if err := warmupClient.WarmUp(warmCtx); err != nil {
+		cancelWarmup()
+		log.Fatal().Err(err).Msg("ML warm-up failed; backend will not accept traffic")
+	}
+	cancelWarmup()
+	log.Info().Msg("ML warm-up completed")
 
 	userRepo := repository.NewUserRepo(pool)
 	sessionRepo := repository.NewSessionRepo(pool)

@@ -119,7 +119,8 @@ func (c *MLClient) Search(ctx context.Context, req SearchRequest) (*SearchRespon
 
 // WarmUp fires a throwaway search so the ML process's lazily-loaded models
 // (BGE-M3, reranker) load once at container start rather than on the first
-// real user request. Result is intentionally discarded.
-func (c *MLClient) WarmUp(ctx context.Context) {
-	_, _ = c.Search(ctx, SearchRequest{Query: "квартира"})
+// real user request. The caller decides whether a failed warm-up is fatal.
+func (c *MLClient) WarmUp(ctx context.Context) error {
+	_, err := c.Search(ctx, SearchRequest{Query: "квартира"})
+	return err
 }
