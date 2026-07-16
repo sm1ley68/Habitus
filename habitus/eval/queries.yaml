@@ -1,354 +1,334 @@
 - id: a01
   lang: ru
-  query: тихая двушка до 15 млн, школа в 10 минутах пешком, без баров
+  query: тихая двушка до 40 млн, школа в 10 минутах пешком
   expected_parse:
     rooms:
     - 2
-    price_max: 15000000
+    price_max: 40000000
     noise_max: low
-    stop_factors:
-    - bars
     geo:
     - kind: school
       walk_minutes: 10
   relevant_ids:
-  - kaggle_0e472a4f1e689546
-  - kaggle_98c32db754a2f01e
-  - kaggle_551856c1dc05bc0e
-  - kaggle_45de23cb04c376d4
-  - kaggle_f27a760ae4ebe8f8
-  - kaggle_b8c6447c8f22d646
-  - kaggle_4bad05089835059c
-  - kaggle_a94dd6ae02c2fd10
-  - kaggle_91774bad1526b920
-  - kaggle_9806d16ef9ab4043
+  - cian_325367059
+  - cian_329165925
+  - cian_330744168
+  - cian_329787828
+  - cian_329711113
+  - cian_331797436
+  - cian_332039472
+  - cian_331304738
+  - cian_326494342
+  - cian_331527087
   relevance:
-    kaggle_0e472a4f1e689546: 3
-    kaggle_98c32db754a2f01e: 3
-    kaggle_551856c1dc05bc0e: 3
-    kaggle_45de23cb04c376d4: 3
-    kaggle_f27a760ae4ebe8f8: 3
-    kaggle_b8c6447c8f22d646: 3
-    kaggle_4bad05089835059c: 3
-    kaggle_a94dd6ae02c2fd10: 3
-    kaggle_91774bad1526b920: 2
-    kaggle_9806d16ef9ab4043: 2
+    cian_325367059: 3
+    cian_329165925: 3
+    cian_330744168: 3
+    cian_329787828: 2
+    cian_329711113: 2
+    cian_331797436: 2
+    cian_332039472: 1
+    cian_331304738: 1
+    cian_326494342: 1
+    cian_331527087: 1
 - id: a02
   lang: ru
-  query: двушка до 18 млн, метро в 7 минутах, без баров, тихо
+  query: двушка до 40 млн, метро в 7 минутах, тихо
   expected_parse:
     rooms:
     - 2
-    price_max: 18000000
+    price_max: 40000000
     noise_max: low
-    stop_factors:
-    - bars
     geo:
     - kind: metro
       walk_minutes: 7
   relevant_ids:
-  - kaggle_ccf68e2449d76978
-  - kaggle_5b8d429fa059f39c
-  - kaggle_5ba1e9e6ac19a65d
-  - kaggle_87bd9e70449fd56f
-  - kaggle_2381f53904f643db
-  - kaggle_0c4eab3fc892b398
-  - kaggle_fe2b6f2ede4fe02f
-  - kaggle_3d235b7c4602404f
-  - kaggle_f826433bae1f6d96
-  - kaggle_63bc4fda74b2f1b9
+  - cian_320540720
+  - cian_331820177
+  - cian_329165925
+  - cian_331090266
+  - cian_332042555
+  - cian_327777320
+  - cian_329565699
+  - cian_329673684
+  - cian_331797436
+  - cian_331980611
   relevance:
-    kaggle_ccf68e2449d76978: 3
-    kaggle_5b8d429fa059f39c: 3
-    kaggle_5ba1e9e6ac19a65d: 3
-    kaggle_87bd9e70449fd56f: 3
-    kaggle_2381f53904f643db: 3
-    kaggle_0c4eab3fc892b398: 3
-    kaggle_fe2b6f2ede4fe02f: 3
-    kaggle_3d235b7c4602404f: 3
-    kaggle_f826433bae1f6d96: 3
-    kaggle_63bc4fda74b2f1b9: 3
+    cian_320540720: 3
+    cian_331820177: 2
+    cian_329165925: 2
+    cian_331090266: 1
+    cian_332042555: 1
+    cian_327777320: 1
+    cian_329565699: 1
+    cian_329673684: 1
+    cian_331797436: 1
+    cian_331980611: 1
 - id: a03
   lang: ru
-  query: однушка до 11 млн, парк в 8 минутах, без баров
+  query: однушка до 25 млн, парк в 8 минутах
   expected_parse:
     rooms:
     - 1
-    price_max: 11000000
-    stop_factors:
-    - bars
+    price_max: 25000000
     geo:
     - kind: park
       walk_minutes: 8
   relevant_ids:
-  - kaggle_35ce0a6d4e8b42c2
-  - kaggle_db5646cf921cc99f
-  - kaggle_510cfb5492c3ddfc
-  - kaggle_4f10c0b6de43dc6a
-  - kaggle_5d5f8c5570aede9d
-  - kaggle_a2481a898b62476c
-  - kaggle_425711caa05c16e6
-  - kaggle_5d0bd0ddf8859d27
-  - kaggle_1e621234735aa827
-  - kaggle_4f0ab1496b4fa8c3
+  - cian_332049784
+  - cian_331919900
+  - cian_330209488
+  - cian_324832041
+  - cian_331834498
+  - cian_331121853
+  - cian_331958492
+  - cian_331806444
+  - cian_326204575
+  - cian_330855623
   relevance:
-    kaggle_35ce0a6d4e8b42c2: 3
-    kaggle_db5646cf921cc99f: 3
-    kaggle_510cfb5492c3ddfc: 3
-    kaggle_4f10c0b6de43dc6a: 3
-    kaggle_5d5f8c5570aede9d: 3
-    kaggle_a2481a898b62476c: 3
-    kaggle_425711caa05c16e6: 3
-    kaggle_5d0bd0ddf8859d27: 3
-    kaggle_1e621234735aa827: 3
-    kaggle_4f0ab1496b4fa8c3: 3
+    cian_332049784: 3
+    cian_331919900: 3
+    cian_330209488: 3
+    cian_324832041: 3
+    cian_331834498: 2
+    cian_331121853: 2
+    cian_331958492: 2
+    cian_331806444: 2
+    cian_326204575: 2
+    cian_330855623: 1
 - id: a04
   lang: en
-  query: two-room flat under 18M, metro within 7 minutes, no bars, quiet
+  query: two-room flat under 40M, metro within 7 minutes, quiet
   expected_parse:
     rooms:
     - 2
-    price_max: 18000000
+    price_max: 40000000
     noise_max: low
-    stop_factors:
-    - bars
     geo:
     - kind: metro
       walk_minutes: 7
   relevant_ids:
-  - kaggle_ccf68e2449d76978
-  - kaggle_5b8d429fa059f39c
-  - kaggle_5ba1e9e6ac19a65d
-  - kaggle_87bd9e70449fd56f
-  - kaggle_2381f53904f643db
-  - kaggle_0c4eab3fc892b398
-  - kaggle_fe2b6f2ede4fe02f
-  - kaggle_3d235b7c4602404f
-  - kaggle_f826433bae1f6d96
-  - kaggle_63bc4fda74b2f1b9
+  - cian_320540720
+  - cian_331820177
+  - cian_329165925
+  - cian_331090266
+  - cian_332042555
+  - cian_327777320
+  - cian_329565699
+  - cian_329673684
+  - cian_331797436
+  - cian_331980611
   relevance:
-    kaggle_ccf68e2449d76978: 3
-    kaggle_5b8d429fa059f39c: 3
-    kaggle_5ba1e9e6ac19a65d: 3
-    kaggle_87bd9e70449fd56f: 3
-    kaggle_2381f53904f643db: 3
-    kaggle_0c4eab3fc892b398: 3
-    kaggle_fe2b6f2ede4fe02f: 3
-    kaggle_3d235b7c4602404f: 3
-    kaggle_f826433bae1f6d96: 3
-    kaggle_63bc4fda74b2f1b9: 3
+    cian_320540720: 3
+    cian_331820177: 2
+    cian_329165925: 2
+    cian_331090266: 1
+    cian_332042555: 1
+    cian_327777320: 1
+    cian_329565699: 1
+    cian_329673684: 1
+    cian_331797436: 1
+    cian_331980611: 1
 - id: a05
   lang: ru
-  query: трёшка до 30 млн, метро в 8 минутах, без баров
+  query: трёшка до 70 млн, метро в 8 минутах
   expected_parse:
     rooms:
     - 3
-    price_max: 30000000
-    stop_factors:
-    - bars
+    price_max: 70000000
     geo:
     - kind: metro
       walk_minutes: 8
   relevant_ids:
-  - kaggle_8a53430042e5e4af
-  - kaggle_62c739e86bf0504a
-  - kaggle_d72c0dd50024fb2e
-  - kaggle_b8bfb22039b517e9
-  - kaggle_e9d64b9a406b7d94
-  - kaggle_7c0d645336ced6fc
-  - kaggle_b1244062f5eb5752
-  - kaggle_6fecd00cf1607f0b
-  - kaggle_b76b1bf729ed0906
-  - kaggle_89f9badf99c83788
+  - cian_328622376
+  - cian_331420359
+  - cian_328293856
+  - cian_330773471
+  - cian_329560598
+  - cian_329820192
+  - cian_327639229
+  - cian_326934423
+  - cian_331040484
+  - cian_318815971
   relevance:
-    kaggle_8a53430042e5e4af: 3
-    kaggle_62c739e86bf0504a: 3
-    kaggle_d72c0dd50024fb2e: 2
-    kaggle_b8bfb22039b517e9: 2
-    kaggle_e9d64b9a406b7d94: 2
-    kaggle_7c0d645336ced6fc: 2
-    kaggle_b1244062f5eb5752: 2
-    kaggle_6fecd00cf1607f0b: 1
-    kaggle_b76b1bf729ed0906: 1
-    kaggle_89f9badf99c83788: 1
+    cian_328622376: 3
+    cian_331420359: 3
+    cian_328293856: 3
+    cian_330773471: 3
+    cian_329560598: 2
+    cian_329820192: 2
+    cian_327639229: 2
+    cian_326934423: 1
+    cian_331040484: 1
+    cian_318815971: 1
 - id: a06
   lang: ru
-  query: однушка или двушка до 15 млн, школа и метро рядом, без баров
+  query: однушка или двушка до 35 млн, школа и метро рядом
   expected_parse:
     rooms:
     - 1
     - 2
-    price_max: 15000000
-    stop_factors:
-    - bars
+    price_max: 35000000
     geo:
     - kind: school
       walk_minutes: 15
     - kind: metro
       walk_minutes: 15
   relevant_ids:
-  - kaggle_576e3307b9ad99a1
-  - kaggle_c328297d0eb356c3
-  - kaggle_98c32db754a2f01e
-  - kaggle_45177b795ffa98cd
-  - kaggle_cd6e9bd9bc0d8ca7
-  - kaggle_ae04ee110cc98243
-  - kaggle_5b8d429fa059f39c
-  - kaggle_e5f7ca7583d74009
-  - kaggle_0e441ac2e915166e
-  - kaggle_6d8022f63fe7114a
+  - cian_329165925
+  - cian_331797436
+  - cian_331278918
+  - cian_329787828
+  - cian_328560860
+  - cian_330742085
+  - cian_331919900
+  - cian_329159831
+  - cian_331708280
+  - cian_330443032
   relevance:
-    kaggle_576e3307b9ad99a1: 2
-    kaggle_c328297d0eb356c3: 2
-    kaggle_98c32db754a2f01e: 2
-    kaggle_45177b795ffa98cd: 2
-    kaggle_cd6e9bd9bc0d8ca7: 2
-    kaggle_ae04ee110cc98243: 1
-    kaggle_5b8d429fa059f39c: 1
-    kaggle_e5f7ca7583d74009: 1
-    kaggle_0e441ac2e915166e: 1
-    kaggle_6d8022f63fe7114a: 1
+    cian_329165925: 3
+    cian_331797436: 3
+    cian_331278918: 2
+    cian_329787828: 1
+    cian_328560860: 1
+    cian_330742085: 1
+    cian_331919900: 1
+    cian_329159831: 1
+    cian_331708280: 1
+    cian_330443032: 1
 - id: a07
   lang: ru
-  query: двушка до 16 млн, школа в 8 минутах, тихий двор без баров
+  query: тихая трёшка до 75 млн, школа в 10 минутах
   expected_parse:
     rooms:
-    - 2
-    price_max: 16000000
+    - 3
+    price_max: 75000000
     noise_max: low
-    stop_factors:
-    - bars
     geo:
     - kind: school
       walk_minutes: 10
   relevant_ids:
-  - kaggle_0e472a4f1e689546
-  - kaggle_98c32db754a2f01e
-  - kaggle_551856c1dc05bc0e
-  - kaggle_45de23cb04c376d4
-  - kaggle_f27a760ae4ebe8f8
-  - kaggle_b8c6447c8f22d646
-  - kaggle_4bad05089835059c
-  - kaggle_a94dd6ae02c2fd10
-  - kaggle_91774bad1526b920
-  - kaggle_9806d16ef9ab4043
+  - cian_319983543
+  - cian_324839501
+  - cian_329480749
+  - cian_327419705
+  - cian_331685830
+  - cian_325174478
+  - cian_331646207
+  - cian_324427576
+  - cian_330177606
+  - cian_329709914
   relevance:
-    kaggle_0e472a4f1e689546: 3
-    kaggle_98c32db754a2f01e: 3
-    kaggle_551856c1dc05bc0e: 3
-    kaggle_45de23cb04c376d4: 3
-    kaggle_f27a760ae4ebe8f8: 3
-    kaggle_b8c6447c8f22d646: 3
-    kaggle_4bad05089835059c: 3
-    kaggle_a94dd6ae02c2fd10: 3
-    kaggle_91774bad1526b920: 2
-    kaggle_9806d16ef9ab4043: 2
+    cian_319983543: 3
+    cian_324839501: 3
+    cian_329480749: 3
+    cian_327419705: 3
+    cian_331685830: 3
+    cian_325174478: 2
+    cian_331646207: 2
+    cian_324427576: 2
+    cian_330177606: 2
+    cian_329709914: 2
 - id: a08
   lang: en
-  query: one or two room flat up to 13M, school within 9 minutes, no bars
+  query: one or two room flat up to 30M, school within 9 minutes
   expected_parse:
     rooms:
     - 1
     - 2
-    price_max: 13000000
-    stop_factors:
-    - bars
+    price_max: 30000000
     geo:
     - kind: school
       walk_minutes: 9
   relevant_ids:
-  - kaggle_0e472a4f1e689546
-  - kaggle_576e3307b9ad99a1
-  - kaggle_98c32db754a2f01e
-  - kaggle_1209aa31808bb734
-  - kaggle_afa0dee288dcffad
-  - kaggle_551856c1dc05bc0e
-  - kaggle_4bad05089835059c
-  - kaggle_f27a760ae4ebe8f8
-  - kaggle_6e6eb492208742f2
-  - kaggle_8145cc55fa1b4ed5
+  - cian_325367059
+  - cian_330744168
+  - cian_331027427
+  - cian_329711113
+  - cian_331797436
+  - cian_330372163
+  - cian_331708280
+  - cian_332039472
+  - cian_328560860
+  - cian_330742085
   relevance:
-    kaggle_0e472a4f1e689546: 3
-    kaggle_576e3307b9ad99a1: 3
-    kaggle_98c32db754a2f01e: 3
-    kaggle_1209aa31808bb734: 3
-    kaggle_afa0dee288dcffad: 3
-    kaggle_551856c1dc05bc0e: 3
-    kaggle_4bad05089835059c: 3
-    kaggle_f27a760ae4ebe8f8: 3
-    kaggle_6e6eb492208742f2: 3
-    kaggle_8145cc55fa1b4ed5: 3
+    cian_325367059: 3
+    cian_330744168: 3
+    cian_331027427: 3
+    cian_329711113: 2
+    cian_331797436: 2
+    cian_330372163: 2
+    cian_331708280: 1
+    cian_332039472: 1
+    cian_328560860: 1
+    cian_330742085: 1
 - id: a09
   lang: ru
-  query: трёшка или четвёрка до 28 млн, парк и метро в 10 минутах, без баров
+  query: трёшка или четвёрка до 90 млн, парк и метро в 10 минутах
   expected_parse:
     rooms:
     - 3
     - 4
-    price_max: 28000000
-    stop_factors:
-    - bars
+    price_max: 90000000
     geo:
     - kind: park
       walk_minutes: 10
     - kind: metro
       walk_minutes: 10
   relevant_ids:
-  - kaggle_62c739e86bf0504a
-  - kaggle_e9d64b9a406b7d94
-  - kaggle_6fecd00cf1607f0b
-  - kaggle_6b2af5044221054d
-  - kaggle_8a53430042e5e4af
-  - kaggle_25e21e991bb6a877
-  - kaggle_b76b1bf729ed0906
-  - kaggle_650ceb233a67e265
-  - kaggle_28c162b548c5d040
-  - kaggle_b1244062f5eb5752
+  - cian_328293836
+  - cian_328293856
+  - cian_331420359
+  - cian_328622376
+  - cian_330773471
+  - cian_315032889
+  - cian_330484655
+  - cian_327639229
+  - cian_331176835
+  - cian_326934423
   relevance:
-    kaggle_62c739e86bf0504a: 3
-    kaggle_e9d64b9a406b7d94: 2
-    kaggle_6fecd00cf1607f0b: 2
-    kaggle_6b2af5044221054d: 2
-    kaggle_8a53430042e5e4af: 2
-    kaggle_25e21e991bb6a877: 2
-    kaggle_b76b1bf729ed0906: 2
-    kaggle_650ceb233a67e265: 1
-    kaggle_28c162b548c5d040: 1
-    kaggle_b1244062f5eb5752: 1
+    cian_328293836: 3
+    cian_328293856: 3
+    cian_331420359: 3
+    cian_328622376: 2
+    cian_330773471: 2
+    cian_315032889: 1
+    cian_330484655: 1
+    cian_327639229: 1
+    cian_331176835: 1
+    cian_326934423: 1
 - id: a10
   lang: ru
-  query: двушка до 20 млн, метро в 10 минутах, без баров
+  query: двушка до 50 млн, метро в 10 минутах
   expected_parse:
     rooms:
     - 2
-    price_max: 20000000
-    stop_factors:
-    - bars
+    price_max: 50000000
     geo:
     - kind: metro
       walk_minutes: 10
   relevant_ids:
-  - kaggle_c6a9cb74e78f5529
-  - kaggle_ccf68e2449d76978
-  - kaggle_5b8d429fa059f39c
-  - kaggle_5ba1e9e6ac19a65d
-  - kaggle_87bd9e70449fd56f
-  - kaggle_2381f53904f643db
-  - kaggle_3d235b7c4602404f
-  - kaggle_0c4eab3fc892b398
-  - kaggle_fe2b6f2ede4fe02f
-  - kaggle_f826433bae1f6d96
+  - cian_320540720
+  - cian_331820177
+  - cian_331901772
+  - cian_329165925
+  - cian_331090266
+  - cian_332042555
+  - cian_327777320
+  - cian_329565699
+  - cian_329673684
+  - cian_331797436
   relevance:
-    kaggle_c6a9cb74e78f5529: 3
-    kaggle_ccf68e2449d76978: 3
-    kaggle_5b8d429fa059f39c: 3
-    kaggle_5ba1e9e6ac19a65d: 3
-    kaggle_87bd9e70449fd56f: 3
-    kaggle_2381f53904f643db: 3
-    kaggle_3d235b7c4602404f: 3
-    kaggle_0c4eab3fc892b398: 3
-    kaggle_fe2b6f2ede4fe02f: 3
-    kaggle_f826433bae1f6d96: 3
+    cian_320540720: 3
+    cian_331820177: 2
+    cian_331901772: 2
+    cian_329165925: 2
+    cian_331090266: 1
+    cian_332042555: 1
+    cian_327777320: 1
+    cian_329565699: 1
+    cian_329673684: 1
+    cian_331797436: 1
 - id: b01
   lang: ru
   query: двушка, 45-60 метров, бюджет до 12 млн
