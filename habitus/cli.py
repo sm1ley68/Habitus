@@ -5,7 +5,8 @@ from psycopg.rows import dict_row
 from habitus.config import settings
 from habitus.db.init_db import init_db
 from habitus.db.connection import get_conn
-from habitus.ingest.kaggle_loader import parse_csv, load_to_raw
+from habitus.ingest.kaggle_loader import parse_csv as parse_kaggle_csv, load_to_raw
+from habitus.ingest.cian_loader import parse_csv as parse_cian_csv
 from habitus.clean.normalize import promote_to_listings
 from habitus.clean.geocode import backfill_missing_coords
 from habitus.geo.osm_extract import fetch_kind, upsert_poi, OVERPASS_QUERIES
@@ -26,10 +27,14 @@ def _refresh_doc_text(conn) -> int:
     return len(rows)
 
 
-def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None) -> dict:
+_PARSERS = {"kaggle": parse_kaggle_csv, "cian": parse_cian_csv}
+
+
+def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
+                source="kaggle") -> dict:
     init_db(conn)
     stats = {}
-    stats["raw"] = load_to_raw(parse_csv(csv_path), conn)
+    stats["raw"] = load_to_raw(_PARSERS[source](csv_path), conn)
     stats["listings"] = promote_to_listings(conn)
     geo_kwargs = {} if geocoder is None else {"geocoder": geocoder}
     stats["geocoded"] = backfill_missing_coords(conn, **geo_kwargs)
@@ -47,6 +52,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     off = sub.add_parser("offline")
     off.add_argument("--csv", type=Path, required=True)
+    off.add_argument("--source", choices=["kaggle", "cian"], default="kaggle")
     off.add_argument("--no-osm", action="store_true")
     sub.add_parser("update")
     s = sub.add_parser("search")
@@ -59,7 +65,8 @@ def main():
     args = ap.parse_args()
     with get_conn() as conn:
         if args.cmd == "offline":
-            print(run_offline(args.csv, conn, fetch_osm=not args.no_osm))
+            print(run_offline(args.csv, conn, fetch_osm=not args.no_osm,
+                              source=args.source))
         elif args.cmd == "update":
             print("update: запускать по cron (инкрементал)")
         elif args.cmd == "search":
