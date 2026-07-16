@@ -26,3 +26,24 @@
 Для другого env-файла используйте `docker compose --env-file <path> up`.
 В production передавайте те же переменные через секрет-хранилище платформы;
 реальные ключи не должны попадать в Compose-файл или Git.
+
+## Данные для dossier
+
+Контуры зданий/парков/воды для расчёта вида и теней загружаются отдельно:
+
+```bash
+uv run habitus import-osm-features
+```
+
+Точные слои коммунального фонда, преступности и шума импортируются из GeoJSON:
+
+```bash
+uv run habitus import-evidence --geojson data/moscow-evidence.geojson
+```
+
+Корень файла — `FeatureCollection`. Для каждого `Feature` обязательны свойства
+`source_id`, `source`, `city: "msk"`, `layer`, `observed_at`. Слои `communal`
+и `crime` принимают только Polygon/MultiPolygon и `weight` в диапазоне `0..1`;
+`noise` принимает геометрию с неотрицательным `db`. Импорт идемпотентен по
+`(source, source_id, layer)`. Пока точного слоя нет, API не подставляет ноль и
+не повышает соответствующий блок dossier до `tier: "hero"`.

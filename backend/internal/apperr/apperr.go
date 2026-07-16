@@ -36,6 +36,10 @@ func StreamInProgress() *Error {
 	return New(http.StatusConflict, "stream_in_progress", "Стрим для этого чата уже выполняется")
 }
 
+func ObjectStreamInProgress() *Error {
+	return New(http.StatusConflict, "stream_in_progress", "Стрим для этого объекта и чата уже выполняется")
+}
+
 func Internal(message string) *Error {
 	return New(http.StatusInternalServerError, "internal_error", message)
 }

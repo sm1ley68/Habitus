@@ -19,6 +19,11 @@ class LLMClient(Protocol):
                  temperature: float = 0.0) -> LLMResponse: ...
 
 
+class AsyncLLMClient(Protocol):
+    async def complete(self, messages: list[dict], tools: list[dict] | None = None,
+                       temperature: float = 0.0) -> LLMResponse: ...
+
+
 class OpenRouterLLM:
     """openai-SDK поверх OpenRouter. Primary settings.llm_model,
     при любой ошибке — фолбэк-цепочка settings.llm_fallbacks."""
@@ -50,6 +55,39 @@ class OpenRouterLLM:
             if getattr(msg, "tool_calls", None):
                 args = msg.tool_calls[0].function.arguments
             return LLMResponse(content=msg.content, tool_arguments=args)
+        raise LLMUnavailable(f"все модели цепочки недоступны: {last_err}")
+
+
+class AsyncOpenRouterLLM:
+    """Cancellable async counterpart used by Object Q&A."""
+
+    def __init__(self, client=None):
+        if client is None:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(base_url=settings.llm_base_url,
+                                 api_key=settings.openrouter_api_key,
+                                 timeout=settings.llm_timeout_s)
+        self._client = client
+
+    async def complete(self, messages: list[dict], tools: list[dict] | None = None,
+                       temperature: float = 0.0) -> LLMResponse:
+        last_err: Exception | None = None
+        for model in [settings.llm_model, *settings.llm_fallbacks]:
+            kwargs = {"model": model, "messages": messages, "temperature": temperature}
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = {"type": "function",
+                                         "function": {"name": tools[0]["function"]["name"]}}
+            try:
+                response = await self._client.chat.completions.create(**kwargs)
+            except Exception as exc:
+                last_err = exc
+                continue
+            message = response.choices[0].message
+            args = None
+            if getattr(message, "tool_calls", None):
+                args = message.tool_calls[0].function.arguments
+            return LLMResponse(content=message.content, tool_arguments=args)
         raise LLMUnavailable(f"все модели цепочки недоступны: {last_err}")
 
 

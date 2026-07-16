@@ -54,16 +54,19 @@ type ChatSearch struct {
 // ChatSearchResult is the latest-snapshot-per-object row that GET /objects/{id}
 // actually reads — upsert-latest-wins by design (see plan §2).
 type ChatSearchResult struct {
-	ChatID       uuid.UUID
-	ExternalID   string
-	SearchID     uuid.UUID
-	Price        *int64
-	Area         *float64
-	Rooms        *int
-	AddressFacts map[string]any
-	Score        float64
-	Explanation  string
-	UpdatedAt    time.Time
+	ChatID           uuid.UUID
+	ExternalID       string
+	SearchID         uuid.UUID
+	Price            *int64
+	Area             *float64
+	Rooms            *int
+	AddressFacts     map[string]any
+	Score            float64
+	Explanation      string
+	Dossier          map[string]any
+	DossierVersion   string
+	DossierUpdatedAt *time.Time
+	UpdatedAt        time.Time
 }
 
 // Listing is a read-only projection of the Python-owned `listings` table —

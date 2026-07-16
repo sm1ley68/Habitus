@@ -1,7 +1,8 @@
 import contextlib
 from fastapi.testclient import TestClient
 import habitus.online.service as service
-from habitus.online.schema import ParsedQuery, SearchResponse
+from habitus.online.schema import (DossierPayload, ParsedQuery, SearchResponse,
+                                   VerdictInfo)
 
 
 def test_health():
@@ -68,3 +69,28 @@ def test_search_endpoint_no_provider_when_key_empty(monkeypatch):
     r = TestClient(service.app).post("/search", json={"query": "тихо"})
     assert r.status_code == 200
     assert seen["provider"] is None
+
+
+def test_dossier_endpoint_returns_versioned_payload(monkeypatch):
+    payload = DossierPayload(
+        verdict=VerdictInfo(headline="Недостаточно данных", confidence=0,
+                            layers_checked=0),
+        brief=[], blocks=[], compromises=[], relaxation=[], zone_rationale="",
+    )
+    monkeypatch.setattr(service.settings, "ors_api_key", "")
+    monkeypatch.setattr(service, "get_conn",
+                        lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(service, "build_dossier", lambda req, conn, **kw: payload)
+    response = TestClient(service.app).post("/dossier", json={"object_id": "E1"})
+    assert response.status_code == 200
+    assert response.json()["schema_version"] == "dossier-v1"
+    assert response.json()["dossier"]["brief"] == []
+
+
+def test_object_ask_without_llm_returns_grounded_unknown(monkeypatch):
+    monkeypatch.setattr(service.settings, "openrouter_api_key", "")
+    response = TestClient(service.app).post("/object-ask", json={
+        "question": "Что неизвестно?", "passport": {"id": "E1"},
+    })
+    assert response.status_code == 200
+    assert response.json()["sentences"][0]["unknown"] is True

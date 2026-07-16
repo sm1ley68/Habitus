@@ -53,6 +53,9 @@ def main():
     s.add_argument("query")
     ev = sub.add_parser("eval")
     ev.add_argument("--golden", type=Path, default=None)
+    evidence = sub.add_parser("import-evidence")
+    evidence.add_argument("--geojson", type=Path, required=True)
+    sub.add_parser("import-osm-features")
     args = ap.parse_args()
     with get_conn() as conn:
         if args.cmd == "offline":
@@ -80,6 +83,15 @@ def main():
             llm = OpenRouterLLM() if settings.openrouter_api_key else None
             golden = load_golden(args.golden or DEFAULT_GOLDEN)
             print(format_report(run_eval(conn, llm, golden)))
+        elif args.cmd == "import-evidence":
+            from habitus.geo.evidence import import_geojson_file
+            init_db(conn)
+            print({"imported": import_geojson_file(args.geojson, conn)})
+        elif args.cmd == "import-osm-features":
+            from habitus.geo.osm_extract import (fetch_urban_features,
+                                                  upsert_urban_features)
+            init_db(conn)
+            print({"imported": upsert_urban_features(fetch_urban_features(), conn)})
 
 
 if __name__ == "__main__":

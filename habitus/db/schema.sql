@@ -50,6 +50,50 @@ CREATE INDEX IF NOT EXISTS listings_embedding_hnsw
 CREATE INDEX IF NOT EXISTS poi_geom_gix ON poi USING GIST (geom);
 CREATE INDEX IF NOT EXISTS poi_kind_ix ON poi (kind);
 
+-- Exact, source-attributed evidence used by the dossier.  Runtime code never
+-- replaces absent values with zero: communal/crime adapters must supply a
+-- normalized 0..1 weight, while noise adapters supply an observed dB value.
+CREATE TABLE IF NOT EXISTS urban_evidence (
+    source_id    TEXT NOT NULL,
+    source       TEXT NOT NULL,
+    city         TEXT NOT NULL CHECK (city IN ('msk', 'spb')),
+    layer        TEXT NOT NULL CHECK (layer IN ('communal', 'crime', 'noise')),
+    geom         geometry(Geometry, 4326) NOT NULL,
+    weight       REAL,
+    db           REAL,
+    observed_at  TIMESTAMPTZ NOT NULL,
+    metadata     JSONB NOT NULL DEFAULT '{}',
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (source, source_id, layer),
+    CHECK (
+        (layer IN ('communal', 'crime') AND weight BETWEEN 0 AND 1 AND db IS NULL)
+        OR (layer = 'noise' AND db >= 0 AND weight IS NULL)
+    )
+);
+CREATE INDEX IF NOT EXISTS urban_evidence_geom_gix
+    ON urban_evidence USING GIST (geom);
+CREATE INDEX IF NOT EXISTS urban_evidence_city_layer_ix
+    ON urban_evidence (city, layer);
+
+-- Polygonal OSM evidence for obstruction/view classification.  height_m is
+-- populated only from an explicit OSM height tag; levels are retained as
+-- provenance but are not silently converted to metres.
+CREATE TABLE IF NOT EXISTS urban_features (
+    osm_type     TEXT NOT NULL,
+    osm_id       BIGINT NOT NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('building', 'park', 'water')),
+    name         TEXT,
+    geom         geometry(Geometry, 4326) NOT NULL,
+    height_m     REAL,
+    levels       INTEGER,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (osm_type, osm_id, kind)
+);
+CREATE INDEX IF NOT EXISTS urban_features_geom_gix
+    ON urban_features USING GIST (geom);
+CREATE INDEX IF NOT EXISTS urban_features_kind_ix
+    ON urban_features (kind);
+
 CREATE TABLE IF NOT EXISTS raw_listings (
     external_id   TEXT PRIMARY KEY,
     source        TEXT NOT NULL,

@@ -15,6 +15,8 @@ type Settings struct {
 	MLServiceURL        string
 	MLSearchTimeoutS    int
 	MLWarmupTimeoutS    int
+	MLDossierTimeoutS   int
+	MLObjectAskTimeoutS int
 	SessionCookieSecure bool
 	CORSAllowedOrigin   string
 	StaticDir           string
@@ -28,6 +30,8 @@ func Load() Settings {
 		MLServiceURL:        getenv("ML_SERVICE_URL", "http://localhost:8000"),
 		MLSearchTimeoutS:    getenvInt("ML_SEARCH_TIMEOUT_S", 60),
 		MLWarmupTimeoutS:    getenvInt("ML_WARMUP_TIMEOUT_S", 600),
+		MLDossierTimeoutS:   getenvInt("ML_DOSSIER_TIMEOUT_S", 30),
+		MLObjectAskTimeoutS: getenvInt("ML_OBJECT_ASK_TIMEOUT_S", 45),
 		SessionCookieSecure: getenvBool("SESSION_COOKIE_SECURE", false),
 		CORSAllowedOrigin:   getenv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 		StaticDir:           getenv("STATIC_DIR", "static"),

@@ -19,6 +19,7 @@ type Services struct {
 	Chat      *service.ChatService
 	Stream    *service.SearchStreamService
 	Object    *service.ObjectService
+	ObjectAsk *service.ObjectAskService
 	GeoLayers *service.GeoLayersService
 }
 
@@ -39,11 +40,12 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 	app.Static("/static", cfg.StaticDir)
 
 	httpapi.RegisterRoutes(app, httpapi.Handlers{
-		Auth:   handlers.NewAuthHandler(svc.Auth, cfg.SessionCookieSecure),
-		Chat:   handlers.NewChatHandler(svc.Chat),
-		Stream: handlers.NewStreamHandler(svc.Chat, svc.Stream),
-		Object: handlers.NewObjectHandler(svc.Object),
-		Geo:    handlers.NewGeoHandler(svc.GeoLayers),
+		Auth:      handlers.NewAuthHandler(svc.Auth, cfg.SessionCookieSecure),
+		Chat:      handlers.NewChatHandler(svc.Chat),
+		Stream:    handlers.NewStreamHandler(svc.Chat, svc.Stream),
+		Object:    handlers.NewObjectHandler(svc.Object),
+		ObjectAsk: handlers.NewObjectAskHandler(svc.Object, svc.ObjectAsk),
+		Geo:       handlers.NewGeoHandler(svc.GeoLayers),
 	}, svc.Auth)
 
 	return app

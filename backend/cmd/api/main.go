@@ -57,7 +57,10 @@ func main() {
 
 	authService := service.NewAuthService(userRepo, sessionRepo)
 	chatService := service.NewChatService(chatRepo, messageRepo)
-	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo)
+	dossierTimeout := time.Duration(cfg.MLDossierTimeoutS) * time.Second
+	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo, mlClient, dossierTimeout)
+	objectAskTimeout := time.Duration(cfg.MLObjectAskTimeoutS) * time.Second
+	objectAskService := service.NewObjectAskService(chatSearchRepo, mlClient, objectAskTimeout)
 	geoLayersService := service.NewGeoLayersService(poiRepo)
 	streamService := service.NewSearchStreamService(chatRepo, messageRepo, chatSearchRepo, listingRepo, mlClient, mlTimeout)
 
@@ -66,6 +69,7 @@ func main() {
 		Chat:      chatService,
 		Stream:    streamService,
 		Object:    objectService,
+		ObjectAsk: objectAskService,
 		GeoLayers: geoLayersService,
 	})
 

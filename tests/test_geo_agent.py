@@ -46,8 +46,13 @@ class _FakeResp:
     status_code = 200
     def raise_for_status(self): pass
     def json(self):
+        if "directions" in getattr(self, "url", ""):
+            return {"features": [{
+                "geometry": {"type": "LineString", "coordinates": [[37.6,55.7],[37.7,55.8]]},
+                "properties": {"summary": {"duration": 600}},
+            }]}
         return {"features": [{"geometry": {"type": "Polygon",
-                                           "coordinates": [[[1, 2]]]}}]}
+                                             "coordinates": [[[1, 2]]]}}]}
 
 
 class FakeSession:
@@ -56,7 +61,9 @@ class FakeSession:
 
     def post(self, url, json=None, headers=None, timeout=None):
         self.url, self.payload, self.headers = url, json, headers
-        return _FakeResp()
+        response = _FakeResp()
+        response.url = url
+        return response
 
 
 def test_ors_provider_builds_request():
@@ -67,6 +74,15 @@ def test_ors_provider_builds_request():
     assert s.payload == {"locations": [[37.6, 55.7]], "range": [600],
                          "range_type": "time"}
     assert s.headers["Authorization"] == settings.ors_api_key
+
+
+def test_ors_directions_returns_linestring_and_duration():
+    s = FakeSession()
+    geometry, duration = ORSProvider(session=s).directions(
+        (37.6, 55.7), (37.7, 55.8), "foot-walking")
+    assert geometry["type"] == "LineString" and duration == 600
+    assert s.url.endswith("/v2/directions/foot-walking/geojson")
+    assert s.payload["coordinates"] == [[37.6, 55.7], [37.7, 55.8]]
 
 
 import psycopg

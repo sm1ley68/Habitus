@@ -1,7 +1,9 @@
 import pytest
 from pydantic import ValidationError
-from habitus.online.schema import (GeoConstraint, ParsedQuery, PointConstraint,
-                                   ResultItem, SearchRequest, SearchResponse)
+from habitus.online.schema import (GeoConstraint, HouseholdLegIntent,
+                                   LineStringGeometry, ParsedQuery,
+                                   PointConstraint, ResultItem, SearchRequest,
+                                   SearchResponse)
 
 
 def test_parsed_query_defaults():
@@ -73,3 +75,20 @@ def test_point_constraint_rejects_unknown_mode():
 def test_point_constraint_valid_defaults():
     pc = PointConstraint(lon=37.6, lat=55.7)
     assert pc.mode == "foot-walking" and pc.minutes == 15
+
+
+def test_household_leg_requires_explicit_valid_mode_and_time():
+    with pytest.raises(ValidationError):
+        HouseholdLegIntent(to_label="Школа", to_kind="school")
+    with pytest.raises(ValidationError):
+        HouseholdLegIntent(to_label="Школа", to_kind="school", mode="taxi")
+    with pytest.raises(ValidationError):
+        HouseholdLegIntent(to_label="Школа", to_kind="school",
+                           mode="walk", depart="25:00")
+
+
+def test_linestring_coordinates_are_lng_lat():
+    geometry = LineStringGeometry(coordinates=[(37.6, 55.7), (37.7, 55.8)])
+    assert geometry.coordinates[0] == (37.6, 55.7)
+    with pytest.raises(ValidationError):
+        LineStringGeometry(coordinates=[(55.7, 200), (37.7, 55.8)])

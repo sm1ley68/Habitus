@@ -13,6 +13,11 @@ class IsochroneProvider(Protocol):
                   mode: str = "foot-walking") -> dict: ...
 
 
+class DirectionsProvider(Protocol):
+    def directions(self, start: tuple[float, float], end: tuple[float, float],
+                   mode: str = "foot-walking") -> tuple[dict, float]: ...
+
+
 class ORSProvider:
     """Реальный клиент OpenRouteService/Valhalla-совместимого API."""
 
@@ -29,6 +34,23 @@ class ORSProvider:
             timeout=15)
         resp.raise_for_status()
         return resp.json()["features"][0]["geometry"]
+
+    def directions(self, start: tuple[float, float], end: tuple[float, float],
+                   mode: str = "foot-walking") -> tuple[dict, float]:
+        """Return an explicit GeoJSON LineString and duration in seconds.
+
+        The public ORS directions endpoint does not provide dependable public
+        transport routing, so callers deliberately map only walk/scooter/car.
+        """
+        resp = self._session.post(
+            f"{settings.ors_base_url}/v2/directions/{mode}/geojson",
+            json={"coordinates": [list(start), list(end)],
+                  "extra_info": ["waytype"]},
+            headers={"Authorization": settings.ors_api_key},
+            timeout=20)
+        resp.raise_for_status()
+        feature = resp.json()["features"][0]
+        return feature["geometry"], float(feature["properties"]["summary"]["duration"])
 
 
 def midpoint(a: tuple[float, float], b: tuple[float, float]) -> tuple[float, float]:

@@ -51,6 +51,9 @@ func (r *ChatSearchRepo) UpsertResult(ctx context.Context, res domain.ChatSearch
 		    address_facts = EXCLUDED.address_facts,
 		    score = EXCLUDED.score,
 		    explanation = EXCLUDED.explanation,
+		    dossier = NULL,
+		    dossier_version = NULL,
+		    dossier_updated_at = NULL,
 		    updated_at = now()`,
 		res.ChatID, res.ExternalID, res.SearchID, res.Price, res.Area, res.Rooms, factsJSON, res.Score, res.Explanation)
 	return err
@@ -58,12 +61,16 @@ func (r *ChatSearchRepo) UpsertResult(ctx context.Context, res domain.ChatSearch
 
 func (r *ChatSearchRepo) GetResult(ctx context.Context, chatID uuid.UUID, externalID string) (domain.ChatSearchResult, error) {
 	var res domain.ChatSearchResult
-	var factsJSON []byte
+	var factsJSON, dossierJSON []byte
+	var dossierVersion *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT chat_id, external_id, search_id, price, area, rooms, address_facts, score, explanation, updated_at
+		SELECT chat_id, external_id, search_id, price, area, rooms, address_facts,
+		       score, explanation, dossier, dossier_version, dossier_updated_at, updated_at
 		FROM chat_search_results WHERE chat_id = $1 AND external_id = $2`,
 		chatID, externalID,
-	).Scan(&res.ChatID, &res.ExternalID, &res.SearchID, &res.Price, &res.Area, &res.Rooms, &factsJSON, &res.Score, &res.Explanation, &res.UpdatedAt)
+	).Scan(&res.ChatID, &res.ExternalID, &res.SearchID, &res.Price, &res.Area,
+		&res.Rooms, &factsJSON, &res.Score, &res.Explanation, &dossierJSON,
+		&dossierVersion, &res.DossierUpdatedAt, &res.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ChatSearchResult{}, ErrNotFound
 	}
@@ -73,5 +80,52 @@ func (r *ChatSearchRepo) GetResult(ctx context.Context, chatID uuid.UUID, extern
 	if len(factsJSON) > 0 {
 		_ = json.Unmarshal(factsJSON, &res.AddressFacts)
 	}
+	if len(dossierJSON) > 0 {
+		_ = json.Unmarshal(dossierJSON, &res.Dossier)
+	}
+	if dossierVersion != nil {
+		res.DossierVersion = *dossierVersion
+	}
 	return res, nil
+}
+
+func (r *ChatSearchRepo) GetSearch(ctx context.Context, id uuid.UUID) (domain.ChatSearch, error) {
+	var cs domain.ChatSearch
+	var parsedJSON []byte
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, chat_id, message_id, raw_query, parsed_query, relaxed,
+		       data_freshness, degraded, created_at
+		FROM chat_searches WHERE id=$1`, id,
+	).Scan(&cs.ID, &cs.ChatID, &cs.MessageID, &cs.RawQuery, &parsedJSON,
+		&cs.Relaxed, &cs.DataFreshness, &cs.Degraded, &cs.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ChatSearch{}, ErrNotFound
+	}
+	if err != nil {
+		return domain.ChatSearch{}, err
+	}
+	if len(parsedJSON) > 0 {
+		_ = json.Unmarshal(parsedJSON, &cs.ParsedQuery)
+	}
+	return cs, nil
+}
+
+func (r *ChatSearchRepo) SaveDossier(ctx context.Context, chatID, searchID uuid.UUID,
+	externalID, version string, dossier map[string]any) error {
+	b, err := json.Marshal(dossier)
+	if err != nil {
+		return err
+	}
+	result, err := r.pool.Exec(ctx, `
+		UPDATE chat_search_results
+		SET dossier=$4, dossier_version=$5, dossier_updated_at=now()
+		WHERE chat_id=$1 AND external_id=$2 AND search_id=$3`,
+		chatID, externalID, searchID, b, version)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

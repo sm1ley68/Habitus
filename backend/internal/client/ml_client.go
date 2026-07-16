@@ -26,18 +26,33 @@ type GeoConstraint struct {
 	WalkMinutes int    `json:"walk_minutes"`
 }
 
+type HouseholdLegIntent struct {
+	ToLabel string  `json:"to_label"`
+	ToKind  string  `json:"to_kind"`
+	Mode    string  `json:"mode"`
+	Depart  *string `json:"depart"`
+	Arrive  *string `json:"arrive"`
+}
+
+type HouseholdMemberIntent struct {
+	ID    string               `json:"id"`
+	Label string               `json:"label"`
+	Legs  []HouseholdLegIntent `json:"legs"`
+}
+
 type ParsedQuery struct {
-	PriceMin          *int64          `json:"price_min"`
-	PriceMax          *int64          `json:"price_max"`
-	Rooms             []int           `json:"rooms"`
-	AreaMin           *float64        `json:"area_min"`
-	AreaMax           *float64        `json:"area_max"`
-	Geo               []GeoConstraint `json:"geo"`
-	WindowOrientation []string        `json:"window_orientation"`
-	NoiseMax          *string         `json:"noise_max"`
-	StopFactors       []string        `json:"stop_factors"`
-	SemanticText      string          `json:"semantic_text"`
-	Lang              string          `json:"lang"`
+	PriceMin          *int64                  `json:"price_min"`
+	PriceMax          *int64                  `json:"price_max"`
+	Rooms             []int                   `json:"rooms"`
+	AreaMin           *float64                `json:"area_min"`
+	AreaMax           *float64                `json:"area_max"`
+	Geo               []GeoConstraint         `json:"geo"`
+	WindowOrientation []string                `json:"window_orientation"`
+	NoiseMax          *string                 `json:"noise_max"`
+	StopFactors       []string                `json:"stop_factors"`
+	SemanticText      string                  `json:"semantic_text"`
+	Lang              string                  `json:"lang"`
+	Household         []HouseholdMemberIntent `json:"household"`
 }
 
 type ResultItem struct {
@@ -68,6 +83,36 @@ type PointConstraint struct {
 type SearchRequest struct {
 	Query string           `json:"query"`
 	Point *PointConstraint `json:"point,omitempty"`
+}
+
+type DossierRequest struct {
+	ObjectID    string         `json:"object_id"`
+	City        string         `json:"city"`
+	RawQuery    string         `json:"raw_query"`
+	ParsedQuery map[string]any `json:"parsed_query"`
+	Relaxed     []string       `json:"relaxed"`
+	Degraded    []string       `json:"degraded"`
+}
+
+type DossierResponse struct {
+	Dossier       map[string]any `json:"dossier"`
+	SchemaVersion string         `json:"schema_version"`
+}
+
+type ObjectAskRequest struct {
+	Question      string         `json:"question"`
+	Passport      map[string]any `json:"passport"`
+	SearchContext map[string]any `json:"search_context"`
+}
+
+type GroundedSentence struct {
+	Text          string   `json:"text"`
+	EvidencePaths []string `json:"evidence_paths"`
+	Unknown       bool     `json:"unknown"`
+}
+
+type ObjectAskResponse struct {
+	Sentences []GroundedSentence `json:"sentences"`
 }
 
 type MLClient struct {
@@ -113,6 +158,52 @@ func (c *MLClient) Search(ctx context.Context, req SearchRequest) (*SearchRespon
 	var out SearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("%w: decode: %v", ErrBadResponse, err)
+	}
+	return &out, nil
+}
+
+func (c *MLClient) postJSON(ctx context.Context, path string, in, out any) error {
+	body, err := json.Marshal(in)
+	if err != nil {
+		return fmt.Errorf("%w: encode request: %v", ErrBadResponse, err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return ErrTimeout
+		}
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return ErrServer
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%w: status %d", ErrBadResponse, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("%w: decode: %v", ErrBadResponse, err)
+	}
+	return nil
+}
+
+func (c *MLClient) Dossier(ctx context.Context, req DossierRequest) (*DossierResponse, error) {
+	var out DossierResponse
+	if err := c.postJSON(ctx, "/dossier", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *MLClient) AskObject(ctx context.Context, req ObjectAskRequest) (*ObjectAskResponse, error) {
+	var out ObjectAskResponse
+	if err := c.postJSON(ctx, "/object-ask", req, &out); err != nil {
+		return nil, err
 	}
 	return &out, nil
 }

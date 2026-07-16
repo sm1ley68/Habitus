@@ -11,11 +11,12 @@ import (
 )
 
 type Handlers struct {
-	Auth   *handlers.AuthHandler
-	Chat   *handlers.ChatHandler
-	Stream *handlers.StreamHandler
-	Object *handlers.ObjectHandler
-	Geo    *handlers.GeoHandler
+	Auth      *handlers.AuthHandler
+	Chat      *handlers.ChatHandler
+	Stream    *handlers.StreamHandler
+	Object    *handlers.ObjectHandler
+	ObjectAsk *handlers.ObjectAskHandler
+	Geo       *handlers.GeoHandler
 }
 
 func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService) {
@@ -39,6 +40,7 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService) {
 	api.Post("/chats/:chat_id/messages/stream", authMw, h.Stream.PostMessagesStream)
 
 	api.Get("/objects/:object_id", authMw, h.Object.Get)
+	api.Post("/objects/:object_id/ask/stream", authMw, h.ObjectAsk.PostStream)
 
 	api.Get("/geo/layers", authMw, h.Geo.Layers)
 }

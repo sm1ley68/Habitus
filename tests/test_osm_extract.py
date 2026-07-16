@@ -2,7 +2,8 @@ import psycopg
 import requests
 from habitus.config import settings
 from habitus.db.init_db import init_db
-from habitus.geo.osm_extract import HEADERS, fetch_kind, parse_overpass, upsert_poi
+from habitus.geo.osm_extract import (HEADERS, fetch_kind, parse_overpass,
+                                     parse_urban_features, upsert_poi)
 
 SAMPLE = {"elements": [
     {"type": "node", "id": 111, "lat": 55.76, "lon": 37.62, "tags": {"name": "Бар А"}},
@@ -31,6 +32,22 @@ def test_parse_overpass_way_uses_center():
     assert rows[0] == {"osm_id": 900, "kind": "park", "name": "Парк Горького",
                        "lat": 55.80, "lon": 37.50}
     assert rows[1]["osm_id"] == 901 and rows[1]["name"] is None
+
+
+def test_parse_urban_features_keeps_explicit_height_and_levels_separate():
+    payload = {"elements": [{
+        "type": "way", "id": 42,
+        "tags": {"building": "apartments", "height": "24 m",
+                 "building:levels": "8", "name": "Корпус"},
+        "geometry": [
+            {"lon": 37.6, "lat": 55.7}, {"lon": 37.61, "lat": 55.7},
+            {"lon": 37.61, "lat": 55.71}, {"lon": 37.6, "lat": 55.7},
+        ],
+    }]}
+    row = parse_urban_features(payload)[0]
+    assert row["kind"] == "building" and row["height_m"] == 24
+    assert row["levels"] == 8
+    assert '"type": "Polygon"' in row["geometry"]
 
 class _Resp:
     def __init__(self, status=200, payload=None):

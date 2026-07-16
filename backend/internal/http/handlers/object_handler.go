@@ -17,10 +17,9 @@ func NewObjectHandler(objects *service.ObjectService) *ObjectHandler {
 	return &ObjectHandler{objects: objects}
 }
 
-// Get implements GET /objects/{object_id}?chat_id=. This pass returns the
-// base ObjectPassport fields only — no Н.1–Н.6 hero dossier (verdict, brief,
-// compromises, relaxation, zone_rationale, hero-tier `data`), which is an
-// explicit follow-up (see plan context).
+// Get implements GET /objects/{object_id}?chat_id=. ObjectService attaches a
+// query-specific dossier from its versioned lazy cache and falls back to an
+// honest secondary-only response when exact evidence is unavailable.
 func (h *ObjectHandler) Get(c *fiber.Ctx) error {
 	chatID, err := uuid.Parse(c.Query("chat_id"))
 	if err != nil {
