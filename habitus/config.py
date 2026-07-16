@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     poi_radius_m: int = 500
     embed_model: str = "BAAI/bge-m3"
     embed_dim: int = 1024
+    embed_batch_size: int = 16
     data_dir: Path = Path("./data")
     kaggle_username: str = ""
     kaggle_key: str = ""

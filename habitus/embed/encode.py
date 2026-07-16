@@ -11,15 +11,23 @@ _model = None
 def get_model():
     global _model
     if _model is None:
+        import torch
         from FlagEmbedding import BGEM3FlagModel
-        _model = BGEM3FlagModel(settings.embed_model, use_fp16=True)
+        # fp16 стабилен и выгоден только на CUDA. На MPS (Apple Metal) half-precision
+        # в torch роняет forward на длинных текстах, из-за чего внутренний авто-шринк
+        # batch_size в FlagEmbedding доходит до 0 → tokenizer.pad([]) → IndexError.
+        # На CPU fp16 всё равно не задействуется. Поэтому включаем только под CUDA.
+        use_fp16 = torch.cuda.is_available()
+        _model = BGEM3FlagModel(settings.embed_model, use_fp16=use_fp16)
     return _model
 
 
 def encode_texts(texts: list[str], model=None) -> list[dict]:
     m = model or get_model()
-    out = m.encode(texts, return_dense=True, return_sparse=True,
-                   return_colbert_vecs=False)
+    # Умеренный batch_size: дефолтные 256 текстов BGE-M3 на MPS перегружают память
+    # (реальные объявления — проза до ~3 тыс. символов, не короткий структурный doc_text).
+    out = m.encode(texts, batch_size=settings.embed_batch_size,
+                   return_dense=True, return_sparse=True, return_colbert_vecs=False)
     results = []
     for dense, lex in zip(out["dense_vecs"], out["lexical_weights"]):
         # pgvector sparsevec требует индексы в диапазоне 1..dim. BGE-M3 отбрасывает

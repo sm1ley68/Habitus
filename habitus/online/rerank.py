@@ -9,8 +9,15 @@ _reranker = None
 def get_reranker():
     global _reranker
     if _reranker is None:
+        import torch
         from FlagEmbedding import FlagReranker
-        _reranker = FlagReranker(settings.reranker_model, use_fp16=True)
+        # На Apple MPS кросс-энкодер реранкера непригоден: с fp16 роняет forward на
+        # длинных документах, а без fp16 — зависает на MPS-устройстве (замерено:
+        # 50 пар > 10 мин против 176 c на CPU). Поэтому вне CUDA пинуем на CPU.
+        # fp16 стабилен и выгоден только на CUDA. В проде (Linux/CPU) — тоже CPU.
+        cuda = torch.cuda.is_available()
+        _reranker = FlagReranker(settings.reranker_model, use_fp16=cuda,
+                                 devices=None if cuda else "cpu")
     return _reranker
 
 
