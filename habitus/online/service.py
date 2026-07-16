@@ -1,11 +1,13 @@
 # habitus/online/service.py — тонкий FastAPI: валидация входа + вызов pipeline.
 # Gateway/деплой — зона беков; бизнес-логики здесь нет.
 import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 
 from habitus.config import settings
 from habitus.db.connection import get_conn
+from habitus.db.init_db import init_db
 from habitus.online.pipeline import run_search
 from habitus.online.dossier import DossierNotFound, build_dossier
 from habitus.online.object_qa import answer_object_async
@@ -13,7 +15,19 @@ from habitus.online.schema import (DossierRequest, DossierResponse,
                                    ObjectAskRequest, ObjectAskResponse,
                                    SearchRequest, SearchResponse)
 
-app = FastAPI(title="Habitus Search")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # /dossier читает urban_evidence/urban_features. Без этих таблиц запрос
+    # падает с UndefinedTable (HTTP 500) вместо честной деградации до secondary.
+    # init_db идемпотентен (CREATE TABLE IF NOT EXISTS) и повторяет CLI — так
+    # схема существует ещё до первого import-evidence/import-osm-features.
+    with get_conn() as conn:
+        init_db(conn)
+    yield
+
+
+app = FastAPI(title="Habitus Search", lifespan=lifespan)
 
 
 @app.get("/health")

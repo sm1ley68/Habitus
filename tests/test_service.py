@@ -87,6 +87,19 @@ def test_dossier_endpoint_returns_versioned_payload(monkeypatch):
     assert response.json()["dossier"]["brief"] == []
 
 
+def test_startup_ensures_dossier_schema(monkeypatch):
+    # Регресс: без init_db на старте /dossier падает с UndefinedTable (500) на
+    # БД, где ещё не гоняли import-evidence/import-osm-features. lifespan обязан
+    # идемпотентно создать схему до приёма трафика.
+    calls = []
+    monkeypatch.setattr(service, "init_db", lambda conn: calls.append(conn))
+    monkeypatch.setattr(service, "get_conn",
+                        lambda: contextlib.nullcontext("conn"))
+    with TestClient(service.app):
+        pass
+    assert calls == ["conn"]
+
+
 def test_object_ask_without_llm_returns_grounded_unknown(monkeypatch):
     monkeypatch.setattr(service.settings, "openrouter_api_key", "")
     response = TestClient(service.app).post("/object-ask", json={
