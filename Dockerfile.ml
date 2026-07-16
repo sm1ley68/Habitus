@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir uv
 # Copy dependency manifests first so rebuilds only re-run `uv sync` when they
 # change — this stack pulls in torch/transformers/FlagEmbedding, a genuinely
 # heavy image, so layer ordering matters for iteration speed.
+# --no-install-project on the first sync installs ONLY dependencies (the heavy,
+# cacheable layer); the local `habitus` package isn't built yet because its
+# source is copied below. A second sync after COPY builds the project itself.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
