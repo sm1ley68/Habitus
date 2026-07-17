@@ -2,7 +2,8 @@
 from typing import Sequence
 
 from habitus.config import settings
-from habitus.online.geo import IsochroneProvider, point_predicate
+from habitus.online.geo import (IsochroneProvider, point_predicate,
+                                 resolve_area)
 from habitus.online.retrieval import Candidate, hybrid_search
 from habitus.online.schema import GeoConstraint, ParsedQuery, PointConstraint
 
@@ -40,18 +41,30 @@ def retrieve_with_relaxation(
         provider: IsochroneProvider | None = None,
         model=None, query_vec=None,
         min_results: int | None = None, max_iters: int | None = None,
+        geocoder=None,
         search_fn=hybrid_search) -> tuple[list[Candidate], list[str], ParsedQuery]:
-    """Маршрутизация: кастомная точка → сначала гео-предикат, затем retrieval.
-    Мало результатов → ослабляем и повторяем (каждый шаг — в relaxed)."""
+    """Маршрутизация: кастомная точка и/или область (сторона города / место) →
+    гео-предикаты, затем retrieval. Мало результатов → ослабляем и повторяем."""
     min_r = min_results if min_results is not None else settings.min_results
     iters = max_iters if max_iters is not None else settings.relaxation_max_iters
 
-    geo_sql: str | None = None
-    geo_params: Sequence = ()
+    # гео-предикаты: кастомная точка (из запроса API) + область (из NLU).
+    # Оба — жёсткие; комбинируются через AND. Резолвим ОДИН раз до петли
+    # (геокод дорогой; область при relaxation не меняется).
+    preds: list[str] = []
+    params: list = []
     if point is not None:
-        geo_sql, geo_params = point_predicate(point.lon, point.lat,
-                                              point.minutes, provider,
-                                              point.mode)
+        sql, p = point_predicate(point.lon, point.lat, point.minutes,
+                                 provider, point.mode)
+        preds.append(sql); params.extend(p)
+    if pq.area:
+        resolved = (resolve_area(pq.area) if geocoder is None
+                    else resolve_area(pq.area, geocoder=geocoder))
+        if resolved is not None:
+            sql, p = resolved
+            preds.append(sql); params.extend(p)
+    geo_sql: str | None = " AND ".join(f"({s})" for s in preds) if preds else None
+    geo_params: Sequence = params
 
     relaxed: list[str] = []
     cur_pq = pq

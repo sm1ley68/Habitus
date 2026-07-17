@@ -92,7 +92,7 @@ def test_custom_point_builds_geo_predicate():
                              point=PointConstraint(lon=37.6, lat=55.7, minutes=10),
                              search_fn=fake_search, min_results=1)
     assert "ST_DWithin" in captured["geo_sql"]
-    assert captured["geo_params"] == (37.6, 55.7, 800.0)   # 10 мин * 80 м
+    assert list(captured["geo_params"]) == [37.6, 55.7, 800.0]  # 10 мин * 80 м
 
 
 def test_custom_point_mode_reaches_provider():

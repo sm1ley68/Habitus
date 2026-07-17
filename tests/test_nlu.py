@@ -23,6 +23,14 @@ def test_parse_query_first_try():
     assert "price_max" in json.dumps(call["tools"][0]["function"]["parameters"])
 
 
+def test_parse_query_extracts_area():
+    fake = FakeLLM([_tool_resp({"rooms": [2], "area": "север",
+                                "noise_max": "low", "semantic_text": "с собакой"})])
+    pq = parse_query("двушка на севере в тихом районе, гулять с собакой", fake)
+    assert pq.area == "север" and pq.rooms == [2]
+    assert "север" not in pq.semantic_text          # ушло в area, не в семантику
+
+
 def test_parse_query_retry_feeds_error_back_to_model():
     fake = FakeLLM([
         LLMResponse(content="это не json", tool_arguments=None),      # 1-я попытка

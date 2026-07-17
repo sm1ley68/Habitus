@@ -68,6 +68,7 @@ class ParsedQuery(BaseModel):
     window_orientation: list[str] = []        # ["SW","W"]
     noise_max: Literal["low", "medium", "high"] | None = None
     stop_factors: list[str] = []              # ["bars","communal_flats"]
+    area: str | None = None                   # район/сторона города: «север», «Сколково»
     semantic_text: str = ""                   # остаток для dense/sparse («двор-колодец»)
     lang: Literal["ru", "en"] = "ru"
     household: list[HouseholdMemberIntent] = []
