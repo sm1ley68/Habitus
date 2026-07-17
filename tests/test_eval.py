@@ -70,7 +70,7 @@ class _EvalModel:
 
 
 class _EvalReranker:
-    def compute_score(self, pairs, normalize=True):
+    def compute_score(self, pairs, normalize=True, max_length=None):
         s = [1.0 - i * 0.1 for i in range(len(pairs))]
         return s if len(s) > 1 else s[0]
 

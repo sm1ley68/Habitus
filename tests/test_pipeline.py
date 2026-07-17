@@ -39,12 +39,12 @@ class BrokenModel:
 
 
 class FakeReranker:
-    def compute_score(self, pairs, normalize=True):
+    def compute_score(self, pairs, normalize=True, max_length=None):
         return [0.5] * len(pairs) if len(pairs) > 1 else 0.5
 
 
 class BrokenReranker:
-    def compute_score(self, pairs, normalize=True):
+    def compute_score(self, pairs, normalize=True, max_length=None):
         raise RuntimeError("reranker упал")
 
 

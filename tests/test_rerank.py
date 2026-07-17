@@ -14,7 +14,7 @@ class FakeReranker:
     def __init__(self):
         self.pairs = None
 
-    def compute_score(self, pairs, normalize=True):
+    def compute_score(self, pairs, normalize=True, max_length=None):
         self.pairs = pairs
         return [0.9 if "школа" in doc else 0.1 for _, doc in pairs]
 
@@ -32,7 +32,7 @@ def test_rerank_orders_and_cuts_top_n():
 
 def test_rerank_single_candidate_scalar_score():
     class ScalarReranker:
-        def compute_score(self, pairs, normalize=True):
+        def compute_score(self, pairs, normalize=True, max_length=None):
             return 0.42          # FlagReranker для одной пары возвращает скаляр
     out = rerank("q", [_cand("A", "doc")], reranker=ScalarReranker())
     assert len(out) == 1 and out[0].score == 0.42
