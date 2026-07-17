@@ -62,6 +62,8 @@ def main():
     evidence = sub.add_parser("import-evidence")
     evidence.add_argument("--geojson", type=Path, required=True)
     sub.add_parser("import-osm-features")
+    windows = sub.add_parser("extract-windows")
+    windows.add_argument("--limit", type=int, default=None)
     args = ap.parse_args()
     with get_conn() as conn:
         if args.cmd == "offline":
@@ -99,6 +101,10 @@ def main():
                                                   upsert_urban_features)
             init_db(conn)
             print({"imported": upsert_urban_features(fetch_urban_features(), conn)})
+        elif args.cmd == "extract-windows":
+            from habitus.clean.windows import extract_windows
+            from habitus.online.llm import OpenRouterLLM
+            print(extract_windows(conn, OpenRouterLLM(), limit=args.limit))
 
 
 if __name__ == "__main__":
