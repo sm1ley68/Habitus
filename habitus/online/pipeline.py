@@ -9,7 +9,7 @@ from habitus.online.geo import IsochroneProvider
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, parse_query
 from habitus.online.orchestrator import retrieve_with_relaxation
-from habitus.online.rerank import rerank
+from habitus.online.rerank import proximity_rerank, rerank
 from habitus.online.retrieval import Candidate, encode_query
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
                                    SearchResponse)
@@ -65,14 +65,17 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
             conn, search_pq, point=point, provider=provider,
             model=model, query_vec=query_vec)
 
-    # 4. rerank (отказ → порядок RRF)
+    # 4. rerank (отказ → порядок RRF), затем proximity-бленд точной близости
+    #    поверх скоров: реранк по всему пулу, бленд, срез top-N (кросс-энкодер
+    #    слеп к точным минутам walk_min_* — их добавляет proximity-стадия).
     try:
         with trace.span("rerank", n=len(cands)):
-            top = rerank(query, cands, reranker=reranker)
+            ranked = rerank(query, cands, top_n=len(cands), reranker=reranker)
     except Exception as exc:
         log.warning("деградация слоя reranker: %s", exc, exc_info=True)
         degraded.append("reranker")
-        top = cands[: settings.rerank_top_n]
+        ranked = cands
+    top = proximity_rerank(pq, ranked, top_n=settings.rerank_top_n)
 
     results = [to_result_item(c) for c in top]
 

@@ -24,8 +24,18 @@ class Settings(BaseSettings):
     ors_base_url: str = "https://api.openrouteservice.org"
     ors_api_key: str = ""
     rrf_k: int = 40  # сетка на golden-set: 40 стабильно ≥ 60/80 по recall/NDCG
-    retrieval_top_k: int = 50
+    # 100, не 50: отфильтрованные пулы golden-сета 32–122, top_k=50 срезал
+    # релевантных кандидатов ДО реранка (потолок recall 0.80 → 0.99 при 100).
+    # Цена — реранкер видит до 100 доков (×2 латентность стадии rerank).
+    retrieval_top_k: int = 100
     rerank_top_n: int = 10
+    # proximity-rerank: доля структурного сигнала точной близости (walk_min_*)
+    # в финальном score. 0.0 = чистая семантика реранкера, 1.0 = чистая близость.
+    # Срабатывает только на осях, явно запрошенных пользователем (pq.geo).
+    # Кривая на golden-set монотонна по весу (w→1 вырождается в ось разметки),
+    # поэтому выбор — компромисс: 0.6 отдаёт явно запрошенной близости умеренное
+    # большинство, семантика сохраняет 0.4. Сетка: scratchpad sweep 2026-07-17.
+    proximity_weight: float = 0.6
     min_results: int = 5              # порог relaxation-петли
     relaxation_max_iters: int = 3
     langfuse_enabled: bool = False

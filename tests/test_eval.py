@@ -97,7 +97,7 @@ def test_run_eval_retrieval_ablation():
                                     tool_arguments=json.dumps({"rooms": [2]}))])
         res = run_eval(conn, fake, golden, model=_EvalModel(),
                        reranker=_EvalReranker())
-    for variant in ("dense", "rrf", "rrf+rerank"):
+    for variant in ("dense", "rrf", "rrf+rerank", "rrf+prox", "rrf+rerank+prox"):
         assert res["retrieval"][variant]["recall@10"] == 1.0
         assert res["retrieval"][variant]["ndcg@10"] == 1.0
-    assert "rrf+rerank" in format_report(res)
+    assert "rrf+rerank+prox" in format_report(res)

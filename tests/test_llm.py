@@ -7,7 +7,7 @@ def test_config_has_online_fields():
     assert settings.llm_base_url == "https://openrouter.ai/api/v1"
     assert settings.reranker_model == "BAAI/bge-reranker-v2-m3"
     # rrf_k=40 is the current golden-set-tuned value (see config comment).
-    assert settings.rrf_k == 40 and settings.retrieval_top_k == 50
+    assert settings.rrf_k == 40 and settings.retrieval_top_k == 100
     assert settings.rerank_top_n == 10 and settings.min_results == 5
     assert settings.relaxation_max_iters == 3
     assert isinstance(settings.llm_fallbacks, list) and settings.llm_fallbacks

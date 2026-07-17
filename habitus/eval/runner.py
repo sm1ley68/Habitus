@@ -4,16 +4,19 @@ from pathlib import Path
 
 import yaml
 
+from habitus.config import settings
 from habitus.eval.metrics import ndcg_at_k, parse_accuracy, recall_at_k
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, parse_query
-from habitus.online.rerank import rerank
+from habitus.online.rerank import proximity_rerank, rerank
 from habitus.online.retrieval import hybrid_search
 from habitus.online.schema import ParsedQuery
 
 DEFAULT_GOLDEN = Path(__file__).parent / "queries.yaml"
 
 VARIANTS = {"dense": ("dense",), "rrf": ("dense", "sparse")}
+# абляции поверх RRF: чистый реранк, proximity-бленд, реранк+proximity
+DERIVED = ("rrf+rerank", "rrf+prox", "rrf+rerank+prox")
 
 
 def load_golden(path: Path) -> list[dict]:
@@ -26,10 +29,15 @@ def _avg(xs: list[float]) -> float:
 
 
 def run_eval(conn, llm: LLMClient | None, golden: list[dict],
-             model=None, reranker=None) -> dict:
+             model=None, reranker=None, proximity_weight: float | None = None) -> dict:
     parse_scores: list[float] = []
     retr: dict[str, dict[str, list[float]]] = {
-        v: {"recall": [], "ndcg": []} for v in (*VARIANTS, "rrf+rerank")}
+        v: {"recall": [], "ndcg": []} for v in (*VARIANTS, *DERIVED)}
+
+    def _score(bucket: dict, cands: list, relevant: set, rel_map: dict) -> None:
+        ids = [c.external_id for c in cands]
+        bucket["recall"].append(recall_at_k(relevant, ids))
+        bucket["ndcg"].append(ndcg_at_k(rel_map, ids))
 
     for item in golden:
         expected = item.get("expected_parse") or {}
@@ -51,15 +59,23 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         rrf_cands = None
         for name, channels in VARIANTS.items():
             cands = hybrid_search(conn, pq, model=model, channels=channels)
-            ids = [c.external_id for c in cands]
-            retr[name]["recall"].append(recall_at_k(relevant, ids))
-            retr[name]["ndcg"].append(ndcg_at_k(rel_map, ids))
+            _score(retr[name], cands, relevant, rel_map)
             if name == "rrf":
                 rrf_cands = cands
-        reranked = rerank(item["query"], rrf_cands, reranker=reranker)
-        ids = [c.external_id for c in reranked]
-        retr["rrf+rerank"]["recall"].append(recall_at_k(relevant, ids))
-        retr["rrf+rerank"]["ndcg"].append(ndcg_at_k(rel_map, ids))
+
+        # proximity-бленд поверх RRF-скоров
+        _score(retr["rrf+prox"],
+               proximity_rerank(pq, rrf_cands, weight=proximity_weight),
+               relevant, rel_map)
+        # реранк всего пула (скоры кросс-энкодера по всем кандидатам, потом срез)
+        reranked_full = rerank(item["query"], rrf_cands, top_n=len(rrf_cands),
+                               reranker=reranker)
+        _score(retr["rrf+rerank"], reranked_full[: settings.rerank_top_n],
+               relevant, rel_map)
+        # proximity-бленд поверх скоров реранкера
+        _score(retr["rrf+rerank+prox"],
+               proximity_rerank(pq, reranked_full, weight=proximity_weight),
+               relevant, rel_map)
 
     return {
         "n_queries": len(golden),
