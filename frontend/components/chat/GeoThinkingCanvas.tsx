@@ -1,13 +1,13 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { motion, useReducedMotion } from "framer-motion";
 import { useMaplibre } from "@/lib/map/useMaplibre";
-import { SCHOOL_239, ZONE_GEOJSON, LAYER_GEOJSON, PROPERTIES } from "@/lib/data/mock";
+import { CITY_CENTER } from "@/lib/map/constants";
 import { useSession } from "@/lib/store/session";
 import { STAGE_GLOW } from "@/lib/agent/stageVisuals";
 import { DUR, EASE } from "@/lib/motion";
-import type { Stage } from "@/lib/agent/types";
+import type { Stage, LayerId } from "@/lib/agent/types";
 
 // A live geo canvas for the "model is thinking" phase. It replays what the
 // geo-spatial agent actually does — anchor the search, breathe a 15-minute
@@ -16,23 +16,18 @@ import type { Stage } from "@/lib/agent/types";
 // small map that reasons. Falls back to an SVG radar when there's no map key.
 
 const ACCENT = "#7C8CFF";
-const ANCHOR = SCHOOL_239;
 const POINT = "#5AB8E0";
 const LINE = "#E0995A";
+
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 const pt = (c: [number, number]): GeoJSON.Feature =>
   ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } });
 
-// District layers scanned during the "context" beat: school + park points, a
-// noise magistral line. Reuses the mock geo layers so it reads as real data.
-const CTX_FC: GeoJSON.FeatureCollection = {
-  type: "FeatureCollection",
-  features: [
-    ...LAYER_GEOJSON.schools.features,
-    ...LAYER_GEOJSON.parks.features,
-    ...LAYER_GEOJSON.noise.features,
-  ],
-};
+// Слои, которые «сканируются» на такте context. Берутся из GET /geo/layers —
+// это настоящие школы и парки города, а не декорация. Пока слой не загрузился,
+// коллекция пустая: канвас покажет пульс изохроны без точек, но не выдумает их.
+const CTX_LAYERS: LayerId[] = ["schools", "parks"];
 
 const THINKING: Stage[] = ["linguistic", "geo", "context", "relaxation", "streaming"];
 export function isThinking(stage: Stage) {
@@ -41,12 +36,26 @@ export function isThinking(stage: Stage) {
 
 export default function GeoThinkingCanvas() {
   const stage = useSession((s) => s.stage);
+  const city = useSession((s) => s.city);
+  const layerData = useSession((s) => s.layerData);
+  const loadLayer = useSession((s) => s.loadLayer);
   const container = useRef<HTMLDivElement>(null);
   const { map, ready, missingKey } = useMaplibre(container);
   const reduce = useReducedMotion();
 
+  const anchor = CITY_CENTER[city];
+
+  // Тянем реальные слои под такт context — один раз, дальше из кэша стора.
+  useEffect(() => {
+    CTX_LAYERS.forEach((id) => void loadLayer(id));
+  }, [loadLayer]);
+
+  const ctxFC = useMemo<GeoJSON.FeatureCollection>(() => ({
+    type: "FeatureCollection",
+    features: CTX_LAYERS.flatMap((id) => layerData[id]?.features ?? []),
+  }), [layerData]);
+
   const breatheRef = useRef<number | null>(null);
-  const candRef = useRef<maplibregl.Marker[]>([]);
   const anchorRef = useRef<maplibregl.Marker | null>(null);
   const [sweepKey, setSweepKey] = useState(0);
 
@@ -57,20 +66,13 @@ export default function GeoThinkingCanvas() {
     map.doubleClickZoom.disable();
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
-    map.jumpTo({ center: ANCHOR, zoom: 12.7 });
+    map.jumpTo({ center: anchor, zoom: 12.7 });
 
     const add = () => {
-      if (!map.getSource("anchor")) map.addSource("anchor", { type: "geojson", data: pt(ANCHOR) });
-      if (!map.getSource("zone")) map.addSource("zone", { type: "geojson", data: ZONE_GEOJSON as unknown as GeoJSON.FeatureCollection });
-      if (!map.getSource("ctx")) map.addSource("ctx", { type: "geojson", data: CTX_FC });
-
-      if (!map.getLayer("zone-fill"))
-        map.addLayer({ id: "zone-fill", type: "fill", source: "zone",
-          paint: { "fill-color": ACCENT, "fill-opacity": 0, "fill-opacity-transition": { duration: 800, delay: 0 } } });
-      if (!map.getLayer("zone-line"))
-        map.addLayer({ id: "zone-line", type: "line", source: "zone",
-          layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": ACCENT, "line-width": 1.5, "line-dasharray": [2, 3], "line-opacity": 0, "line-opacity-transition": { duration: 800, delay: 0 } } });
+      if (!map.getSource("anchor")) map.addSource("anchor", { type: "geojson", data: pt(anchor) });
+      // Зоны на этом такте ещё нет: она приходит только в final_result и
+      // рисуется на карте результатов. Рисовать её здесь — выдумывать.
+      if (!map.getSource("ctx")) map.addSource("ctx", { type: "geojson", data: EMPTY_FC });
 
       if (!map.getLayer("reach-fill"))
         map.addLayer({ id: "reach-fill", type: "circle", source: "anchor",
@@ -96,23 +98,28 @@ export default function GeoThinkingCanvas() {
       const el = document.createElement("div");
       el.className = "think-anchor";
       el.innerHTML = '<span class="think-anchor__ping"></span><span class="think-anchor__dot"></span>';
-      anchorRef.current = new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(ANCHOR).addTo(map);
+      anchorRef.current = new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(anchor).addTo(map);
     };
     add();
 
     return () => {
       if (breatheRef.current) clearInterval(breatheRef.current);
       anchorRef.current?.remove();
-      candRef.current.forEach((m) => m.remove());
-      candRef.current = [];
       try {
-        ["zone-fill", "zone-line", "reach-fill", "reach-ring", "ctx-line", "ctx-point"].forEach((id) => {
+        ["reach-fill", "reach-ring", "ctx-line", "ctx-point"].forEach((id) => {
           if (map.getLayer(id)) map.removeLayer(id);
         });
-        ["anchor", "zone", "ctx"].forEach((id) => { if (map.getSource(id)) map.removeSource(id); });
+        ["anchor", "ctx"].forEach((id) => { if (map.getSource(id)) map.removeSource(id); });
       } catch { /* map already gone */ }
     };
-  }, [map, ready]);
+  }, [map, ready, anchor]);
+
+  // Слои приезжают асинхронно — переливаем их в источник, когда пришли.
+  useEffect(() => {
+    if (!map || !ready) return;
+    const src = map.getSource("ctx") as maplibregl.GeoJSONSource | undefined;
+    src?.setData(ctxFC);
+  }, [map, ready, ctxFC]);
 
   // Stage-driven choreography.
   useEffect(() => {
@@ -149,10 +156,6 @@ export default function GeoThinkingCanvas() {
       set("reach-ring", "circle-stroke-opacity", 0);
     }
 
-    // Search zone.
-    set("zone-fill", "fill-opacity", geoOn ? 0.06 : 0);
-    set("zone-line", "line-opacity", geoOn ? 0.7 : 0);
-
     // District layers scanned during context.
     set("ctx-line", "line-opacity", ctxOn ? 0.7 : 0);
     set("ctx-point", "circle-opacity", ctxOn ? 0.95 : 0);
@@ -161,20 +164,9 @@ export default function GeoThinkingCanvas() {
     // A single scan sweep as the context beat begins.
     if (stage === "context" && !reduce) setSweepKey((k) => k + 1);
 
-    // Candidates pop as the answer assembles.
-    if (stage === "streaming") {
-      if (candRef.current.length === 0) {
-        PROPERTIES.forEach((p, i) => {
-          const el = document.createElement("div");
-          el.className = "think-cand";
-          el.style.setProperty("--i", String(i));
-          candRef.current.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(p.coordinates).addTo(map));
-        });
-      }
-    } else {
-      candRef.current.forEach((m) => m.remove());
-      candRef.current = [];
-    }
+    // Кандидатов на этом такте ещё не существует — они приходят в final_result
+    // вместе со стадией done. Показывать пины «заранее» значило бы рисовать
+    // выдуманные объекты, поэтому канвас их просто не рисует.
 
     return () => { if (breatheRef.current) clearInterval(breatheRef.current); };
   }, [map, ready, stage, reduce]);

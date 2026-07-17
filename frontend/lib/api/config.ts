@@ -1,9 +1,7 @@
-// Data-seam configuration. Flipping these two env vars is the only change a
-// backend dev makes to go live — no UI/component edits.
+// Единственная точка настройки доступа к бэку. Приложение всегда ходит в
+// реальный Go-шлюз — моков нет.
 //
-//   NEXT_PUBLIC_USE_MOCK=false   → use the real fetch/SSE implementation
-//   NEXT_PUBLIC_API_BASE=https://api.example.com/api/v1  → point at the backend
-//
-// Default (unset) keeps the app on mock data so it runs offline.
-export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
+// Путь относительный: next.config.mjs проксирует /api/v1/* на BACKEND_ORIGIN,
+// поэтому запросы уходят same-origin и сессионная кука habitus_session
+// (HTTPOnly, SameSite=Lax) долетает без CORS.
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api/v1";

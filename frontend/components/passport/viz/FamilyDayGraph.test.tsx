@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { it, expect } from "vitest";
 import FamilyDayGraph from "./FamilyDayGraph";
-import { LIFESTYLE_BLOCKS } from "@/lib/data/mock";
+import { LIFESTYLE_BLOCKS } from "@/test/fixtures";
 
 const block = LIFESTYLE_BLOCKS.find((b) => b.key === "family_routing")!;
 

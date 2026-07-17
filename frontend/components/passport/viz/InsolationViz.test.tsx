@@ -1,7 +1,7 @@
 import { it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import InsolationViz from "./InsolationViz";
-import { LIFESTYLE_BLOCKS } from "@/lib/data/mock";
+import { LIFESTYLE_BLOCKS } from "@/test/fixtures";
 
 it("renders the day arc and the direct-light window label", () => {
   render(<InsolationViz metrics={{ orientationDeg: 225, directLightFrom: 14, directLightTo: 18, db: 35 }} />);

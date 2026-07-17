@@ -9,7 +9,7 @@ import type { ObjectPassport, LifestyleBlock } from "@/lib/agent/types";
 // conversation grounded in the dossier: suggested-question chips derived from
 // the passport, a message thread, and a composer that streams the assistant's
 // answer token-by-token through the createObjectChatClient() seam (mock today,
-// real SSE on NEXT_PUBLIC_USE_MOCK=false). One in-flight request at a time; the
+// реальный SSE через POST /objects/{id}/ask/stream). One in-flight request at a time; the
 // composer is blocked during a stream, mirroring the app's stream-lock rule.
 
 interface Msg {

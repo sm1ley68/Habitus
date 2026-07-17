@@ -5,12 +5,12 @@ import EmptyState from "./EmptyState";
 import ErrorState from "./ErrorState";
 import MessageThread from "./MessageThread";
 import { useSession } from "@/lib/store/session";
-import { createMockClient } from "@/lib/agent/mockClient";
+import { createSearchClient } from "@/lib/api/searchStream";
 
 export default function ChatScreen() {
   const stage = useSession((s) => s.stage);
   const start = useSession((s) => s.startQuery);
-  const client = useMemo(() => createMockClient(), []);
+  const client = useMemo(() => createSearchClient(), []);
   const idle = stage === "idle";
   const error = stage === "error";
   const send = (text: string) => start(client, text);

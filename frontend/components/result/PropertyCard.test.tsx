@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import PropertyCard from "./PropertyCard";
-import { PROPERTIES } from "@/lib/data/mock";
+import { PROPERTIES } from "@/test/fixtures";
 import { useSession } from "@/lib/store/session";
 
 describe("PropertyCard", () => {

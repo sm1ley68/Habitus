@@ -26,6 +26,8 @@ export const LAYER_LABELS: Record<LayerId, string> = {
   parks: "Парки",
 };
 
+export const MAP_LAYER_IDS = Object.keys(LAYER_LABELS) as LayerId[];
+
 export interface GeoZone {
   type: "FeatureCollection";
   features: Array<{
