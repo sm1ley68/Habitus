@@ -28,3 +28,13 @@ func (s *Writer) WriteEvent(event string, data any) error {
 	}
 	return s.w.Flush()
 }
+
+// WriteComment writes an SSE comment line (`: ...`) and flushes. Clients ignore
+// comments, but they keep the connection from going idle — иначе прокси / VPN /
+// антивирусы рвут «простаивающее» соединение, пока ml долго считает ответ.
+func (s *Writer) WriteComment(text string) error {
+	if _, err := fmt.Fprintf(s.w, ": %s\n\n", text); err != nil {
+		return err
+	}
+	return s.w.Flush()
+}

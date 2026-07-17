@@ -156,11 +156,23 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 		}
 	}
 	if !gotResult {
-		select {
-		case outcome = <-resultCh:
-		case <-ctx.Done():
-			_ = w.WriteEvent("error", ErrorEvent{Code: "llm_timeout", Message: "Не удалось получить ответ от ИИ, попробуйте ещё раз"})
-			return
+		// ml считает ответ 15–60с, всё это время в поток ничего не идёт.
+		// Простаивающее SSE-соединение рвут прокси / VPN / антивирусы, поэтому
+		// шлём keep-alive-комментарий раз в 2с, пока ждём результат.
+		heartbeat := time.NewTicker(2 * time.Second)
+		defer heartbeat.Stop()
+		for !gotResult {
+			select {
+			case outcome = <-resultCh:
+				gotResult = true
+			case <-heartbeat.C:
+				if err := w.WriteComment("keep-alive"); err != nil {
+					return // клиент отвалился
+				}
+			case <-ctx.Done():
+				_ = w.WriteEvent("error", ErrorEvent{Code: "llm_timeout", Message: "Не удалось получить ответ от ИИ, попробуйте ещё раз"})
+				return
+			}
 		}
 	}
 
