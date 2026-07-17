@@ -2,6 +2,7 @@ import type { AgentClient, RunHandlers } from "@/lib/agent/AgentClient";
 import type {
   AgentName, AgentEventStatus, Property, GeoZone,
 } from "@/lib/agent/types";
+import { useSession } from "@/lib/store/session";
 import { createChat } from "./chats";
 import { API_BASE } from "./config";
 
@@ -40,8 +41,8 @@ export function createSearchClient(): AgentClient {
 
       (async () => {
         try {
-          const chat = await createChat();
-          const res = await fetch(`${API_BASE}/chats/${chat.id}/messages/stream`, {
+          const chat = await createChat(useSession.getState().city);
+          const res = await fetch(`${API_BASE}/chats/${chat.chat_id}/messages/stream`, {
             method: "POST",
             credentials: "include",
             headers: {
@@ -105,7 +106,7 @@ export function createSearchClient(): AgentClient {
           }
 
           // После error поток уже закрыт как неуспешный — не рапортуем «готово».
-          if (!failed) handlers.onDone({ properties, zoneGeoJSON, chatId: chat.id });
+          if (!failed) handlers.onDone({ properties, zoneGeoJSON, chatId: chat.chat_id });
         } catch (err) {
           if (controller.signal.aborted) return; // отмена пользователем — молча
           handlers.onError?.(

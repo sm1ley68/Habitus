@@ -5,7 +5,7 @@ import ChatScreen from "./ChatScreen";
 import { useSession } from "@/lib/store/session";
 
 vi.mock("@/lib/api/chats", () => ({
-  createChat: vi.fn(async () => ({ id: "c1", title: "Новый чат", created_at: "" })),
+  createChat: vi.fn(async () => ({ chat_id: "c1", city: "msk", title: "Новый чат", created_at: "" })),
 }));
 
 beforeEach(() => act(() => useSession.getState().reset()));

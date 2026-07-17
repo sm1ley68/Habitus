@@ -52,7 +52,7 @@ export default function HistorySidebar() {
               <p className="px-3 py-2 text-xs text-zinc-400">Здесь появятся ваши запросы</p>
             )}
             {chats?.map((c) => (
-              <button key={c.id} className="text-left rounded-lg px-3 py-2 hover:bg-zinc-100">
+              <button key={c.chat_id} className="text-left rounded-lg px-3 py-2 hover:bg-zinc-100">
                 <p className="text-sm text-[#1c1d20] line-clamp-1">{c.title}</p>
                 <p className="text-xs text-zinc-400">{when(c.created_at)}</p>
               </button>

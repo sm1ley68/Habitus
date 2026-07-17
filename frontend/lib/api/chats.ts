@@ -1,13 +1,15 @@
+import type { City } from "@/lib/agent/types";
 import { API_BASE } from "./config";
 
-export interface Chat { id: string; title: string; created_at: string }
+export interface Chat { chat_id: string; city: City; title: string; created_at: string }
 
-export async function createChat(title?: string): Promise<Chat> {
+// Бэк требует город при создании чата (spb|msk) — без него отвечает 400.
+export async function createChat(city: City, title?: string): Promise<Chat> {
   const res = await fetch(`${API_BASE}/chats`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(title ? { title } : {}),
+    body: JSON.stringify(title ? { city, title } : { city }),
   });
   if (!res.ok) throw new Error(`createChat failed: ${res.status}`);
   return (await res.json()) as Chat;
