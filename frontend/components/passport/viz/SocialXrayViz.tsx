@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import maplibregl from "maplibre-gl";
 import { useMaplibre } from "@/lib/map/useMaplibre";
-import { LOGISTICS_HOME } from "@/lib/data/mock";
 import { DUR, EASE } from "@/lib/motion";
 import type { SocialEnvironmentData, SocialLayerId } from "@/lib/agent/types";
 import type { VizProps } from "./index";
@@ -77,7 +76,7 @@ function circleId(id: SocialLayerId) {
   return `xray-circle-${id}`;
 }
 
-export default function SocialXrayViz({ data }: VizProps) {
+export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
   const social = data as SocialEnvironmentData | undefined;
   const reduce = useReducedMotion();
 
@@ -97,9 +96,11 @@ export default function SocialXrayViz({ data }: VizProps) {
   // --- Map: home ring + heat layers, built once GL is ready. ---
   useEffect(() => {
     if (!map || !ready || !social) return;
-    // Prefer the payload's home; fall back to the constant when the backend
-    // omits it (keeps existing behaviour intact).
-    const home = social.home ?? LOGISTICS_HOME;
+    // home в payload опционален (контракт §2.2). Запасной вариант — координаты
+    // самого объекта: кольцо «дома» рисуется вокруг настоящего дома, а не
+    // вокруг выдуманной точки. Нет ни того, ни другого — карту не рисуем.
+    const home = social.home ?? objectHome;
+    if (!home) return;
     const reduced = reduce ?? false;
 
     map.scrollZoom.disable();
@@ -201,9 +202,10 @@ export default function SocialXrayViz({ data }: VizProps) {
         ownedSources.forEach((id) => { if (map.getSource(id)) map.removeSource(id); });
       } catch { /* map already torn down */ }
     };
-    // social is stable mock data; rebuild only when the GL style is ready.
+    // Досье объекта неизменно на время показа карточки; пересобираем слои
+    // только когда готов GL-стиль или сменился сам объект.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, ready]);
+  }, [map, ready, social, objectHome]);
 
   // --- Crossfade: only the active layer is visible, and only once revealed. ---
   useEffect(() => {

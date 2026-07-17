@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 import { useSession } from "./session";
 import type { AgentEvent } from "@/lib/agent/types";
-import { ZONE_GEOJSON } from "@/lib/data/mock";
+import { ZONE_GEOJSON } from "@/test/fixtures";
 
 const reset = () => useSession.getState().reset();
 const ev = (agent: AgentEvent["agent"], status: AgentEvent["status"], token?: string): AgentEvent =>
@@ -26,10 +26,17 @@ test("applyEvent advances stage and accumulates streamed tokens", () => {
 });
 
 test("finish stores properties and switches to result screen", () => {
-  useSession.getState().finish([{ name: "X" } as never]);
+  useSession.getState().finish({
+    properties: [{ name: "X" } as never], zoneGeoJSON: null, chatId: "c1",
+  });
   expect(useSession.getState().properties).toHaveLength(1);
   expect(useSession.getState().screen).toBe("result");
   expect(useSession.getState().stage).toBe("done");
+});
+
+test("finish stores the chat id for the passport seam", () => {
+  useSession.getState().finish({ properties: [], zoneGeoJSON: null, chatId: "c-42" });
+  expect(useSession.getState().chatId).toBe("c-42");
 });
 
 test("toggleLayer flips a layer on and off", () => {
@@ -47,10 +54,16 @@ test("reset cancels an in-flight run", () => {
   expect(cancel).toHaveBeenCalled();
 });
 
-it("finish() attaches the search zone", () => {
+it("finish() attaches the search zone the backend sent", () => {
   useSession.getState().reset();
-  useSession.getState().finish([]);
+  useSession.getState().finish({ properties: [], zoneGeoJSON: ZONE_GEOJSON, chatId: "c1" });
   expect(useSession.getState().zoneGeoJSON).toBe(ZONE_GEOJSON);
+});
+
+it("finish() leaves the zone empty when the backend sent none", () => {
+  useSession.getState().reset();
+  useSession.getState().finish({ properties: [], zoneGeoJSON: null, chatId: "c1" });
+  expect(useSession.getState().zoneGeoJSON).toBeNull();
 });
 it("hovered property id round-trips", () => {
   useSession.getState().setHoveredProperty("jk-neva-residence");

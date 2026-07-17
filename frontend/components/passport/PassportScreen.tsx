@@ -13,17 +13,14 @@ import { useSession } from "@/lib/store/session";
 
 // The Lifestyle Passport as a "detective dossier": a vertical, scroll-driven
 // investigation — verdict → brief → hero chapters → secondary evidence → honest
-// compromises. The whole ObjectPassport now arrives through the data-seam
-// (getObjectPassport) — mock today, real backend on a config flip — so the UI
-// below never imports mock data directly.
+// compromises. The whole ObjectPassport arrives from GET /objects/{id} through
+// lib/api/passport, so the UI below never builds facts of its own.
 export default function PassportScreen() {
   const idx = useSession((s) => s.selectedIndex);
   const property = useSession((s) => s.properties[idx]);
   const back = useSession((s) => s.setScreen);
-
-  // TODO: real chat_id — the session store has no chat id yet, so we stand in
-  // with the property id to keep the seam call-shape correct.
-  const chatId = property?.id;
+  // chat_id поиска — контекст критериев пользователя для досье и чата по объекту.
+  const chatId = useSession((s) => s.chatId) ?? undefined;
 
   const [passport, setPassport] = useState<ObjectPassport | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -97,7 +94,7 @@ export default function PassportScreen() {
           <BriefStrip brief={analysis.brief} />
 
           {heroBlocks.map((block, i) => (
-            <Chapter key={block.key} block={block} index={i} />
+            <Chapter key={block.key} block={block} index={i} home={passport?.coordinates} />
           ))}
 
           <SecondaryGrid blocks={secondaryBlocks} />

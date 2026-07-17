@@ -84,6 +84,22 @@ services:
       timeout: 3s
       retries: 5
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_MAPTILER_KEY: ${NEXT_PUBLIC_MAPTILER_KEY:-}
+        BACKEND_ORIGIN: http://backend:8080
+    environment:
+      # Внутри сети compose ходим по имени сервиса; браузер при этом всегда
+      # обращается к /api/v1 на самом фронте, и Next проксирует дальше.
+      BACKEND_ORIGIN: http://backend:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   habitus_pg:
   habitus_hf:

@@ -5,8 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useMaplibre } from "@/lib/map/useMaplibre";
 import { layerPaintColor } from "@/lib/map/style";
 import { useSession } from "@/lib/store/session";
-import { LAYER_GEOJSON } from "@/lib/data/mock";
-import type { LayerId } from "@/lib/agent/types";
+import { MAP_LAYER_IDS } from "@/lib/agent/types";
 import { DUR, SPRING } from "@/lib/motion";
 import MatchScore from "@/components/result/MatchScore";
 import { money } from "@/lib/format";
@@ -66,6 +65,7 @@ export default function MapCanvas() {
   const hoveredId = useSession((s) => s.hoveredId);
   const setHovered = useSession((s) => s.setHoveredProperty);
   const activeLayers = useSession((s) => s.activeLayers);
+  const layerData = useSession((s) => s.layerData);
   const selectProperty = useSession((s) => s.selectProperty);
   const markers = useRef<maplibregl.Marker[]>([]);
   const pendingRemoval = useRef<Record<string, number>>({});
@@ -198,10 +198,13 @@ export default function MapCanvas() {
     const reduced = prefersReducedMotion();
     const xfade = reduced ? 0 : DUR.base * 1000; // 240ms
 
-    (Object.keys(LAYER_GEOJSON) as LayerId[]).forEach((id) => {
+    MAP_LAYER_IDS.forEach((id) => {
       const srcId = `layer-${id}`;
-      const on = !!activeLayers[id];
-      const geom = LAYER_GEOJSON[id].features[0]?.geometry.type ?? "Polygon";
+      const data = layerData[id];
+      // Слой ещё не приехал (или бэк отдал по нему пусто — communal/noise/
+      // ecology не имеют источника) — рисовать нечего.
+      const on = !!activeLayers[id] && !!data?.features.length;
+      const geom = data?.features[0]?.geometry.type ?? "Polygon";
       const color = layerPaintColor(geom);
       const props = layerOpacityProps(geom);
 
@@ -212,7 +215,7 @@ export default function MapCanvas() {
           delete pendingRemoval.current[srcId];
         }
         if (!map.getSource(srcId)) {
-          map.addSource(srcId, { type: "geojson", data: LAYER_GEOJSON[id] });
+          map.addSource(srcId, { type: "geojson", data });
           if (geom === "Point") {
             map.addLayer({
               id: srcId, type: "circle", source: srcId,
@@ -268,7 +271,7 @@ export default function MapCanvas() {
         }, xfade + 40);
       }
     });
-  }, [map, ready, activeLayers]);
+  }, [map, ready, activeLayers, layerData]);
 
   if (missingKey) {
     return (

@@ -11,6 +11,9 @@ export type VizProps = {
   waypoints?: Waypoint[];
   destinations?: Destination[];
   data?: HeroBlockData;
+  /** Координаты самого объекта [lng, lat] — запасной центр, когда payload
+   *  не прислал свой `home`. Берётся из ObjectPassport.coordinates. */
+  home?: [number, number];
 };
 
 // Keyed by LifestyleBlock.key. A block renders its viz above the text only when

@@ -22,7 +22,9 @@ const clueItem: Variants = {
   show: { opacity: 1, y: 0, transition: { duration: DUR.slow, ease: EASE.emphasizedDecelerate } },
 };
 
-export default function Chapter({ block, index }: { block: Block; index: number }) {
+export default function Chapter(
+  { block, index, home }: { block: Block; index: number; home?: [number, number] },
+) {
   const reduce = useReducedMotion();
   const Viz = VIZ_REGISTRY[block.key];
   const metrics = block.metrics ? Object.entries(block.metrics) : [];
@@ -126,6 +128,7 @@ export default function Chapter({ block, index }: { block: Block; index: number 
               waypoints={block.waypoints}
               destinations={block.destinations}
               data={block.data}
+              home={home}
             />
           ) : (
             <p className="text-sm leading-relaxed text-zinc-600">{block.description}</p>

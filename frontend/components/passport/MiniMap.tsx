@@ -39,7 +39,6 @@ export default function MiniMap({ property }: { property: Property }) {
     });
 
     return () => { marker?.remove(); map.remove(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [style, lng, lat]);
 
   if (!style) {

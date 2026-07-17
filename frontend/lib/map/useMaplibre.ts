@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
 import { mapStyleUrl } from "./style";
-import { SCHOOL_239 } from "@/lib/data/mock";
+import { CITY_CENTER } from "./constants";
+import { useSession } from "@/lib/store/session";
 
 /**
  * Owns the MapLibre instance lifecycle for a container. Creates the map on
@@ -13,13 +14,14 @@ export function useMaplibre(container: RefObject<HTMLDivElement | null>) {
   const [ready, setReady] = useState(false);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const style = mapStyleUrl();
+  const city = useSession((s) => s.city);
 
   useEffect(() => {
     if (!container.current || !style) return;
     const map = new maplibregl.Map({
       container: container.current,
       style,
-      center: SCHOOL_239,
+      center: CITY_CENTER[city],
       zoom: 12.5,
       // Slight negative bearing gives the canvas a touch of cinematic depth
       // without disorienting a real-estate reader.
