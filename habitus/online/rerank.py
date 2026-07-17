@@ -2,6 +2,7 @@
 from dataclasses import replace
 
 from habitus.config import settings
+from habitus.embed.encode import INFERENCE_LOCK
 from habitus.online.retrieval import Candidate
 from habitus.online.schema import ParsedQuery
 
@@ -30,8 +31,10 @@ def rerank(query: str, candidates: list[Candidate], top_n: int | None = None,
         return []
     n = top_n or settings.rerank_top_n
     r = reranker or get_reranker()
-    scores = r.compute_score([[query, c.doc_text] for c in candidates],
-                             normalize=True, max_length=settings.rerank_max_length)
+    with INFERENCE_LOCK:
+        scores = r.compute_score([[query, c.doc_text] for c in candidates],
+                                 normalize=True,
+                                 max_length=settings.rerank_max_length)
     if not isinstance(scores, list):        # одна пара → скаляр
         scores = [scores]
     ranked = sorted(zip(candidates, scores), key=lambda p: -p[1])

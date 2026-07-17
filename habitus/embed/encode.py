@@ -1,9 +1,19 @@
+import threading
+
 import psycopg
 from habitus.config import settings
 from habitus.embed.document import content_hash
 
 # размер словаря BGE-M3 (XLM-RoBERTa). Должен совпадать с sparsevec(...) в schema.sql.
 SPARSE_DIM = 250002
+
+# Общий лок инференса. HuggingFace fast-токенизаторы (BGE-M3 и реранкер)
+# НЕ потокобезопасны: два конкурентных запроса, перенастраивающих усечение
+# токенизатора, роняют "RuntimeError: Already borrowed". FastAPI гоняет sync-
+# эндпоинты в пуле потоков, поэтому сериализуем доступ к моделям — конкурентные
+# поиски встают в очередь, а не падают. На CPU/MPS это и так узкое место
+# (параллелить нечем), под серийным использованием (eval, прогрев) лок бесплатен.
+INFERENCE_LOCK = threading.Lock()
 
 _model = None
 
@@ -26,8 +36,10 @@ def encode_texts(texts: list[str], model=None) -> list[dict]:
     m = model or get_model()
     # Умеренный batch_size: дефолтные 256 текстов BGE-M3 на MPS перегружают память
     # (реальные объявления — проза до ~3 тыс. символов, не короткий структурный doc_text).
-    out = m.encode(texts, batch_size=settings.embed_batch_size,
-                   return_dense=True, return_sparse=True, return_colbert_vecs=False)
+    with INFERENCE_LOCK:
+        out = m.encode(texts, batch_size=settings.embed_batch_size,
+                       return_dense=True, return_sparse=True,
+                       return_colbert_vecs=False)
     results = []
     for dense, lex in zip(out["dense_vecs"], out["lexical_weights"]):
         # pgvector sparsevec требует индексы в диапазоне 1..dim. BGE-M3 отбрасывает
