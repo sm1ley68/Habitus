@@ -1,6 +1,7 @@
 # habitus/online/geo.py — Geo-Spatial Agent: изохроны и SQL-гео-предикаты
 import json
 import re
+from dataclasses import dataclass
 from typing import Protocol
 
 import requests
@@ -8,9 +9,6 @@ from habitus.clean.geocode import geocode_address
 from habitus.config import settings
 
 WALK_SPEED_M_PER_MIN = 80.0        # пешеход ~4.8 км/ч
-MOSCOW_CENTER = (37.6176, 55.7558)  # (lon, lat) — Кремль, точка отсчёта сторон
-AREA_RADIUS_M = 3000.0              # именованное место → окрестность ~3 км
-CENTER_RADIUS_M = 4000.0            # «центр» → круг вокруг Кремля
 
 
 class IsochroneProvider(Protocol):
@@ -102,10 +100,29 @@ def _dir_of(word: str) -> str | None:
     return None
 
 
-def _cardinal_predicate(area: str) -> tuple[str, tuple] | None:
-    """Область → bbox по сторонам света ОТНОСИТЕЛЬНО центра. Возвращает None,
-    если во фразе есть слово, не являющееся направлением (тогда это топоним →
-    геокод). Так «Северное Бутово» (юг!) не примут за «север»."""
+@dataclass
+class AreaMatch:
+    sql: str
+    params: tuple
+    label: str
+    widen: list  # list[tuple[str, tuple, str]] — шире→шире, финал ("TRUE", (), «вся Москва»)
+
+
+CARDINAL: dict[str, tuple[str, ...]] = {
+    "N": ("САО", "СВАО", "СЗАО"), "S": ("ЮАО", "ЮВАО", "ЮЗАО"),
+    "W": ("ЗАО", "СЗАО", "ЮЗАО"), "E": ("ВАО", "СВАО", "ЮВАО"),
+    "NE": ("СВАО",), "NW": ("СЗАО",), "SE": ("ЮВАО",), "SW": ("ЮЗАО",),
+    "C": ("ЦАО",),
+}
+_DROP = ("TRUE", (), "по всей Москве")
+
+
+def _okrug_match(okrugs: tuple[str, ...], label: str) -> AreaMatch:
+    return AreaMatch("okrug = ANY(%s)", (list(okrugs),), label, [_DROP])
+
+
+def _cardinal_dirs(area: str) -> set[str] | None:
+    """Множество направлений из фразы или None, если есть не-направление."""
     words = re.findall(r"[а-яёa-z]+", area.lower())
     dirs: set[str] = set()
     for w in words:
@@ -113,40 +130,35 @@ def _cardinal_predicate(area: str) -> tuple[str, tuple] | None:
             continue
         d = _dir_of(w)
         if d is None:
-            return None                      # непонятное слово → не кардинал
+            return None
         dirs.add(d)
-    if not dirs:
+    return dirs or None
+
+
+def _cardinal_match(area: str) -> AreaMatch | None:
+    dirs = _cardinal_dirs(area)
+    if dirs is None:
         return None
-    lon0, lat0 = MOSCOW_CENTER
     if dirs == {"C"}:
-        return ("ST_DWithin(geom::geography, "
-                "ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
-                (lon0, lat0, CENTER_RADIUS_M))
-    preds: list[str] = []
-    params: list = []
-    if "N" in dirs: preds.append("ST_Y(geom) >= %s"); params.append(lat0)
-    if "S" in dirs: preds.append("ST_Y(geom) <= %s"); params.append(lat0)
-    if "W" in dirs: preds.append("ST_X(geom) <= %s"); params.append(lon0)
-    if "E" in dirs: preds.append("ST_X(geom) >= %s"); params.append(lon0)
-    if not preds:                            # только «центр» вместе с другими — уже выше
-        return None
-    return (" AND ".join(preds), tuple(params))
+        return _okrug_match(CARDINAL["C"], "центр (ЦАО)")
+    # диагональ: пара сторона+сторона → точный округ
+    diag = {frozenset({"N", "E"}): "NE", frozenset({"N", "W"}): "NW",
+            frozenset({"S", "E"}): "SE", frozenset({"S", "W"}): "SW"}
+    key = frozenset(dirs)
+    if key in diag:
+        code = diag[key]
+        return _okrug_match(CARDINAL[code], f"{code}: округ {CARDINAL[code][0]}")
+    if len(dirs) == 1:
+        d = next(iter(dirs))
+        return _okrug_match(CARDINAL[d], f"сторона света ({', '.join(CARDINAL[d])})")
+    return None
 
 
-def resolve_area(area: str, *, geocoder=geocode_address) -> tuple[str, tuple] | None:
-    """«север»/«юго-запад»/«центр» → bbox-предикат по сторонам света;
-    именованное место («Сколково», «Патриаршие») → геокод в точку + окрестность.
-    None, если геокодер не нашёл место (гео-фильтр просто не применяется)."""
+def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch | None:
+    """Область запроса → AreaMatch (SQL-предикат + цепочка расширения) или None."""
     if not area or not area.strip():
         return None
-    card = _cardinal_predicate(area)
+    card = _cardinal_match(area)
     if card is not None:
         return card
-    query = area if re.search(r"москв", area, re.I) else f"{area}, Москва"
-    coords = geocoder(query)
-    if not coords:
-        return None
-    lon, lat = coords
-    return ("ST_DWithin(geom::geography, "
-            "ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
-            (lon, lat, AREA_RADIUS_M))
+    return None   # ветки named/admin/ring/fallback — Tasks 5–6
