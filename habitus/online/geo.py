@@ -161,4 +161,47 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
     card = _cardinal_match(area)
     if card is not None:
         return card
-    return None   # ветки named/admin/ring/fallback — Tasks 5–6
+    if conn is None:
+        return None
+    t = area.strip().lower()
+
+    # 2. разговорная зона (named_zones по name/aliases) → ST_DWithin
+    row = conn.execute(
+        "SELECT name, lon, lat, radius_m FROM named_zones "
+        "WHERE lower(name)=%s OR %s = ANY(ARRAY(SELECT lower(a) FROM unnest(aliases) a)) LIMIT 1",
+        (t, t)).fetchone()
+    if row:
+        name, lon, lat, radius = row
+        return AreaMatch(
+            "ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
+            (lon, lat, radius), name,
+            [("ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
+              (lon, lat, radius * 2), f"{name} (шире)"), _DROP])
+
+    # 4. кольцо: «внутри садового» / «за мкад»
+    if "садов" in t:
+        rz = conn.execute("SELECT name FROM admin_zones WHERE kind='ring' AND lower(name) LIKE '%садов%' LIMIT 1").fetchone()
+        if rz:
+            return AreaMatch(
+                "ST_Within(geom, (SELECT geom FROM admin_zones WHERE kind='ring' AND name=%s))",
+                (rz[0],), rz[0], [("okrug = %s", ("ЦАО",), "ЦАО"), _DROP])
+    if "мкад" in t and ("за " in t or t.startswith("за")):
+        return _okrug_match(("ЗелАО", "НАО", "ТАО"), "за МКАД")
+
+    # 3. имя района/округа (по admin_zones name/aliases) → колонка
+    zr = conn.execute(
+        "SELECT kind, name, parent FROM admin_zones "
+        "WHERE lower(name)=%s OR %s = ANY(ARRAY(SELECT lower(a) FROM unnest(aliases) a)) "
+        "ORDER BY CASE kind WHEN 'raion' THEN 0 ELSE 1 END LIMIT 1",
+        (t, t)).fetchone()
+    if zr:
+        kind, name, parent = zr
+        if kind == "raion":
+            widen = []
+            if parent:
+                widen.append(("okrug = %s", (parent,), f"округ {parent}"))
+            widen.append(_DROP)
+            return AreaMatch("raion = %s", (name,), name, widen)
+        return AreaMatch("okrug = %s", (name,), name, [_DROP])
+
+    return None
