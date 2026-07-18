@@ -1,0 +1,8 @@
+{"type":"FeatureCollection","features":[
+ {"type":"Feature","properties":{"kind":"okrug","name":"ЦАО"},
+  "geometry":{"type":"Polygon","coordinates":[[[37.55,55.72],[37.68,55.72],[37.68,55.79],[37.55,55.79],[37.55,55.72]]]}},
+ {"type":"Feature","properties":{"kind":"okrug","name":"САО"},
+  "geometry":{"type":"Polygon","coordinates":[[[37.45,55.80],[37.70,55.80],[37.70,55.92],[37.45,55.92],[37.45,55.80]]]}},
+ {"type":"Feature","properties":{"kind":"raion","name":"Хамовники"},
+  "geometry":{"type":"Polygon","coordinates":[[[37.57,55.72],[37.62,55.72],[37.62,55.75],[37.57,55.75],[37.57,55.72]]]}}
+]}

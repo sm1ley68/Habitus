@@ -2,7 +2,8 @@
 __pycache__/
 *.pyc
 .env
-data/
+data/*
+!data/named_zones.seed.json
 .pytest_cache/
 .idea/
 .DS_Store

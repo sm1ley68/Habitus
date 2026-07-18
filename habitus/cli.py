@@ -61,6 +61,10 @@ def main():
     ev.add_argument("--golden", type=Path, default=None)
     evidence = sub.add_parser("import-evidence")
     evidence.add_argument("--geojson", type=Path, required=True)
+    zones = sub.add_parser("import-zones")
+    zones.add_argument("--geojson", type=Path, required=True)
+    zones.add_argument("--named", type=Path,
+                       default=Path("data/named_zones.seed.json"))
     sub.add_parser("import-osm-features")
     windows = sub.add_parser("extract-windows")
     windows.add_argument("--limit", type=int, default=None)
@@ -96,6 +100,15 @@ def main():
             from habitus.geo.evidence import import_geojson_file
             init_db(conn)
             print({"imported": import_geojson_file(args.geojson, conn)})
+        elif args.cmd == "import-zones":
+            from habitus.geo.zones import (backfill_listing_zones,
+                                           import_admin_geojson,
+                                           import_named_seed)
+            init_db(conn)
+            a = import_admin_geojson(args.geojson, conn)
+            n = import_named_seed(args.named, conn) if args.named.exists() else 0
+            b = backfill_listing_zones(conn)
+            print({"admin_zones": a, "named_zones": n, "listings_backfilled": b})
         elif args.cmd == "import-osm-features":
             from habitus.geo.osm_extract import (fetch_urban_features,
                                                   upsert_urban_features)
