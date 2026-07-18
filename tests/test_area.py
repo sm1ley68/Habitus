@@ -87,3 +87,11 @@ def test_inside_sadovoe_uses_ring_polygon():
         conn.commit()
         m = resolve_area("внутри садового", conn)
         assert "ST_Within" in m.sql and "Садовое" in m.label
+
+
+def test_geocode_polygon_fallback():
+    poly = {"type": "Polygon", "coordinates": [[[37.3,55.6],[37.4,55.6],[37.4,55.7],[37.3,55.7],[37.3,55.6]]]}
+    def geo(q, polygon=False): return {"geometry": poly} if polygon else (37.35, 55.65)
+    with _seeded_conn() as conn:
+        m = resolve_area("Сколково", conn, geocoder=geo)
+        assert "ST_Within" in m.sql or "ST_DWithin" in m.sql

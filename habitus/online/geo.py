@@ -204,4 +204,31 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
             return AreaMatch("raion = %s", (name,), name, widen)
         return AreaMatch("okrug = %s", (name,), name, [_DROP])
 
+    # 5. Nominatim-fallback: полигон места, иначе точка+радиус
+    try:
+        poly = geocoder(f"{area}, Москва", polygon=True) if _accepts_polygon(geocoder) else None
+    except TypeError:
+        poly = None
+    if isinstance(poly, dict) and poly.get("geometry"):
+        return AreaMatch(
+            "ST_Within(geom, ST_SetSRID(ST_GeomFromGeoJSON(%s),4326))",
+            (json.dumps(poly["geometry"]),), area,
+            [("ST_DWithin(geom::geography, ST_Centroid(ST_SetSRID(ST_GeomFromGeoJSON(%s),4326))::geography, %s)",
+              (json.dumps(poly["geometry"]), 5000.0), f"{area} (окрестность)"), _DROP])
+    coords = geocoder(f"{area}, Москва")
+    if coords:
+        lon, lat = coords
+        return AreaMatch(
+            "ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
+            (lon, lat, 3000.0), area,
+            [("ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
+              (lon, lat, 6000.0), f"{area} (шире)"), _DROP])
     return None
+
+
+def _accepts_polygon(fn) -> bool:
+    try:
+        import inspect
+        return "polygon" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False

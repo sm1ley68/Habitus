@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from habitus.online.geo import AreaMatch
 from habitus.online.orchestrator import relax, retrieve_with_relaxation
 from habitus.online.retrieval import Candidate
 from habitus.online.schema import GeoConstraint, ParsedQuery, PointConstraint
@@ -116,3 +117,17 @@ def test_custom_point_mode_reaches_provider():
                               mode="driving-car"),
         provider=fake_provider, search_fn=fake_search, min_results=1)
     assert fake_provider.seen_mode == "driving-car"
+
+
+def test_area_auto_widens_when_too_few():
+    seen = []
+    def fake_search(conn, pq, *, geo_sql=None, geo_params=(), **kw):
+        seen.append(geo_sql)
+        return [] if geo_sql and "raion" in geo_sql else [_cand("A"), _cand("B")]
+    am = AreaMatch("raion = %s", ("Хамовники",), "Хамовники",
+                   [("okrug = %s", ("ЦАО",), "округ ЦАО"), ("TRUE", (), "вся Москва")])
+    cands, relaxed, _ = retrieve_with_relaxation(
+        None, ParsedQuery(area="Хамовники"), area_match=am,
+        search_fn=fake_search, min_results=1, max_iters=0)
+    assert len(cands) == 2                       # расширились до округа
+    assert any("ЦАО" in r for r in relaxed)      # пометка расширения

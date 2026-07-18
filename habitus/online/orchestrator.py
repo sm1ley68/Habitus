@@ -1,9 +1,6 @@
 # habitus/online/orchestrator.py — маршрутизация + relaxation loop
-from typing import Sequence
-
 from habitus.config import settings
-from habitus.online.geo import (IsochroneProvider, point_predicate,
-                                 resolve_area)
+from habitus.online.geo import AreaMatch, IsochroneProvider, point_predicate
 from habitus.online.retrieval import Candidate, hybrid_search
 from habitus.online.schema import GeoConstraint, ParsedQuery, PointConstraint
 
@@ -41,35 +38,35 @@ def retrieve_with_relaxation(
         provider: IsochroneProvider | None = None,
         model=None, query_vec=None,
         min_results: int | None = None, max_iters: int | None = None,
-        geocoder=None,
+        area_match: AreaMatch | None = None,
         search_fn=hybrid_search) -> tuple[list[Candidate], list[str], ParsedQuery]:
-    """Маршрутизация: кастомная точка и/или область (сторона города / место) →
-    гео-предикаты, затем retrieval. Мало результатов → ослабляем и повторяем."""
+    """Маршрутизация: кастомная точка (из запроса API) + готовая область
+    (`AreaMatch`, резолвится заранее в pipeline) → гео-предикаты, затем
+    retrieval. Мало результатов → сперва штатный relax (гео/цена/ориентация/
+    шум), затем — если область была задана — авто-расширение по AreaMatch.widen."""
     min_r = min_results if min_results is not None else settings.min_results
     iters = max_iters if max_iters is not None else settings.relaxation_max_iters
 
-    # гео-предикаты: кастомная точка (из запроса API) + область (из NLU).
-    # Оба — жёсткие; комбинируются через AND. Резолвим ОДИН раз до петли
-    # (геокод дорогой; область при relaxation не меняется).
-    preds: list[str] = []
-    params: list = []
+    base_sql, base_params = None, []
     if point is not None:
-        sql, p = point_predicate(point.lon, point.lat, point.minutes,
-                                 provider, point.mode)
-        preds.append(sql); params.extend(p)
-    if pq.area:
-        resolved = (resolve_area(pq.area) if geocoder is None
-                    else resolve_area(pq.area, geocoder=geocoder))
-        if resolved is not None:
-            sql, p = resolved
-            preds.append(sql); params.extend(p)
-    geo_sql: str | None = " AND ".join(f"({s})" for s in preds) if preds else None
-    geo_params: Sequence = params
+        s, p = point_predicate(point.lon, point.lat, point.minutes,
+                               provider, point.mode)
+        base_sql, base_params = s, list(p)
+
+    area_sql = area_match.sql if area_match else None
+    area_params = list(area_match.params) if area_match else []
+    area_steps = list(area_match.widen) if area_match else []
+
+    def geo():
+        parts = ([base_sql] if base_sql else []) + ([area_sql] if area_sql else [])
+        sql = " AND ".join(f"({x})" for x in parts) if parts else None
+        return sql, base_params + area_params
 
     relaxed: list[str] = []
     cur_pq = pq
+    gsql, gpar = geo()
     cands = search_fn(conn, cur_pq, model=model, query_vec=query_vec,
-                      geo_sql=geo_sql, geo_params=geo_params)
+                      geo_sql=gsql, geo_params=gpar)
     for _ in range(iters):
         if len(cands) >= min_r:
             break
@@ -78,6 +75,16 @@ def retrieve_with_relaxation(
             break
         cur_pq, note = step
         relaxed.append(note)
+        gsql, gpar = geo()
         cands = search_fn(conn, cur_pq, model=model, query_vec=query_vec,
-                          geo_sql=geo_sql, geo_params=geo_params)
+                          geo_sql=gsql, geo_params=gpar)
+    # авто-расширение области, если всё ещё мало
+    while len(cands) < min_r and area_steps:
+        wsql, wpar, wlabel = area_steps.pop(0)
+        area_sql = None if wsql == "TRUE" else wsql
+        area_params = [] if wsql == "TRUE" else list(wpar)
+        relaxed.append(wlabel)
+        gsql, gpar = geo()
+        cands = search_fn(conn, cur_pq, model=model, query_vec=query_vec,
+                          geo_sql=gsql, geo_params=gpar)
     return cands, relaxed, cur_pq
