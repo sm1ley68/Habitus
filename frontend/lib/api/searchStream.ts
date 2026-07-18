@@ -63,6 +63,7 @@ export function createSearchClient(): AgentClient {
           let buffer = "";
           let properties: Property[] = [];
           let zoneGeoJSON: GeoZone | null = null;
+          let areaLabel: string | null = null;
           let failed = false;
 
           const handle = (f: SSEFrame) => {
@@ -82,6 +83,7 @@ export function createSearchClient(): AgentClient {
             } else if (f.event === "final_result") {
               properties = (f.data.objects as Property[]) ?? [];
               zoneGeoJSON = (f.data.suggested_areas_geojson as GeoZone) ?? null;
+              areaLabel = (f.data.area_label as string) ?? null;
             } else if (f.event === "error") {
               failed = true;
               handlers.onError?.(
@@ -106,7 +108,7 @@ export function createSearchClient(): AgentClient {
           }
 
           // После error поток уже закрыт как неуспешный — не рапортуем «готово».
-          if (!failed) handlers.onDone({ properties, zoneGeoJSON, chatId: chat.chat_id });
+          if (!failed) handlers.onDone({ properties, zoneGeoJSON, areaLabel, chatId: chat.chat_id });
         } catch (err) {
           if (controller.signal.aborted) return; // отмена пользователем — молча
           handlers.onError?.(

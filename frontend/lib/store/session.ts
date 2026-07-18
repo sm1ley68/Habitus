@@ -18,6 +18,8 @@ interface SessionState {
   /** Слои, уже полученные с бэка. Ключ отсутствует → ещё не загружали. */
   layerData: LayerCollections;
   zoneGeoJSON: GeoZone | null;
+  /** area_label текущего поиска — человекочитаемая зона для чипа над выдачей. */
+  areaLabel: string | null;
   hoveredId: string | null;
   /** chat_id текущего поиска — контекст для паспорта и чата по объекту. */
   chatId: string | null;
@@ -49,6 +51,7 @@ const initial = {
   activeLayers: { communal: false, noise: false, schools: true, bars: false, ecology: false, parks: true } as Record<LayerId, boolean>,
   layerData: {} as LayerCollections,
   zoneGeoJSON: null as GeoZone | null,
+  areaLabel: null as string | null,
   hoveredId: null as string | null,
   chatId: null as string | null,
   errorMessage: null as string | null,
@@ -74,8 +77,8 @@ export const useSession = create<SessionState>((set, get) => ({
       answer: e.token ? st.answer + e.token : st.answer,
     })),
 
-  finish: ({ properties, zoneGeoJSON, chatId }) =>
-    set({ properties, stage: "done", screen: "result", zoneGeoJSON, chatId }),
+  finish: ({ properties, zoneGeoJSON, areaLabel, chatId }) =>
+    set({ properties, stage: "done", screen: "result", zoneGeoJSON, areaLabel, chatId }),
 
   fail: (errorMessage) => set({ stage: "error", errorMessage }),
 

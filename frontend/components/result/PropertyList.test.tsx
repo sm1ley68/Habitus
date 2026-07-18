@@ -5,7 +5,7 @@ import { PROPERTIES } from "@/test/fixtures";
 
 test("renders one card per property with match scores", () => {
   act(() =>
-    useSession.getState().finish({ properties: PROPERTIES, zoneGeoJSON: null, chatId: "c1" }),
+    useSession.getState().finish({ properties: PROPERTIES, zoneGeoJSON: null, areaLabel: null, chatId: "c1" }),
   );
   render(<PropertyList />);
   expect(screen.getByText("ЖК Neva Residence")).toBeInTheDocument();

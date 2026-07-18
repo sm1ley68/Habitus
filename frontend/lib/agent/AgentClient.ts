@@ -4,6 +4,8 @@ export interface RunResult {
   properties: Property[];
   /** suggested_areas_geojson из final_result; null — бэк зону не прислал. */
   zoneGeoJSON: GeoZone | null;
+  /** area_label из final_result — человекочитаемая зона («центр (ЦАО)»); null — зоны нет. */
+  areaLabel: string | null;
   /** Нужен паспорту объекта и чату по объекту как контекст поиска. */
   chatId: string;
 }

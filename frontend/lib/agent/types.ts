@@ -33,7 +33,10 @@ export interface GeoZone {
   features: Array<{
     type: "Feature";
     properties: Record<string, unknown>;
-    geometry: { type: "Polygon"; coordinates: number[][][] };
+    geometry: {
+      type: "Polygon" | "MultiPolygon";
+      coordinates: number[][][] | number[][][][];
+    };
   }>;
 }
 

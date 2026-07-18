@@ -27,7 +27,7 @@ test("applyEvent advances stage and accumulates streamed tokens", () => {
 
 test("finish stores properties and switches to result screen", () => {
   useSession.getState().finish({
-    properties: [{ name: "X" } as never], zoneGeoJSON: null, chatId: "c1",
+    properties: [{ name: "X" } as never], zoneGeoJSON: null, areaLabel: null, chatId: "c1",
   });
   expect(useSession.getState().properties).toHaveLength(1);
   expect(useSession.getState().screen).toBe("result");
@@ -35,7 +35,7 @@ test("finish stores properties and switches to result screen", () => {
 });
 
 test("finish stores the chat id for the passport seam", () => {
-  useSession.getState().finish({ properties: [], zoneGeoJSON: null, chatId: "c-42" });
+  useSession.getState().finish({ properties: [], zoneGeoJSON: null, areaLabel: null, chatId: "c-42" });
   expect(useSession.getState().chatId).toBe("c-42");
 });
 
@@ -56,13 +56,13 @@ test("reset cancels an in-flight run", () => {
 
 it("finish() attaches the search zone the backend sent", () => {
   useSession.getState().reset();
-  useSession.getState().finish({ properties: [], zoneGeoJSON: ZONE_GEOJSON, chatId: "c1" });
+  useSession.getState().finish({ properties: [], zoneGeoJSON: ZONE_GEOJSON, areaLabel: null, chatId: "c1" });
   expect(useSession.getState().zoneGeoJSON).toBe(ZONE_GEOJSON);
 });
 
 it("finish() leaves the zone empty when the backend sent none", () => {
   useSession.getState().reset();
-  useSession.getState().finish({ properties: [], zoneGeoJSON: null, chatId: "c1" });
+  useSession.getState().finish({ properties: [], zoneGeoJSON: null, areaLabel: null, chatId: "c1" });
   expect(useSession.getState().zoneGeoJSON).toBeNull();
 });
 it("hovered property id round-trips", () => {
