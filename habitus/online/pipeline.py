@@ -71,6 +71,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
                 area_match = resolve_area(pq.area, conn)
         except Exception as exc:
             log.warning("резолв области не удался: %s", exc, exc_info=True)
+    area_label = area_match.label if area_match else None
 
     # 3. retrieval + relaxation
     with trace.span("retrieval"):
@@ -107,6 +108,16 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     freshness = max((c.updated_at for c in top), default=None)
     data_freshness = (f"данные актуальны на {freshness:%Y-%m-%d %H:%M}"
                       if freshness else "нет данных")
+
+    area_geo = None
+    if area_match is not None:
+        try:
+            from habitus.online.geo import area_geojson
+            area_geo = area_geojson(area_match, conn)
+        except Exception as exc:
+            log.warning("сбор геометрии зоны не удался: %s", exc, exc_info=True)
+
     return SearchResponse(results=results, explanation=explanation, parsed=pq,
                           relaxed=relaxed, data_freshness=data_freshness,
-                          degraded=degraded)
+                          degraded=degraded, area_label=area_label,
+                          area_geojson=area_geo)

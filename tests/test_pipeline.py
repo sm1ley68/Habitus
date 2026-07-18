@@ -125,6 +125,26 @@ def test_area_center_filters(conn):
     assert {r.external_id for r in resp.results} == {"A"}
 
 
+def test_area_label_and_geojson_surface(conn):
+    with conn.cursor() as cur:
+        cur.execute("UPDATE listings SET okrug='ЦАО' WHERE external_id='A';")
+        cur.execute("UPDATE listings SET okrug='САО' WHERE external_id='B';")
+    conn.commit()
+    llm = FakeLLM([LLMResponse(content=None, tool_arguments=json.dumps(
+        {"rooms": [2], "area": "центр", "semantic_text": "тихо"})), _explain_resp()])
+    resp = run_search("двушка в центре", conn, llm=llm, model=FakeModel(),
+                      reranker=FakeReranker(), min_results=1)
+    assert resp.area_label and "ЦАО" in resp.area_label
+    # admin_zones в fixture пуст → геометрия не собирается, но контракт-поле присутствует
+    assert resp.area_geojson is None or resp.area_geojson["type"] == "FeatureCollection"
+
+
+def test_no_area_no_label(conn):
+    llm = FakeLLM([_parse_resp(), _explain_resp()])   # без area
+    resp = run_search("тихая двушка", conn, llm=llm, model=FakeModel(), reranker=FakeReranker())
+    assert resp.area_label is None and resp.area_geojson is None
+
+
 def test_parse_cache_hits_on_second_call(conn):
     llm = FakeLLM([_parse_resp(), _explain_resp(), _explain_resp()])
     run_search("тихая двушка", conn, llm=llm, model=FakeModel(),

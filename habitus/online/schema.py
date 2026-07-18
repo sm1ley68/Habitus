@@ -90,6 +90,8 @@ class SearchResponse(BaseModel):
     relaxed: list[str] = []      # какие ограничения ослаблены relaxation-петлёй
     data_freshness: str          # «данные актуальны на …» (max updated_at)
     degraded: list[str] = []     # какие слои отвалились: "nlu"/"vector"/"reranker"/"llm"
+    area_label: str | None = None    # человекочитаемая зона: «центр (ЦАО)», «Хамовники»
+    area_geojson: dict | None = None  # FeatureCollection границы зоны для карты
 
 
 class PointConstraint(BaseModel):
