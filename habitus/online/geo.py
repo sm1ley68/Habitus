@@ -106,6 +106,8 @@ class AreaMatch:
     params: tuple
     label: str
     widen: list  # list[tuple[str, tuple, str]] — шире→шире, финал ("TRUE", (), «вся Москва»)
+    geom_sql: str = ""       # скалярное SQL-выражение геометрии зоны (для отрисовки)
+    geom_params: tuple = ()  # bind-параметры к geom_sql
 
 
 CARDINAL: dict[str, tuple[str, ...]] = {
@@ -118,7 +120,10 @@ _DROP = ("TRUE", (), "по всей Москве")
 
 
 def _okrug_match(okrugs: tuple[str, ...], label: str) -> AreaMatch:
-    return AreaMatch("okrug = ANY(%s)", (list(okrugs),), label, [_DROP])
+    return AreaMatch(
+        "okrug = ANY(%s)", (list(okrugs),), label, [_DROP],
+        geom_sql="(SELECT ST_Union(geom) FROM admin_zones WHERE kind='okrug' AND name = ANY(%s))",
+        geom_params=(list(okrugs),))
 
 
 def _cardinal_dirs(area: str) -> set[str] | None:
@@ -176,7 +181,9 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
             "ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
             (lon, lat, radius), name,
             [("ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
-              (lon, lat, radius * 2), f"{name} (шире)"), _DROP])
+              (lon, lat, radius * 2), f"{name} (шире)"), _DROP],
+            geom_sql="ST_Buffer(ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)::geometry",
+            geom_params=(lon, lat, radius))
 
     # 4. кольцо: «внутри садового» / «за мкад»
     if "садов" in t:
@@ -184,7 +191,9 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
         if rz:
             return AreaMatch(
                 "ST_Within(geom, (SELECT geom FROM admin_zones WHERE kind='ring' AND name=%s))",
-                (rz[0],), rz[0], [("okrug = %s", ("ЦАО",), "ЦАО"), _DROP])
+                (rz[0],), rz[0], [("okrug = %s", ("ЦАО",), "ЦАО"), _DROP],
+                geom_sql="(SELECT geom FROM admin_zones WHERE kind='ring' AND name=%s)",
+                geom_params=(rz[0],))
     if "мкад" in t and ("за " in t or t.startswith("за")):
         return _okrug_match(("ЗелАО", "НАО", "ТАО"), "за МКАД")
 
@@ -201,8 +210,12 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
             if parent:
                 widen.append(("okrug = %s", (parent,), f"округ {parent}"))
             widen.append(_DROP)
-            return AreaMatch("raion = %s", (name,), name, widen)
-        return AreaMatch("okrug = %s", (name,), name, [_DROP])
+            return AreaMatch("raion = %s", (name,), name, widen,
+                             geom_sql="(SELECT geom FROM admin_zones WHERE kind='raion' AND name=%s)",
+                             geom_params=(name,))
+        return AreaMatch("okrug = %s", (name,), name, [_DROP],
+                         geom_sql="(SELECT geom FROM admin_zones WHERE kind='okrug' AND name=%s)",
+                         geom_params=(name,))
 
     # 5. Nominatim-fallback: полигон места, иначе точка+радиус
     try:
@@ -214,7 +227,9 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
             "ST_Within(geom, ST_SetSRID(ST_GeomFromGeoJSON(%s),4326))",
             (json.dumps(poly["geometry"]),), area,
             [("ST_DWithin(geom::geography, ST_Centroid(ST_SetSRID(ST_GeomFromGeoJSON(%s),4326))::geography, %s)",
-              (json.dumps(poly["geometry"]), 5000.0), f"{area} (окрестность)"), _DROP])
+              (json.dumps(poly["geometry"]), 5000.0), f"{area} (окрестность)"), _DROP],
+            geom_sql="ST_SetSRID(ST_GeomFromGeoJSON(%s),4326)",
+            geom_params=(json.dumps(poly["geometry"]),))
     coords = geocoder(f"{area}, Москва")
     if coords:
         lon, lat = coords
@@ -222,8 +237,26 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
             "ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
             (lon, lat, 3000.0), area,
             [("ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)",
-              (lon, lat, 6000.0), f"{area} (шире)"), _DROP])
+              (lon, lat, 6000.0), f"{area} (шире)"), _DROP],
+            geom_sql="ST_Buffer(ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)::geometry",
+            geom_params=(lon, lat, 3000.0))
     return None
+
+
+def area_geojson(am: "AreaMatch | None", conn) -> dict | None:
+    """FeatureCollection границы зоны для карты (упрощённый) или None.
+    None, если у зоны нет геометрии (geom_sql пуст) или полигон не собрался
+    (зоны не импортированы → ST_Union NULL) — чип уцелеет, карта откатится к hull."""
+    if am is None or not am.geom_sql or conn is None:
+        return None
+    row = conn.execute(
+        f"SELECT ST_AsGeoJSON(ST_SimplifyPreserveTopology({am.geom_sql}, 0.0005), 5)",
+        am.geom_params).fetchone()
+    if not row or not row[0]:
+        return None
+    return {"type": "FeatureCollection", "features": [{
+        "type": "Feature", "properties": {"label": am.label},
+        "geometry": json.loads(row[0])}]}
 
 
 def _accepts_polygon(fn) -> bool:

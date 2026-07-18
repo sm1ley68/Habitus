@@ -95,3 +95,37 @@ def test_geocode_polygon_fallback():
     with _seeded_conn() as conn:
         m = resolve_area("Сколково", conn, geocoder=geo)
         assert "ST_Within" in m.sql or "ST_DWithin" in m.sql
+
+
+from habitus.online.geo import area_geojson
+
+
+def test_cardinal_match_sets_geom_sql():
+    m = resolve_area("центр")
+    assert "ST_Union" in m.geom_sql and m.geom_params == (["ЦАО"],)
+
+
+def test_area_geojson_okrug_returns_featurecollection():
+    with _seeded_conn() as conn:
+        m = resolve_area("центр")            # округ ЦАО (кардинал)
+        fc = area_geojson(m, conn)
+        assert fc["type"] == "FeatureCollection"
+        geom = fc["features"][0]["geometry"]
+        assert geom["type"] in ("Polygon", "MultiPolygon")
+        assert fc["features"][0]["properties"]["label"] == m.label
+
+
+def test_area_geojson_raion_and_named(_seeded=None):
+    with _seeded_conn() as conn:
+        assert area_geojson(resolve_area("Хамовники", conn), conn)["type"] == "FeatureCollection"
+        assert area_geojson(resolve_area("Патрики", conn), conn)["type"] == "FeatureCollection"
+
+
+def test_area_geojson_none_when_no_geom_or_empty_zones():
+    with _seeded_conn() as conn:
+        assert area_geojson(None, conn) is None
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE admin_zones;")
+        conn.commit()
+        # округа больше нет в БД → ST_Union NULL → None (чип уцелеет, карта откатится)
+        assert area_geojson(resolve_area("центр"), conn) is None
