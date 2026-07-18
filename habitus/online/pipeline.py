@@ -25,7 +25,8 @@ def to_result_item(c: Candidate) -> ResultItem:
 def run_search(query: str, conn, *, llm: LLMClient | None = None,
                point: PointConstraint | None = None,
                provider: IsochroneProvider | None = None,
-               model=None, reranker=None) -> SearchResponse:
+               model=None, reranker=None,
+               min_results: int | None = None) -> SearchResponse:
     degraded: list[str] = []
 
     # 1. NLU (кэш по хэшу текста; отказ → весь запрос в семантику)
@@ -59,11 +60,24 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
                 degraded.append("vector")
                 search_pq = pq.model_copy(update={"semantic_text": ""})
 
+    # 2.5 резолв области поиска (район/сторона города/именованное место) →
+    #     готовый AreaMatch для оркестратора; отказ резолвера деградирует
+    #     без 500 — retrieval просто идёт без гео-фильтра по области.
+    from habitus.online.geo import resolve_area
+    area_match = None
+    if pq.area:
+        try:
+            with trace.span("resolve_area"):
+                area_match = resolve_area(pq.area, conn)
+        except Exception as exc:
+            log.warning("резолв области не удался: %s", exc, exc_info=True)
+
     # 3. retrieval + relaxation
     with trace.span("retrieval"):
         cands, relaxed, _ = retrieve_with_relaxation(
             conn, search_pq, point=point, provider=provider,
-            model=model, query_vec=query_vec)
+            model=model, query_vec=query_vec, area_match=area_match,
+            min_results=min_results)
 
     # 4. rerank (отказ → порядок RRF), затем proximity-бленд точной близости
     #    поверх скоров: реранк по всему пулу, бленд, срез top-N (кросс-энкодер

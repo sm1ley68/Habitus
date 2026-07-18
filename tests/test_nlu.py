@@ -63,3 +63,10 @@ def test_system_prompt_covers_cross_language():
     from habitus.online.nlu import SYSTEM_PROMPT
     assert "английск" in SYSTEM_PROMPT.lower()   # few-shot кросс-языка присутствует
     assert "semantic_text" in SYSTEM_PROMPT
+
+
+def test_system_prompt_covers_district_and_named_zone_examples():
+    from habitus.online.nlu import SYSTEM_PROMPT
+    # примеры района и именованного места ориентируют модель на area, а не semantic_text
+    assert "Хамовники" in SYSTEM_PROMPT
+    assert "Патрики" in SYSTEM_PROMPT

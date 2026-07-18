@@ -111,6 +111,20 @@ def test_broken_reranker_keeps_rrf_order(conn):
     assert "reranker" in resp.degraded and resp.results
 
 
+def test_area_center_filters(conn):
+    # min_results=1: изолируем проверку строгого гео-фильтра от авто-расширения
+    # (settings.min_results=5 иначе снял бы область — widen тестируется отдельно).
+    with conn.cursor() as cur:
+        cur.execute("UPDATE listings SET okrug='ЦАО' WHERE external_id='A';")
+        cur.execute("UPDATE listings SET okrug='САО' WHERE external_id='B';")
+    conn.commit()
+    llm = FakeLLM([LLMResponse(content=None, tool_arguments=json.dumps(
+        {"rooms": [2], "area": "центр", "semantic_text": "тихо"})), _explain_resp()])
+    resp = run_search("двушка в центре", conn, llm=llm, model=FakeModel(),
+                      reranker=FakeReranker(), min_results=1)
+    assert {r.external_id for r in resp.results} == {"A"}
+
+
 def test_parse_cache_hits_on_second_call(conn):
     llm = FakeLLM([_parse_resp(), _explain_resp(), _explain_resp()])
     run_search("тихая двушка", conn, llm=llm, model=FakeModel(),
