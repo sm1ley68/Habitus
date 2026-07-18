@@ -110,3 +110,33 @@ CREATE TABLE IF NOT EXISTS raw_listings (
     description   TEXT,
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Полигоны админ-деления и колец Москвы (импорт из OSM, разово).
+CREATE TABLE IF NOT EXISTS admin_zones (
+    id         bigserial PRIMARY KEY,
+    kind       text NOT NULL,                 -- 'okrug' | 'raion' | 'ring'
+    name       text NOT NULL,                 -- 'ЦАО' | 'Хамовники' | 'Садовое кольцо'
+    parent     text,                          -- для raion — имя округа; иначе NULL
+    aliases    text[] NOT NULL DEFAULT '{}',
+    geom       geometry(MultiPolygon, 4326) NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS admin_zones_geom_gix ON admin_zones USING GIST (geom);
+CREATE UNIQUE INDEX IF NOT EXISTS admin_zones_kind_name ON admin_zones (kind, lower(name));
+
+-- Курируемый словарь разговорных/брендовых зон (Патрики, Золотая миля…).
+CREATE TABLE IF NOT EXISTS named_zones (
+    id       bigserial PRIMARY KEY,
+    name     text NOT NULL,
+    aliases  text[] NOT NULL DEFAULT '{}',
+    lon      double precision NOT NULL,
+    lat      double precision NOT NULL,
+    radius_m double precision NOT NULL DEFAULT 700
+);
+CREATE UNIQUE INDEX IF NOT EXISTS named_zones_name ON named_zones (lower(name));
+
+-- Предвычисленная принадлежность объявления округу/району.
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS okrug text;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS raion text;
+CREATE INDEX IF NOT EXISTS listings_okrug_ix ON listings (okrug);
+CREATE INDEX IF NOT EXISTS listings_raion_ix ON listings (raion);
