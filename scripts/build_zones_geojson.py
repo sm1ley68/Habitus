@@ -9,6 +9,7 @@
 """
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 
@@ -18,8 +19,19 @@ import requests
 from habitus.config import settings
 from habitus.geo.osm_extract import HEADERS, OVERPASS_URL, RETRY_STATUS
 
-# Москва как area: OSM relation 102269 → area id 3600102269.
-AREA = "area(3600102269)"
+# Москва как area-фильтр Overpass: OSM relation 102269 → area id 3600102269.
+# Синтаксис (area:ID) — именно фильтр набора, не area(ID).
+AREA = "(area:3600102269)"
+
+
+def _zone_name(tags: dict, kind: str) -> str | None:
+    """Каноничное имя зоны под резолвер/NLU.
+    Округ → короткий код из ref («ЦАО», «САО»); NLU и CARDINAL оперируют ими.
+    Район → OSM name без слова «район» («район Хамовники» → «Хамовники»)."""
+    if kind == "okrug":
+        return tags.get("ref") or tags.get("name")
+    name = re.sub(r"^\s*район\s+|\s+район\s*$", "", tags.get("name") or "").strip()
+    return name or None
 
 
 def _overpass(query: str, retries: int = 4, backoff: float = 5.0) -> dict:
@@ -39,22 +51,22 @@ def _overpass(query: str, retries: int = 4, backoff: float = 5.0) -> dict:
     raise RuntimeError(f"Overpass не ответил: {last}")
 
 
-def _fetch(level: int) -> list[dict]:
+def _fetch(level: int, kind: str) -> list[dict]:
     """Список relation'ов заданного admin_level с их ways (out geom)."""
     payload = _overpass(
         f'relation["boundary"="administrative"]["admin_level"="{level}"]{AREA};'
-        f'out tags; way(r);out geom;')
+        f'out body; way(r);out geom;')
     rels, ways = {}, {}
-    cur_rel = None
     for el in payload.get("elements", []):
         if el["type"] == "relation":
-            rels[el["id"]] = {"name": (el.get("tags") or {}).get("name"), "members": el.get("members", [])}
+            rels[el["id"]] = {"name": _zone_name(el.get("tags") or {}, kind),
+                              "members": el.get("members", [])}
     # второй проход: ways по id
     for el in payload.get("elements", []):
         if el["type"] == "way" and el.get("geometry"):
             ways[el["id"]] = [[p["lon"], p["lat"]] for p in el["geometry"]]
     out = []
-    for rid, rel in rels.items():
+    for rel in rels.values():
         outer = [ways[m["ref"]] for m in rel["members"]
                  if m.get("type") == "way" and m.get("role") in ("outer", "") and m["ref"] in ways]
         if rel["name"] and outer:
@@ -79,7 +91,7 @@ def main():
     feats = []
     with psycopg.connect(settings.db_dsn) as conn:
         for level, kind in ((5, "okrug"), (8, "raion")):
-            rels = _fetch(level)
+            rels = _fetch(level, kind)
             print(f"admin_level={level}: {len(rels)} relation'ов")
             for rel in rels:
                 geom = _assemble(conn, rel["ways"])
