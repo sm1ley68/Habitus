@@ -71,6 +71,8 @@ type SearchResponse struct {
 	Relaxed       []string     `json:"relaxed"`
 	DataFreshness string       `json:"data_freshness"`
 	Degraded      []string     `json:"degraded"`
+	AreaLabel     string       `json:"area_label"`
+	AreaGeojson   any          `json:"area_geojson"`
 }
 
 type PointConstraint struct {

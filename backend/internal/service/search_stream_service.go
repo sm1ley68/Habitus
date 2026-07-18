@@ -45,6 +45,15 @@ type FinalResultEvent struct {
 	SuggestedAreasGeoJSON any                 `json:"suggested_areas_geojson"`
 	Objects               []FinalResultObject `json:"objects"`
 	DataFreshness         string              `json:"data_freshness"`
+	AreaLabel             string              `json:"area_label"`
+}
+
+// pickSuggestedAreas: реальная граница зоны (из ML) заменяет convex-hull результатов.
+func pickSuggestedAreas(hull, zone any) any {
+	if zone != nil {
+		return zone
+	}
+	return hull
 }
 
 type SearchStreamService struct {
@@ -348,7 +357,7 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 		p := [2]float64{pointConstraint.Lon, pointConstraint.Lat}
 		customPoint = &p
 	}
-	areas := BuildSuggestedAreas(coords, customPoint)
+	suggested := pickSuggestedAreas(BuildSuggestedAreas(coords, customPoint), resp.AreaGeojson)
 
 	objectIDs := make([]string, len(objects))
 	for i, o := range objects {
@@ -356,9 +365,10 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 	}
 
 	return FinalResultEvent{
-		SuggestedAreasGeoJSON: areas,
+		SuggestedAreasGeoJSON: suggested,
 		Objects:               objects,
 		DataFreshness:         resp.DataFreshness,
+		AreaLabel:             resp.AreaLabel,
 	}, objectIDs
 }
 
