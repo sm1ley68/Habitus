@@ -109,7 +109,7 @@ export default function MapCanvas() {
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
           "line-color": ACCENT,
-          "line-width": 2,
+          "line-width": 2.5,
           "line-blur": 0.4,
           "line-opacity": 0,
           "line-opacity-transition": { duration: revealMs, delay: reduced ? 0 : 260 },
@@ -136,7 +136,7 @@ export default function MapCanvas() {
     );
 
     const reveal = () => {
-      map.setPaintProperty("zone-fill", "fill-opacity", 0.12);
+      map.setPaintProperty("zone-fill", "fill-opacity", 0.18);
       map.setPaintProperty("zone-line", "line-opacity", 1);
     };
 
@@ -149,8 +149,8 @@ export default function MapCanvas() {
     map.fitBounds(bounds, {
       padding: { top: 96, bottom: 96, left: 96, right: 96 },
       duration: DUR.cinematic * 1000 + 500, // ~1.7s filmic settle
-      pitch: 38,          // slight tilt gives the canvas depth
-      bearing: -6,        // matches the initial framing
+      pitch: 0,           // top-down: зона читается как явная подсвеченная область
+      bearing: 0,         // север сверху — чистое обрамление найденной зоны
       easing: easeOutExpo,
     });
     // Uncover the zone only once the camera has come to rest.
