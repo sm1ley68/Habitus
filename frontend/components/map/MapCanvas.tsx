@@ -119,11 +119,20 @@ export default function MapCanvas() {
       (map.getSource("zone") as maplibregl.GeoJSONSource).setData(zone as unknown as GeoJSON.FeatureCollection);
     }
 
-    // Fit the camera to the whole zone ring.
-    const coords = zone.features[0].geometry.coordinates[0] as [number, number][];
-    const bounds = coords.reduce(
+    // Fit the camera to the whole zone. Robust to Polygon AND MultiPolygon
+    // (okrug unions come back as MultiPolygon): flatten every [lng,lat] position.
+    const positions: [number, number][] = [];
+    const collect = (node: unknown): void => {
+      if (Array.isArray(node) && typeof node[0] === "number") {
+        positions.push(node as [number, number]);
+      } else if (Array.isArray(node)) {
+        node.forEach(collect);
+      }
+    };
+    collect(zone.features[0].geometry.coordinates);
+    const bounds = positions.reduce(
       (b, c) => b.extend(c),
-      new maplibregl.LngLatBounds(coords[0], coords[0]),
+      new maplibregl.LngLatBounds(positions[0], positions[0]),
     );
 
     const reveal = () => {
