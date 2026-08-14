@@ -50,3 +50,7 @@ secondary или отсутствует. Синтетический ноль в�
 - Python: `uv run pytest`
 - Go: `cd backend && go test ./...`
 - Frontend: `cd frontend && npm test`
+
+Python-тесты идут в отдельную БД (`<рабочая>_test`) — `tests/conftest.py` подменяет
+DSN и создаёт базу сам. Рабочую БД тесты не трогают: часть из них делает
+`TRUNCATE`/`DROP`. Без поднятого Postgres тесты с БД скипаются, а не падают.

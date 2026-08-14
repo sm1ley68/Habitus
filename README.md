@@ -274,13 +274,14 @@ cd backend && go test ./...    # тесты Go
 cd frontend && npm test        # тесты фронта
 ```
 
-> ⚠️ **Не гоняйте полный `pytest` на наполненной dev-БД.** Часть тестов делает
-> `TRUNCATE`/`DROP` таблиц (`test_pipeline`, `test_eval`, `test_retrieval_db`,
-> `test_cli_smoke`) и затрёт данные. Для тестов используйте отдельную БД:
-> ```bash
-> psql -h localhost -p 5544 -U habitus -d habitus -c "CREATE DATABASE habitus_test;"
-> DB_DSN="postgresql://habitus:habitus@localhost:5544/habitus_test" uv run pytest
-> ```
+**Тесты не трогают рабочую БД.** `tests/conftest.py` подменяет DSN на отдельную
+базу (имя рабочей + суффикс `_test`) и создаёт её при первом прогоне — это важно,
+потому что часть тестов делает `TRUNCATE`/`DROP` таблиц. Переопределить можно
+через `HABITUS_TEST_DSN`; указать там рабочую базу conftest не даст.
+
+Postgres не поднят — тесты, которым нужна БД, скипаются, остальные идут
+как обычно (`121 passed, 50 skipped`). Полный прогон с БД: `docker compose up -d db`,
+затем `uv run pytest`.
 
 ---
 
