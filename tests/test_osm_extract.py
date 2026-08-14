@@ -2,7 +2,7 @@ import psycopg
 import requests
 from habitus.config import settings
 from habitus.db.init_db import init_db
-from habitus.geo.osm_extract import (HEADERS, fetch_kind, parse_overpass,
+from habitus.geo.osm_extract import (HEADERS, OVERPASS_QUERIES, fetch_kind, parse_overpass,
                                      parse_urban_features, upsert_poi)
 
 SAMPLE = {"elements": [
@@ -103,3 +103,25 @@ def test_upsert_poi_idempotent():
             cur.execute("SELECT count(*), count(geom) FROM poi WHERE kind='bar';")
             total, with_geom = cur.fetchone()
         assert total == 2 and with_geom == 2
+
+
+def test_school_query_covers_polygons():
+    # Школьные здания в OSM — это way/relation, а не node. Для парков это уже
+    # учтено; из-за node-only запроса в базе оказалось 173 школы вместо ~1500.
+    q = OVERPASS_QUERIES["school"]
+    assert 'way["amenity"="school"]' in q
+    assert 'relation["amenity"="school"]' in q
+    assert q.startswith("(") and q.endswith(");")
+
+
+def test_upsert_poi_sets_city():
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE poi;")
+        conn.commit()
+        upsert_poi([{"osm_id": 1, "kind": "school", "name": "Школа",
+                     "lat": 55.75, "lon": 37.61}], conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT city FROM poi WHERE osm_id=1;")
+            assert cur.fetchone()[0] == "msk"

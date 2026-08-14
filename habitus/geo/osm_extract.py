@@ -17,7 +17,11 @@ HEADERS = {"User-Agent": "Habitus/1.0 (real-estate research)"}
 RETRY_STATUS = {429, 502, 503, 504}
 
 OVERPASS_QUERIES = {
-    "school":     f'node["amenity"="school"]{MSK_AREA};',
+    # Школьные здания в OSM — way/relation, а не node: node-only запрос давал
+    # 173 школы на Москву вместо ~1500, и walk_min_school врал.
+    "school":     f'(node["amenity"="school"]{MSK_AREA};'
+                  f'way["amenity"="school"]{MSK_AREA};'
+                  f'relation["amenity"="school"]{MSK_AREA};);',
     "bar":        f'node["amenity"~"bar|pub"]{MSK_AREA};',
     "alcohol":    f'node["shop"="alcohol"]{MSK_AREA};',
     # парки в OSM — полигоны (way/relation), а не точки; берём и их центроид.
@@ -128,16 +132,17 @@ def fetch_urban_features(http_post=requests.post, retries: int = 4,
         time.sleep(backoff * (attempt + 1))
     raise RuntimeError(f"Overpass urban features failed after {retries} attempts: {last}")
 
-def upsert_poi(rows: list[dict], conn: psycopg.Connection) -> int:
+def upsert_poi(rows: list[dict], conn: psycopg.Connection, city: str = "msk") -> int:
     sql = """
-        INSERT INTO poi (osm_id, kind, name, geom)
+        INSERT INTO poi (osm_id, kind, name, geom, city)
         VALUES (%(osm_id)s, %(kind)s, %(name)s,
-                ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326))
+                ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326), %(city)s)
         ON CONFLICT (osm_id, kind) DO UPDATE SET
-            name=EXCLUDED.name, geom=EXCLUDED.geom, updated_at=now();
+            name=EXCLUDED.name, geom=EXCLUDED.geom, city=EXCLUDED.city,
+            updated_at=now();
     """
     with conn.cursor() as cur:
-        cur.executemany(sql, rows)
+        cur.executemany(sql, [{**r, "city": city} for r in rows])
     conn.commit()
     return len(rows)
 
