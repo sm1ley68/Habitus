@@ -1,6 +1,7 @@
 # habitus/clean/normalize.py
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Json
 
 # грубый bbox Москвы (в пределах МКАД + Новая Москва небольшим запасом)
 MSK_BBOX = (37.30, 55.48, 37.95, 55.95)  # lon_min, lat_min, lon_max, lat_max
@@ -20,22 +21,47 @@ def is_valid(row: dict) -> bool:
         return False
     return True
 
+def pick_walk_metro(entries: list[dict]) -> tuple[str | None, float | None]:
+    """Ближайшая ПЕШАЯ станция из нормализованного списка source_extra['metro'].
+
+    Записи с mode='transport' игнорируются: это время на транспорте, а колонка
+    называется walk_min_metro. Нет пеших записей → (None, None), и дальше
+    сработает OSM-фолбэк в enrich.
+    """
+    walk = [e for e in entries or []
+            if e.get("mode") == "walk" and e.get("minutes") is not None]
+    if not walk:
+        return None, None
+    best = min(walk, key=lambda e: e["minutes"])
+    return best.get("name") or None, float(best["minutes"])
+
 def promote_to_listings(conn: psycopg.Connection) -> int:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT * FROM raw_listings;")
         raws = cur.fetchall()
     valid = [r for r in raws if is_valid(r)]
+    for r in valid:
+        station, minutes = pick_walk_metro((r.get("source_extra") or {}).get("metro"))
+        r["metro_station"], r["walk_min_metro_src"] = station, minutes
+        r["source_extra"] = Json(r.get("source_extra") or {})
     sql = """
         INSERT INTO listings
           (external_id, source, price, area, kitchen_area, rooms, level, levels,
-           building_type, object_type, geom, description)
+           building_type, object_type, geom, description,
+           city, address, source_url, source_extra, metro_station, walk_min_metro_src)
         VALUES
           (%(external_id)s, %(source)s, %(price)s, %(area)s, %(kitchen_area)s,
            %(rooms)s, %(level)s, %(levels)s, %(building_type)s, %(object_type)s,
-           ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326), %(description)s)
+           ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326), %(description)s,
+           %(city)s, %(address)s, %(source_url)s, %(source_extra)s,
+           %(metro_station)s, %(walk_min_metro_src)s)
         ON CONFLICT (external_id) DO UPDATE SET
            price=EXCLUDED.price, area=EXCLUDED.area, geom=EXCLUDED.geom,
-           description=EXCLUDED.description, is_active=true, updated_at=now();
+           description=EXCLUDED.description, city=EXCLUDED.city,
+           address=EXCLUDED.address, source_url=EXCLUDED.source_url,
+           source_extra=EXCLUDED.source_extra, metro_station=EXCLUDED.metro_station,
+           walk_min_metro_src=EXCLUDED.walk_min_metro_src,
+           is_active=true, updated_at=now();
     """
     with conn.cursor() as cur:
         cur.executemany(sql, valid)

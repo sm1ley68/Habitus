@@ -1,9 +1,10 @@
 # tests/test_normalize.py
+import json
 import psycopg
 from habitus.config import settings
 from habitus.db.init_db import init_db
 from habitus.ingest.kaggle_loader import parse_csv, load_to_raw
-from habitus.clean.normalize import is_valid, promote_to_listings
+from habitus.clean.normalize import is_valid, promote_to_listings, pick_walk_metro
 from pathlib import Path
 
 FIX = Path(__file__).parent / "fixtures" / "sample_russia_realestate.csv"
@@ -47,3 +48,42 @@ def test_promote_sets_geom_and_is_idempotent():
             total, with_geom = cur.fetchone()
         assert n1 == 2
         assert total == 2 and with_geom == 2
+
+
+def test_pick_walk_metro_takes_nearest_walk_entry():
+    entries = [
+        {"name": "Шаболовская", "minutes": 3, "mode": "transport"},
+        {"name": "Ленинский проспект", "minutes": 7, "mode": "walk"},
+        {"name": "Площадь Гагарина", "minutes": 10, "mode": "walk"},
+    ]
+    # 3 минуты — это автобусом, колонка называется walk_min: берём 7
+    assert pick_walk_metro(entries) == ("Ленинский проспект", 7.0)
+
+
+def test_pick_walk_metro_without_walk_entries():
+    assert pick_walk_metro([{"name": "X", "minutes": 4, "mode": "transport"}]) == (None, None)
+    assert pick_walk_metro([]) == (None, None)
+
+
+def test_promote_carries_source_fields_into_listings():
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE raw_listings, listings;")
+            cur.execute("""
+                INSERT INTO raw_listings (external_id, source, price, area, rooms,
+                                          lat, lon, city, address, source_url, source_extra)
+                VALUES ('cian_1','cian',20000000,55,2,55.71,37.59,'msk',
+                        'Москва, 2-й Донской проезд','https://cian.ru/1',%s);""",
+                        (json.dumps({"metro": [
+                            {"name": "Ленинский проспект", "minutes": 7, "mode": "walk"}],
+                            "zhk": "SHIFT"}),))
+        conn.commit()
+        promote_to_listings(conn)
+        with conn.cursor() as cur:
+            cur.execute("""SELECT city, address, source_url, metro_station,
+                                  walk_min_metro_src, source_extra->>'zhk'
+                           FROM listings WHERE external_id='cian_1';""")
+            row = cur.fetchone()
+    assert row == ("msk", "Москва, 2-й Донской проезд", "https://cian.ru/1",
+                   "Ленинский проспект", 7.0, "SHIFT")
