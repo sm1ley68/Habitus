@@ -136,7 +136,8 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 
 	resultCh := make(chan mlOutcome, 1)
 	go func() {
-		resp, err := s.ml.Search(mlCtx, client.SearchRequest{Query: text, Point: point})
+		resp, err := s.ml.Search(mlCtx, client.SearchRequest{
+			Query: text, City: chat.City, Point: point})
 		resultCh <- mlOutcome{resp: resp, err: err}
 	}()
 

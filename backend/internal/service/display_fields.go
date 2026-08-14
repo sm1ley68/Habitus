@@ -101,6 +101,7 @@ func numFact(facts map[string]any, key string) (float64, bool) {
 type FinalResultObject struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
+	Address     string    `json:"address"`
 	CoverImage  string    `json:"cover_image"`
 	MatchScore  int       `json:"match_score"`
 	Coordinates []float64 `json:"coordinates"`
@@ -119,9 +120,14 @@ func BuildFinalResultObject(item client.ResultItem, rank int, degraded []string,
 	if !ok || l.Lon == nil || l.Lat == nil {
 		return FinalResultObject{}, false
 	}
+	address := ""
+	if l.Address != nil {
+		address = *l.Address
+	}
 	return FinalResultObject{
 		ID:          item.ExternalID,
 		Name:        SynthName(l.Rooms, l.Area),
+		Address:     address,
 		CoverImage:  PlaceholderCoverImage,
 		MatchScore:  RescaleScore(item.Score, rank, degraded),
 		Coordinates: []float64{*l.Lon, *l.Lat},

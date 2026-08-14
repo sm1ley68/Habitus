@@ -300,7 +300,7 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 
 	analysis := fallbackAnalysis(res.Score, res.Explanation, res.AddressFacts)
 	if chat.City == "msk" && s.ml != nil {
-		if dossier, ok := s.dossier(ctx, chatID, objectID, res); ok {
+		if dossier, ok := s.dossier(ctx, chatID, objectID, chat.City, res); ok {
 			analysis.Verdict = dossier.Verdict
 			analysis.Brief = nonNilBrief(dossier.Brief)
 			analysis.Blocks = nonNilBlocks(dossier.Blocks)
@@ -310,10 +310,15 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 		}
 	}
 
+	address := ""
+	if listing.Address != nil {
+		address = *listing.Address
+	}
+
 	return ObjectPassport{
 		ID:                objectID,
 		Name:              SynthName(listing.Rooms, listing.Area),
-		Address:           "", // no address text anywhere in the pipeline yet — honest placeholder, see plan §5
+		Address:           address,
 		Price:             listing.Price,
 		Rooms:             listing.Rooms,
 		AreaSqm:           listing.Area,
@@ -347,7 +352,7 @@ func decodeDossier(raw map[string]any) (DossierPayload, bool) {
 	return dossier, true
 }
 
-func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID string,
+func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID, city string,
 	res domain.ChatSearchResult) (DossierPayload, bool) {
 	if res.DossierVersion == DossierSchemaVersion && res.Dossier != nil {
 		return decodeDossier(res.Dossier)
@@ -380,7 +385,7 @@ func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID 
 	mlCtx, cancel := context.WithTimeout(ctx, s.mlTimeout)
 	defer cancel()
 	response, err := s.ml.Dossier(mlCtx, client.DossierRequest{
-		ObjectID: objectID, City: "msk", RawQuery: search.RawQuery,
+		ObjectID: objectID, City: city, RawQuery: search.RawQuery,
 		ParsedQuery: search.ParsedQuery, Relaxed: nonNilStrings(search.Relaxed),
 		Degraded: nonNilStrings(search.Degraded),
 	})

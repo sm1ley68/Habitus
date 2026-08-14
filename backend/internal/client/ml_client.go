@@ -84,6 +84,7 @@ type PointConstraint struct {
 
 type SearchRequest struct {
 	Query string           `json:"query"`
+	City  string           `json:"city,omitempty"`
 	Point *PointConstraint `json:"point,omitempty"`
 }
 

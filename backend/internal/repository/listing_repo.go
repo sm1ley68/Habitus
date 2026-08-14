@@ -23,7 +23,8 @@ func NewListingRepo(pool *pgxpool.Pool) *ListingRepo {
 
 func scanListing(rows pgx.Rows) (domain.Listing, error) {
 	var l domain.Listing
-	err := rows.Scan(&l.ExternalID, &l.Price, &l.Area, &l.Rooms, &l.Level, &l.Levels, &l.Lon, &l.Lat)
+	err := rows.Scan(&l.ExternalID, &l.Price, &l.Area, &l.Rooms, &l.Level, &l.Levels,
+		&l.Lon, &l.Lat, &l.Address, &l.MetroStation)
 	return l, err
 }
 
@@ -36,7 +37,8 @@ func (r *ListingRepo) GetByExternalIDs(ctx context.Context, ids []string) (map[s
 		return out, nil
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT external_id, price, area, rooms, level, levels, ST_X(geom), ST_Y(geom)
+		SELECT external_id, price, area, rooms, level, levels,
+		       ST_X(geom), ST_Y(geom), address, metro_station
 		FROM listings WHERE external_id = ANY($1)`, ids)
 	if err != nil {
 		return nil, err

@@ -72,14 +72,16 @@ type ChatSearchResult struct {
 // Listing is a read-only projection of the Python-owned `listings` table —
 // only the columns the backend actually needs for display gap-filling.
 type Listing struct {
-	ExternalID string
-	Price      *int64
-	Area       *float64
-	Rooms      *int
-	Level      *int
-	Levels     *int
-	Lon        *float64
-	Lat        *float64
+	ExternalID   string
+	Price        *int64
+	Area         *float64
+	Rooms        *int
+	Level        *int
+	Levels       *int
+	Lon          *float64
+	Lat          *float64
+	Address      *string
+	MetroStation *string
 }
 
 // POI is a read-only projection of the Python-owned `poi` table.

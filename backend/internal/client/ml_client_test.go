@@ -93,3 +93,17 @@ func TestDossierAndObjectAskUseInternalContracts(t *testing.T) {
 		t.Fatalf("paths = %v", paths)
 	}
 }
+
+func TestSearchSendsCity(t *testing.T) {
+	requests := make(chan SearchRequest, 1)
+	server := testMLServer(t, requests)
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	if _, err := c.Search(context.Background(), SearchRequest{Query: "тихо", City: "spb"}); err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if got := <-requests; got.City != "spb" {
+		t.Fatalf("Search() city = %q; want %q", got.City, "spb")
+	}
+}
