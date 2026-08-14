@@ -29,6 +29,16 @@ def recall_at_k(relevant: set[str], got: list[str], k: int = 10) -> float:
     return len(relevant & set(got[:k])) / len(relevant)
 
 
+def reciprocal_rank(relevant: set[str], got: list[str]) -> float:
+    """1/позиция первого релевантного результата (0, если его нет)."""
+    if not relevant:
+        return 0.0
+    for i, x in enumerate(got):
+        if x in relevant:
+            return 1.0 / (i + 1)
+    return 0.0
+
+
 def ndcg_at_k(relevance: dict[str, float], got: list[str], k: int = 10) -> float:
     dcg = sum(relevance.get(x, 0.0) / math.log2(i + 2)
               for i, x in enumerate(got[:k]))

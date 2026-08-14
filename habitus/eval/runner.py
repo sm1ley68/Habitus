@@ -5,7 +5,8 @@ from pathlib import Path
 import yaml
 
 from habitus.config import settings
-from habitus.eval.metrics import ndcg_at_k, parse_accuracy, recall_at_k
+from habitus.eval.metrics import (ndcg_at_k, parse_accuracy, recall_at_k,
+                                   reciprocal_rank)
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, parse_query
 from habitus.online.rerank import proximity_rerank, rerank
@@ -32,12 +33,13 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
              model=None, reranker=None, proximity_weight: float | None = None) -> dict:
     parse_scores: list[float] = []
     retr: dict[str, dict[str, list[float]]] = {
-        v: {"recall": [], "ndcg": []} for v in (*VARIANTS, *DERIVED)}
+        v: {"recall": [], "ndcg": [], "mrr": []} for v in (*VARIANTS, *DERIVED)}
 
     def _score(bucket: dict, cands: list, relevant: set, rel_map: dict) -> None:
         ids = [c.external_id for c in cands]
         bucket["recall"].append(recall_at_k(relevant, ids))
         bucket["ndcg"].append(ndcg_at_k(rel_map, ids))
+        bucket["mrr"].append(reciprocal_rank(relevant, ids))
 
     for item in golden:
         expected = item.get("expected_parse") or {}
@@ -82,6 +84,7 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         "parse_accuracy": _avg(parse_scores),
         "retrieval": {v: {"recall@10": _avg(s["recall"]),
                           "ndcg@10": _avg(s["ndcg"]),
+                          "mrr": _avg(s["mrr"]),
                           "n": len(s["recall"])}
                       for v, s in retr.items()},
     }
@@ -91,9 +94,9 @@ def format_report(res: dict) -> str:
     lines = ["# Habitus eval", "",
              f"Запросов в golden-set: {res['n_queries']}",
              f"parse-accuracy: {res['parse_accuracy']:.2f}", "",
-             "| вариант | recall@10 | NDCG@10 | n |",
-             "|---|---|---|---|"]
+             "| вариант | recall@10 | NDCG@10 | MRR | n |",
+             "|---|---|---|---|---|"]
     for name, m in res["retrieval"].items():
         lines.append(f"| {name} | {m['recall@10']:.2f} | "
-                     f"{m['ndcg@10']:.2f} | {m['n']} |")
+                     f"{m['ndcg@10']:.2f} | {m['mrr']:.2f} | {m['n']} |")
     return "\n".join(lines)
