@@ -140,3 +140,26 @@ ALTER TABLE listings ADD COLUMN IF NOT EXISTS okrug text;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS raion text;
 CREATE INDEX IF NOT EXISTS listings_okrug_ix ON listings (okrug);
 CREATE INDEX IF NOT EXISTS listings_raion_ix ON listings (raion);
+
+-- Обогащение из полей источника, которые загрузчик раньше выбрасывал.
+-- Гибридная схема: явные колонки — для того, что участвует в фильтрации,
+-- ранжировании или общем для всех городов UI; source_extra — для специфики
+-- источника (у Циана zhk/building_material, у Дубая будут community/developer).
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS city               text NOT NULL DEFAULT 'msk';
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS address            text;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS source_url         text;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS metro_station      text;
+-- Время до метро ОТ ИСТОЧНИКА. Отдельно от walk_min_metro, чтобы не потерять
+-- провенанс: итог = COALESCE(walk_min_metro_src, вычисленное по OSM).
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS walk_min_metro_src real;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS source_extra       jsonb NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS listings_city_ix ON listings (city);
+
+ALTER TABLE poi ADD COLUMN IF NOT EXISTS city text NOT NULL DEFAULT 'msk';
+CREATE INDEX IF NOT EXISTS poi_city_kind_ix ON poi (city, kind);
+
+-- raw_listings — зеркало источника: производные поля выводит promote_to_listings.
+ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS city         text NOT NULL DEFAULT 'msk';
+ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS address      text;
+ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS source_url   text;
+ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS source_extra jsonb NOT NULL DEFAULT '{}';

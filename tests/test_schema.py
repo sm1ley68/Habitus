@@ -55,3 +55,35 @@ def test_extensions_present():
             names = {r[0] for r in cur.fetchall()}
         assert "postgis" in names
         assert "vector" in names
+
+
+def test_enrichment_columns_exist():
+    expected = {
+        ("listings", "city"), ("listings", "address"),
+        ("listings", "source_url"), ("listings", "metro_station"),
+        ("listings", "walk_min_metro_src"), ("listings", "source_extra"),
+        ("poi", "city"),
+        ("raw_listings", "city"), ("raw_listings", "address"),
+        ("raw_listings", "source_url"), ("raw_listings", "source_extra"),
+    }
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("""SELECT table_name, column_name FROM information_schema.columns
+                           WHERE table_schema='public'
+                             AND table_name IN ('listings','poi','raw_listings');""")
+            got = {(t, c) for t, c in cur.fetchall()}
+    assert expected <= got, f"нет колонок: {expected - got}"
+
+
+def test_existing_rows_default_to_moscow():
+    # DEFAULT 'msk' делает backfill бесплатным: всё, что уже в базе, — московское
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            cur.execute("INSERT INTO listings (external_id, source) VALUES ('C1','test');")
+            cur.execute("SELECT city, source_extra FROM listings WHERE external_id='C1';")
+            city, extra = cur.fetchone()
+    assert city == "msk"
+    assert extra == {}
