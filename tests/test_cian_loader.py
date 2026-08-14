@@ -63,3 +63,26 @@ def test_parse_csv_keeps_address_url_and_extra():
     assert row["source_url"].startswith("http")
     assert isinstance(row["source_extra"]["metro"], list)
     assert "zhk" in row["source_extra"]
+
+
+def test_load_to_raw_updates_columns_added_later():
+    """Строка, загруженная до появления колонок Task 3, при повторном прогоне
+    должна получить адрес/url/extra. Иначе перезаливка «проходит», а адреса
+    в raw остаются NULL навсегда — ровно то, что случилось на dev-БД."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM raw_listings WHERE source='cian';")
+        conn.commit()
+        rows = parse_csv(FIX)
+        stale = [{**r, "address": None, "source_url": None, "source_extra": {}}
+                 for r in rows]
+        load_to_raw(stale, conn)          # как будто грузили до Task 3
+        load_to_raw(rows, conn)           # перезаливка теми же id, но с адресом
+        with conn.cursor() as cur:
+            cur.execute("SELECT address, source_url, source_extra FROM raw_listings "
+                        "WHERE external_id=%s;", (rows[0]["external_id"],))
+            address, url, extra = cur.fetchone()
+        assert address == rows[0]["address"]
+        assert url == rows[0]["source_url"]
+        assert extra.get("metro"), "нормализованное метро должно доехать до raw"

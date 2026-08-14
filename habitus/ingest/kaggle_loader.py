@@ -50,12 +50,15 @@ def load_to_raw(rows: list[dict], conn: psycopg.Connection) -> int:
     for r in rows:
         if isinstance(r["source_extra"], dict):
             r["source_extra"] = Json(r["source_extra"])
+    # Список обновляемых колонок выводится из cols, а не пишется руками: ручной
+    # список уже разошёлся со схемой — address/source_url/source_extra в него не
+    # попали, и повторная загрузка тихо оставляла их NULL у существующих строк.
+    updates = ",".join(f"{c}=EXCLUDED.{c}" for c in cols if c != "external_id")
     sql = f"""
         INSERT INTO raw_listings ({",".join(cols)})
         VALUES ({",".join("%("+c+")s" for c in cols)})
         ON CONFLICT (external_id) DO UPDATE SET
-            price=EXCLUDED.price, area=EXCLUDED.area, description=EXCLUDED.description,
-            ingested_at=now();
+            {updates}, ingested_at=now();
     """
     with conn.cursor() as cur:
         cur.executemany(sql, rows)
