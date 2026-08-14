@@ -234,12 +234,12 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 		return
 	}
 
-	finalResult, objectIDs := s.buildFinalResult(ctx, resp, point)
+	finalResult, objectIDs, matchScores := s.buildFinalResult(ctx, resp, point)
 	if !s.emit(w, "final_result", finalResult) {
 		return
 	}
 
-	s.persist(ctx, chat.ID, userMsg.ID, text, resp, objectIDs)
+	s.persist(ctx, chat.ID, userMsg.ID, text, resp, objectIDs, matchScores)
 
 	_ = w.WriteEvent("stream_end", struct{}{})
 }
@@ -332,7 +332,7 @@ func renameTitle(parsed client.ParsedQuery, rawText string) string {
 	return string(runes)
 }
 
-func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client.SearchResponse, pointConstraint *client.PointConstraint) (FinalResultEvent, []string) {
+func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client.SearchResponse, pointConstraint *client.PointConstraint) (FinalResultEvent, []string, map[string]int) {
 	ids := make([]string, len(resp.Results))
 	for i, r := range resp.Results {
 		ids[i] = r.ExternalID
@@ -360,6 +360,12 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 	}
 	suggested := pickSuggestedAreas(BuildSuggestedAreas(coords, customPoint), resp.AreaGeojson)
 
+	// проценты берутся ровно те, что уехали в выдачу, — паспорт обязан показать
+	// то же число, а не пересчитывать его из сырого скора без ранга и degraded
+	scores := make(map[string]int, len(objects))
+	for _, o := range objects {
+		scores[o.ID] = o.MatchScore
+	}
 	objectIDs := make([]string, len(objects))
 	for i, o := range objects {
 		objectIDs[i] = o.ID
@@ -370,10 +376,10 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 		Objects:               objects,
 		DataFreshness:         resp.DataFreshness,
 		AreaLabel:             resp.AreaLabel,
-	}, objectIDs
+	}, objectIDs, scores
 }
 
-func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uuid.UUID, rawQuery string, resp *client.SearchResponse, objectIDs []string) {
+func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uuid.UUID, rawQuery string, resp *client.SearchResponse, objectIDs []string, matchScores map[string]int) {
 	searchID, err := s.searches.InsertSearch(ctx, domain.ChatSearch{
 		ChatID: chatID, MessageID: &userMsgID, RawQuery: rawQuery,
 		ParsedQuery: parsedQueryToMap(resp.Parsed), Relaxed: resp.Relaxed,
@@ -394,7 +400,8 @@ func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uui
 		_ = s.searches.UpsertResult(ctx, domain.ChatSearchResult{
 			ChatID: chatID, ExternalID: item.ExternalID, SearchID: searchID,
 			Price: item.Price, Area: item.Area, Rooms: item.Rooms,
-			AddressFacts: item.AddressFacts, Score: item.Score, Explanation: resp.Explanation,
+			AddressFacts: item.AddressFacts, Score: item.Score,
+			MatchScore: matchScores[item.ExternalID], Explanation: resp.Explanation,
 		})
 	}
 

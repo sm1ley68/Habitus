@@ -41,8 +41,9 @@ func (r *ChatSearchRepo) UpsertResult(ctx context.Context, res domain.ChatSearch
 		return err
 	}
 	_, err = r.pool.Exec(ctx, `
-		INSERT INTO chat_search_results(chat_id, external_id, search_id, price, area, rooms, address_facts, score, explanation)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO chat_search_results(chat_id, external_id, search_id, price, area,
+		                                rooms, address_facts, score, match_score, explanation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (chat_id, external_id) DO UPDATE SET
 		    search_id = EXCLUDED.search_id,
 		    price = EXCLUDED.price,
@@ -50,12 +51,13 @@ func (r *ChatSearchRepo) UpsertResult(ctx context.Context, res domain.ChatSearch
 		    rooms = EXCLUDED.rooms,
 		    address_facts = EXCLUDED.address_facts,
 		    score = EXCLUDED.score,
+		    match_score = EXCLUDED.match_score,
 		    explanation = EXCLUDED.explanation,
 		    dossier = NULL,
 		    dossier_version = NULL,
 		    dossier_updated_at = NULL,
 		    updated_at = now()`,
-		res.ChatID, res.ExternalID, res.SearchID, res.Price, res.Area, res.Rooms, factsJSON, res.Score, res.Explanation)
+		res.ChatID, res.ExternalID, res.SearchID, res.Price, res.Area, res.Rooms, factsJSON, res.Score, res.MatchScore, res.Explanation)
 	return err
 }
 
@@ -65,11 +67,12 @@ func (r *ChatSearchRepo) GetResult(ctx context.Context, chatID uuid.UUID, extern
 	var dossierVersion *string
 	err := r.pool.QueryRow(ctx, `
 		SELECT chat_id, external_id, search_id, price, area, rooms, address_facts,
-		       score, explanation, dossier, dossier_version, dossier_updated_at, updated_at
+		       score, match_score, explanation, dossier, dossier_version,
+		       dossier_updated_at, updated_at
 		FROM chat_search_results WHERE chat_id = $1 AND external_id = $2`,
 		chatID, externalID,
 	).Scan(&res.ChatID, &res.ExternalID, &res.SearchID, &res.Price, &res.Area,
-		&res.Rooms, &factsJSON, &res.Score, &res.Explanation, &dossierJSON,
+		&res.Rooms, &factsJSON, &res.Score, &res.MatchScore, &res.Explanation, &dossierJSON,
 		&dossierVersion, &res.DossierUpdatedAt, &res.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ChatSearchResult{}, ErrNotFound

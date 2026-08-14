@@ -62,6 +62,7 @@ type ChatSearchResult struct {
 	Rooms            *int
 	AddressFacts     map[string]any
 	Score            float64
+	MatchScore       int
 	Explanation      string
 	Dossier          map[string]any
 	DossierVersion   string

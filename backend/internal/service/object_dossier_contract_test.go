@@ -50,7 +50,7 @@ func TestParsedQueryPersistenceKeepsHouseholdTrips(t *testing.T) {
 }
 
 func TestFallbackAnalysisKeepsRequiredCollectionsPresent(t *testing.T) {
-	analysis := fallbackAnalysis(.9, "summary", map[string]any{})
+	analysis := fallbackAnalysis(90, "summary", map[string]any{})
 	b, err := json.Marshal(analysis)
 	if err != nil {
 		t.Fatal(err)
@@ -80,5 +80,15 @@ func TestObjectAskLockIsScopedByObjectAndChat(t *testing.T) {
 	service.Unlock(chat, "one")
 	if !service.TryLock(chat, "one") {
 		t.Fatal("unlock must release pair")
+	}
+}
+
+func TestPassportScoreMatchesListScore(t *testing.T) {
+	// Список считает RescaleScore(score, rank, degraded); паспорт раньше
+	// пересчитывал из stored-скора без ранга и degraded — числа расходились.
+	stored := RescaleScore(0.031, 2, []string{"reranker"})
+	analysis := fallbackAnalysis(stored, "", map[string]any{})
+	if analysis.MatchScore != stored {
+		t.Fatalf("паспорт показывает %d, список — %d", analysis.MatchScore, stored)
 	}
 }

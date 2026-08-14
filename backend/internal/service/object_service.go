@@ -298,7 +298,7 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 		coords = []float64{*listing.Lon, *listing.Lat}
 	}
 
-	analysis := fallbackAnalysis(res.Score, res.Explanation, res.AddressFacts)
+	analysis := fallbackAnalysis(res.MatchScore, res.Explanation, res.AddressFacts)
 	if chat.City == "msk" && s.ml != nil {
 		if dossier, ok := s.dossier(ctx, chatID, objectID, chat.City, res); ok {
 			analysis.Verdict = dossier.Verdict
@@ -329,9 +329,9 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 	}, nil
 }
 
-func fallbackAnalysis(score float64, summary string, facts map[string]any) LifestyleAnalysis {
+func fallbackAnalysis(matchScore int, summary string, facts map[string]any) LifestyleAnalysis {
 	return LifestyleAnalysis{
-		MatchScore: RescaleScoreFromStored(score), Summary: summary,
+		MatchScore: matchScore, Summary: summary,
 		Verdict: VerdictInfo{Headline: "Недостаточно данных для уверенного вердикта",
 			Confidence: 0, LayersChecked: 0},
 		Brief: []BriefItem{}, Blocks: buildBlocks(facts),
@@ -432,14 +432,6 @@ func nonNilRelaxation(values []RelaxationNote) []RelaxationNote {
 		return []RelaxationNote{}
 	}
 	return values
-}
-
-// RescaleScoreFromStored applies the same defensive rescale as RescaleScore,
-// but the stored score has no rank/degraded context anymore by the time the
-// passport is read back — treat it as already-normalized (0..1) since that's
-// the common case, and clamp defensively either way.
-func RescaleScoreFromStored(score float64) int {
-	return RescaleScore(score, 0, nil)
 }
 
 func buildBlocks(facts map[string]any) []Block {
