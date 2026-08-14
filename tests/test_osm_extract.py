@@ -2,7 +2,7 @@ import psycopg
 import requests
 from habitus.config import settings
 from habitus.db.init_db import init_db
-from habitus.geo.osm_extract import (HEADERS, OVERPASS_QUERIES, fetch_kind, parse_overpass,
+from habitus.geo.osm_extract import (HEADERS, MSK_AREA, OVERPASS_QUERIES, fetch_kind, parse_overpass,
                                      parse_urban_features, upsert_poi)
 
 SAMPLE = {"elements": [
@@ -106,11 +106,13 @@ def test_upsert_poi_idempotent():
 
 
 def test_school_query_covers_polygons():
-    # Школьные здания в OSM — это way/relation, а не node. Для парков это уже
-    # учтено; из-за node-only запроса в базе оказалось 173 школы вместо ~1500.
+    # Школьные здания в OSM — way/relation, а не node: node-only запрос давал
+    # 173 школы на Москву вместо ~1500. Проверяем и тип элемента, и bbox —
+    # запрос без bbox ушёл бы по всей планете, а сеть в тестах запрещена,
+    # поэтому этот тест — единственная защита от такой регрессии.
     q = OVERPASS_QUERIES["school"]
-    assert 'way["amenity"="school"]' in q
-    assert 'relation["amenity"="school"]' in q
+    for element in ("node", "way", "relation"):
+        assert f'{element}["amenity"="school"]{MSK_AREA};' in q
     assert q.startswith("(") and q.endswith(");")
 
 
@@ -120,8 +122,15 @@ def test_upsert_poi_sets_city():
         with conn.cursor() as cur:
             cur.execute("TRUNCATE poi;")
         conn.commit()
+        # Проверяем INSERT path с дефолтным городом
         upsert_poi([{"osm_id": 1, "kind": "school", "name": "Школа",
                      "lat": 55.75, "lon": 37.61}], conn)
         with conn.cursor() as cur:
             cur.execute("SELECT city FROM poi WHERE osm_id=1;")
             assert cur.fetchone()[0] == "msk"
+        # Проверяем ON CONFLICT UPDATE path: переупсертим с другим городом
+        upsert_poi([{"osm_id": 1, "kind": "school", "name": "Школа",
+                     "lat": 55.75, "lon": 37.61}], conn, city="dxb")
+        with conn.cursor() as cur:
+            cur.execute("SELECT city FROM poi WHERE osm_id=1;")
+            assert cur.fetchone()[0] == "dxb"
