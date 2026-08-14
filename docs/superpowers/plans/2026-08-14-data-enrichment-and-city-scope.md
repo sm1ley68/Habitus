@@ -413,23 +413,35 @@ git commit -m "feat: промоушен адреса, url и станции ме
 def test_school_query_covers_polygons():
     # Школьные здания в OSM — это way/relation, а не node. Для парков это уже
     # учтено; из-за node-only запроса в базе оказалось 173 школы вместо ~1500.
+    # Проверяем и тип элемента, И bbox: запрос без bbox ушёл бы по всей планете,
+    # а сеть в тестах запрещена — этот тест единственная защита от регрессии,
+    # поэтому ассерт обязан падать при потере любой из двух частей.
     q = OVERPASS_QUERIES["school"]
-    assert 'way["amenity"="school"]' in q
-    assert 'relation["amenity"="school"]' in q
+    for element in ("node", "way", "relation"):
+        assert f'{element}["amenity"="school"]{MSK_AREA};' in q
     assert q.startswith("(") and q.endswith(");")
 
 
-def test_upsert_poi_sets_city():
+def test_upsert_poi_sets_city_on_insert_and_update():
+    # Покрываем обе ветки: INSERT и ON CONFLICT ... city=EXCLUDED.city.
+    # Без второй половины регрессия, роняющая city из UPDATE, прошла бы молча.
+    row = {"osm_id": 1, "kind": "school", "name": "Школа",
+           "lat": 55.75, "lon": 37.61}
     with psycopg.connect(settings.db_dsn) as conn:
         init_db(conn)
         with conn.cursor() as cur:
             cur.execute("TRUNCATE poi;")
         conn.commit()
-        upsert_poi([{"osm_id": 1, "kind": "school", "name": "Школа",
-                     "lat": 55.75, "lon": 37.61}], conn)
+
+        upsert_poi([row], conn)
         with conn.cursor() as cur:
             cur.execute("SELECT city FROM poi WHERE osm_id=1;")
             assert cur.fetchone()[0] == "msk"
+
+        upsert_poi([row], conn, city="dxb")   # CHECK на poi.city нет
+        with conn.cursor() as cur:
+            cur.execute("SELECT city FROM poi WHERE osm_id=1;")
+            assert cur.fetchone()[0] == "dxb"
 ```
 
 - [ ] **Step 2: Убедиться, что тесты падают**
