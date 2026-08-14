@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useMaplibre } from "@/lib/map/useMaplibre";
 import { layerPaintColor } from "@/lib/map/style";
 import { useSession } from "@/lib/store/session";
-import { MAP_LAYER_IDS } from "@/lib/agent/types";
+import { MAP_LAYER_IDS, type GeoZone } from "@/lib/agent/types";
 import { DUR, SPRING } from "@/lib/motion";
 import MatchScore from "@/components/result/MatchScore";
 import { money } from "@/lib/format";
@@ -30,6 +30,29 @@ function layerOpacityProps(geometryType: string): Array<[string, number]> {
     return [["circle-opacity", 0.9], ["circle-stroke-opacity", 0.85]];
   if (geometryType === "LineString") return [["line-opacity", 0.7]];
   return [["fill-opacity", 0.25]];
+}
+
+/**
+ * Every [lng, lat] position in a zone, flattened. Robust to Polygon AND
+ * MultiPolygon (okrug unions come back as MultiPolygon) and to a collection
+ * with several features — the camera should frame all of them, not just the
+ * first. An absent, empty or malformed zone yields an empty array, which the
+ * caller treats as "nothing to draw" instead of crashing on features[0].
+ */
+export function collectZonePositions(
+  zone: GeoZone | null | undefined,
+): [number, number][] {
+  const positions: [number, number][] = [];
+  const collect = (node: unknown): void => {
+    if (!Array.isArray(node)) return;
+    if (typeof node[0] === "number" && typeof node[1] === "number") {
+      positions.push([node[0], node[1]]);
+      return;
+    }
+    node.forEach(collect);
+  };
+  for (const feature of zone?.features ?? []) collect(feature?.geometry?.coordinates);
+  return positions;
 }
 
 /**
@@ -92,6 +115,18 @@ export default function MapCanvas() {
     const reduced = prefersReducedMotion();
     const revealMs = reduced ? 0 : 900;
 
+    // Пустая зона — валидный ответ бэка, а не ошибка: контракт (§3 «Обработка
+    // пустых результатов») велит слать suggested_areas_geojson всегда, а строить
+    // его не из чего, когда в запросе не было области и ничего не нашлось.
+    // Рисовать нечего и подгонять камеру не по чему — гасим прошлую зону
+    // и оставляем карту как есть.
+    const positions = collectZonePositions(zone);
+    if (!positions.length) {
+      if (map.getLayer("zone-fill")) map.setPaintProperty("zone-fill", "fill-opacity", 0);
+      if (map.getLayer("zone-line")) map.setPaintProperty("zone-line", "line-opacity", 0);
+      return;
+    }
+
     if (!map.getSource("zone")) {
       map.addSource("zone", { type: "geojson", data: zone as unknown as GeoJSON.FeatureCollection });
       // Fill washes in first (the area is "uncovered")...
@@ -119,17 +154,6 @@ export default function MapCanvas() {
       (map.getSource("zone") as maplibregl.GeoJSONSource).setData(zone as unknown as GeoJSON.FeatureCollection);
     }
 
-    // Fit the camera to the whole zone. Robust to Polygon AND MultiPolygon
-    // (okrug unions come back as MultiPolygon): flatten every [lng,lat] position.
-    const positions: [number, number][] = [];
-    const collect = (node: unknown): void => {
-      if (Array.isArray(node) && typeof node[0] === "number") {
-        positions.push(node as [number, number]);
-      } else if (Array.isArray(node)) {
-        node.forEach(collect);
-      }
-    };
-    collect(zone.features[0].geometry.coordinates);
     const bounds = positions.reduce(
       (b, c) => b.extend(c),
       new maplibregl.LngLatBounds(positions[0], positions[0]),
