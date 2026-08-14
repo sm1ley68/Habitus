@@ -513,7 +513,7 @@ def test_source_metro_time_wins_over_computed():
         init_db(conn)
         with conn.cursor() as cur:
             cur.execute("TRUNCATE listings, poi;")
-            # станция в ~1.5 км → вычисленное время ~19 мин
+            # станция в ~1.25 км → вычисленное время ~15.7 мин (проверено)
             cur.execute("""INSERT INTO poi (osm_id, kind, name, geom, city) VALUES
                 (1,'metro','Дальняя',ST_SetSRID(ST_MakePoint(37.63,55.75),4326),'msk');""")
             cur.execute("""INSERT INTO listings (external_id, source, geom, city,
