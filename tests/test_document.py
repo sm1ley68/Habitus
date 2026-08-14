@@ -37,3 +37,20 @@ def test_build_doc_text_prepends_real_description():
 def test_content_hash_stable():
     assert content_hash("abc") == content_hash("abc")
     assert content_hash("abc") != content_hash("abd")
+
+
+def test_doc_text_includes_address_and_station():
+    text = build_doc_text({
+        "description": "Светлая квартира", "rooms": 2, "area": 54.0,
+        "address": "Москва, Хамовники, Комсомольский проспект",
+        "metro_station": "Парк культуры", "walk_min_metro": 7.0,
+    })
+    assert "Хамовники" in text
+    assert "Парк культуры" in text
+
+
+def test_doc_text_without_address_is_unchanged():
+    # Отсутствие адреса не должно давать пустых фрагментов вида ", , "
+    text = build_doc_text({"rooms": 1, "area": 30.0})
+    assert ", ," not in text
+    assert text.startswith("1-комн")

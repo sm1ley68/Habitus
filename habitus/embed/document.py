@@ -9,6 +9,8 @@ def build_doc_text(row: dict) -> str:
     parts = []
     if row.get("description"):
         parts.append(row["description"].strip())
+    if row.get("address"):
+        parts.append(row["address"].strip())
     parts.append(_plural_rooms(row.get("rooms")))
     if row.get("area"):
         parts.append(f"{row['area']:.0f} м²")
@@ -20,6 +22,8 @@ def build_doc_text(row: dict) -> str:
     ws = row.get("walk_min_school")
     if ws is not None:
         parts.append(f"школа в {ws:.0f} мин пешком")
+    if row.get("metro_station"):
+        parts.append(f"метро {row['metro_station']}")
     wm = row.get("walk_min_metro")
     if wm is not None:
         parts.append(f"метро в {wm:.0f} мин пешком")
