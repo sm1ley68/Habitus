@@ -39,6 +39,7 @@ def retrieve_with_relaxation(
         model=None, query_vec=None,
         min_results: int | None = None, max_iters: int | None = None,
         area_match: AreaMatch | None = None,
+        city: str | None = None,
         search_fn=hybrid_search) -> tuple[list[Candidate], list[str], ParsedQuery]:
     """Маршрутизация: кастомная точка (из запроса API) + готовая область
     (`AreaMatch`, резолвится заранее в pipeline) → гео-предикаты, затем
@@ -66,7 +67,7 @@ def retrieve_with_relaxation(
     cur_pq = pq
     gsql, gpar = geo()
     cands = search_fn(conn, cur_pq, model=model, query_vec=query_vec,
-                      geo_sql=gsql, geo_params=gpar)
+                      geo_sql=gsql, geo_params=gpar, city=city)
     for _ in range(iters):
         if len(cands) >= min_r:
             break
@@ -77,7 +78,7 @@ def retrieve_with_relaxation(
         relaxed.append(note)
         gsql, gpar = geo()
         cands = search_fn(conn, cur_pq, model=model, query_vec=query_vec,
-                          geo_sql=gsql, geo_params=gpar)
+                          geo_sql=gsql, geo_params=gpar, city=city)
     # авто-расширение области, если всё ещё мало
     while len(cands) < min_r and area_steps:
         wsql, wpar, wlabel = area_steps.pop(0)
@@ -86,5 +87,5 @@ def retrieve_with_relaxation(
         relaxed.append(wlabel)
         gsql, gpar = geo()
         cands = search_fn(conn, cur_pq, model=model, query_vec=query_vec,
-                          geo_sql=gsql, geo_params=gpar)
+                          geo_sql=gsql, geo_params=gpar, city=city)
     return cands, relaxed, cur_pq

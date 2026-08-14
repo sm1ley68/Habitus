@@ -155,3 +155,14 @@ def test_parse_cache_hits_on_second_call(conn):
     assert resp2.parsed.rooms == [2]
     # объяснение тоже из кэша: третий _explain_resp не потрачен
     assert len(llm.responses) == 1
+
+
+def test_search_does_not_return_other_cities(conn):
+    with conn.cursor() as cur:
+        cur.execute("""INSERT INTO listings (external_id, source, is_active, city,
+                                             doc_text, geom)
+            VALUES ('DXB1','t',TRUE,'dxb','квартира',
+                    ST_SetSRID(ST_MakePoint(55.27,25.20),4326));""")
+    conn.commit()
+    resp = run_search("квартира", conn, city="msk")
+    assert all(r.external_id != "DXB1" for r in resp.results)

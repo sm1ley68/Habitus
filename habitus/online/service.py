@@ -47,7 +47,7 @@ def search(req: SearchRequest) -> SearchResponse:
         provider = ORSProvider()
     with get_conn() as conn:
         return run_search(req.query, conn, llm=llm, point=req.point,
-                          provider=provider)
+                          provider=provider, city=req.city)
 
 
 @app.post("/dossier", response_model=DossierResponse)

@@ -39,10 +39,13 @@ def rrf_merge(rankings: Sequence[Sequence[str]], k: int = 60) -> list[tuple[str,
 
 
 def build_where(pq: ParsedQuery, extra_sql: str | None = None,
-                extra_params: Sequence = ()) -> tuple[str, list]:
+                extra_params: Sequence = (),
+                city: str | None = None) -> tuple[str, list]:
     """ParsedQuery → параметризованный WHERE. Порядок клауз фиксирован."""
     clauses: list[str] = ["is_active = TRUE"]
     params: list = []
+    if city:  # самый селективный фильтр — первым
+        clauses.append("city = %s"); params.append(city)
     if pq.price_min is not None:
         clauses.append("price >= %s"); params.append(pq.price_min)
     if pq.price_max is not None:
@@ -115,10 +118,11 @@ def _fetch_candidates(conn: psycopg.Connection, ext_ids: list[str],
 
 def filter_only_search(conn: psycopg.Connection, pq: ParsedQuery,
                        top_k: int | None = None, geo_sql: str | None = None,
-                       geo_params: Sequence = ()) -> list[Candidate]:
+                       geo_params: Sequence = (),
+                       city: str | None = None) -> list[Candidate]:
     """Деградация «без вектора»: только SQL-фильтры, свежие сверху."""
     k = top_k or settings.retrieval_top_k
-    where, params = build_where(pq, geo_sql, geo_params)
+    where, params = build_where(pq, geo_sql, geo_params, city)
     with conn.cursor() as cur:
         cur.execute(f"SELECT external_id FROM listings WHERE {where} "
                     f"ORDER BY updated_at DESC LIMIT %s;", params + [k])
@@ -130,16 +134,17 @@ def hybrid_search(conn: psycopg.Connection, pq: ParsedQuery, *, model=None,
                   top_k: int | None = None, geo_sql: str | None = None,
                   geo_params: Sequence = (),
                   query_vec: tuple[list[float], dict[int, float]] | None = None,
-                  channels: tuple[str, ...] = ("dense", "sparse")) -> list[Candidate]:
+                  channels: tuple[str, ...] = ("dense", "sparse"),
+                  city: str | None = None) -> list[Candidate]:
     """WHERE + dense + sparse → RRF → top-K кандидатов (порядок RRF)."""
     k = top_k or settings.retrieval_top_k
     if query_vec is None:
         if not pq.semantic_text:
-            return filter_only_search(conn, pq, k, geo_sql, geo_params)
+            return filter_only_search(conn, pq, k, geo_sql, geo_params, city)
         query_vec = encode_query(pq.semantic_text, model=model)
     qdense, qsparse = query_vec
 
-    where, params = build_where(pq, geo_sql, geo_params)
+    where, params = build_where(pq, geo_sql, geo_params, city)
     rankings: list[list[str]] = []
     if "dense" in channels:
         rankings.append(_channel_search(

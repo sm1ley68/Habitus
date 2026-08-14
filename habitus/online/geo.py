@@ -118,6 +118,10 @@ CARDINAL: dict[str, tuple[str, ...]] = {
 }
 _DROP = ("TRUE", (), "по всей Москве")
 
+# уточнение города для геокодера; CARDINAL остаётся московской — для другого
+# города округа просто не совпадут и резолв уйдёт в геокодер (деградация, не ошибка)
+CITY_GEOCODE_SUFFIX = {"msk": "Москва", "spb": "Санкт-Петербург"}
+
 
 def _okrug_match(okrugs: tuple[str, ...], label: str) -> AreaMatch:
     return AreaMatch(
@@ -159,7 +163,8 @@ def _cardinal_match(area: str) -> AreaMatch | None:
     return None
 
 
-def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch | None:
+def resolve_area(area: str, conn=None, *, geocoder=geocode_address,
+                 city: str = "msk") -> AreaMatch | None:
     """Область запроса → AreaMatch (SQL-предикат + цепочка расширения) или None."""
     if not area or not area.strip():
         return None
@@ -218,8 +223,10 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
                          geom_params=(name,))
 
     # 5. Nominatim-fallback: полигон места, иначе точка+радиус
+    suffix = CITY_GEOCODE_SUFFIX.get(city, "")
+    query = f"{area}, {suffix}" if suffix else area
     try:
-        poly = geocoder(f"{area}, Москва", polygon=True) if _accepts_polygon(geocoder) else None
+        poly = geocoder(query, polygon=True) if _accepts_polygon(geocoder) else None
     except TypeError:
         poly = None
     if isinstance(poly, dict) and poly.get("geometry"):
@@ -230,7 +237,7 @@ def resolve_area(area: str, conn=None, *, geocoder=geocode_address) -> AreaMatch
               (json.dumps(poly["geometry"]), 5000.0), f"{area} (окрестность)"), _DROP],
             geom_sql="ST_SetSRID(ST_GeomFromGeoJSON(%s),4326)",
             geom_params=(json.dumps(poly["geometry"]),))
-    coords = geocoder(f"{area}, Москва")
+    coords = geocoder(query)
     if coords:
         lon, lat = coords
         return AreaMatch(

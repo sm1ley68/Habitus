@@ -105,6 +105,7 @@ class PointConstraint(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     point: PointConstraint | None = None
+    city: Literal["msk", "spb"] = "msk"
 
 
 class LineStringGeometry(BaseModel):

@@ -26,7 +26,8 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
                point: PointConstraint | None = None,
                provider: IsochroneProvider | None = None,
                model=None, reranker=None,
-               min_results: int | None = None) -> SearchResponse:
+               min_results: int | None = None,
+               city: str = "msk") -> SearchResponse:
     degraded: list[str] = []
 
     # 1. NLU (кэш по хэшу текста; отказ → весь запрос в семантику)
@@ -68,7 +69,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     if pq.area:
         try:
             with trace.span("resolve_area"):
-                area_match = resolve_area(pq.area, conn)
+                area_match = resolve_area(pq.area, conn, city=city)
         except Exception as exc:
             log.warning("резолв области не удался: %s", exc, exc_info=True)
     area_label = area_match.label if area_match else None
@@ -78,7 +79,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
         cands, relaxed, _ = retrieve_with_relaxation(
             conn, search_pq, point=point, provider=provider,
             model=model, query_vec=query_vec, area_match=area_match,
-            min_results=min_results)
+            min_results=min_results, city=city)
 
     # 4. rerank (отказ → порядок RRF), затем proximity-бленд точной близости
     #    поверх скоров: реранк по всему пулу, бленд, срез top-N (кросс-энкодер

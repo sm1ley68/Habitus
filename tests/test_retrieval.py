@@ -62,3 +62,14 @@ def test_build_where_extra_geo_predicate():
                               extra_params=("PT", 500))
     assert sql.endswith("AND ST_DWithin(geom, %s, %s)")
     assert params == ["PT", 500]
+
+
+def test_build_where_scopes_by_city():
+    where, params = build_where(ParsedQuery(), city="msk")
+    assert "city = %s" in where
+    assert "msk" in params
+
+
+def test_build_where_without_city_is_unscoped():
+    where, _ = build_where(ParsedQuery())
+    assert "city" not in where
