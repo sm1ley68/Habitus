@@ -460,7 +460,7 @@ def build_dossier(req: DossierRequest, conn, *,
             key="social_environment", tier="hero", title="Социальное окружение",
             icon="users", score="A" if max(social.scores.model_dump().values()) < .34 else
             "B" if max(social.scores.model_dump().values()) < .67 else "C",
-            verdict_line="Риски рассчитаны только по точным импортированным слоям.",
+            verdict_line="Оценка по модельным слоям: коммунальность — по году постройки, риск — по плотности алкомаркетов.",
             description="Оценка в радиусе 500 м без подстановки отсутствующих данных.", data=social))
         sources.update({"communal", "bars", "crime"})
 
@@ -472,8 +472,8 @@ def build_dossier(req: DossierRequest, conn, *,
             key="view_and_climate", tier="hero", title="Вид и климат", icon="sun",
             score="A" if climate.db < 40 and climate.sun_hours_by_season.summer >= 5 else
             "B" if climate.db < 55 else "C",
-            verdict_line="Свет рассчитан с учётом геометрии зданий и облачности.",
-            description="Сезонная инсоляция, препятствия, тип вида и точный шум.", data=climate))
+            verdict_line="Свет рассчитан по геометрии зданий; шум — модель по типам дорог.",
+            description="Сезонная инсоляция, препятствия, тип вида и модельный шум.", data=climate))
         sources.update({"solar", "noise"})
 
     compromises = [CompromiseNote(block_key="criteria", text=item.label)

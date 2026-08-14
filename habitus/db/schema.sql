@@ -50,9 +50,12 @@ CREATE INDEX IF NOT EXISTS listings_embedding_hnsw
 CREATE INDEX IF NOT EXISTS poi_geom_gix ON poi USING GIST (geom);
 CREATE INDEX IF NOT EXISTS poi_kind_ix ON poi (kind);
 
--- Exact, source-attributed evidence used by the dossier.  Runtime code never
--- replaces absent values with zero: communal/crime adapters must supply a
--- normalized 0..1 weight, while noise adapters supply an observed dB value.
+-- Source-attributed evidence used by the dossier and the map layers.  Every
+-- layer currently loaded is a MODEL, not a measurement: communal is derived
+-- from OSM building start_date, crime from alcohol-outlet density, noise from
+-- road classes.  `db` is therefore a modelled value, not an observed one — it
+-- must always be published together with `source`.  Runtime code never
+-- replaces absent values with zero.
 CREATE TABLE IF NOT EXISTS urban_evidence (
     source_id    TEXT NOT NULL,
     source       TEXT NOT NULL,

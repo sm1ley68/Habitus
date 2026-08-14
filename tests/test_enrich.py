@@ -112,3 +112,27 @@ def test_enrich_around_wkt_not_injectable():
             assert cur.fetchone()[0] == "listings"
             cur.execute("SELECT count(*) FROM listings;")
             assert cur.fetchone()[0] == 1
+
+
+def test_noise_has_three_grades_from_evidence():
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings, poi;")
+            cur.execute("DELETE FROM urban_evidence;")
+            # модельные дБ рядом с тремя объектами
+            for eid, lon, db in (("Q", 37.60, 45.0), ("M", 37.62, 60.0), ("L", 37.64, 70.0)):
+                cur.execute("""INSERT INTO listings (external_id, source, geom, city)
+                    VALUES (%s,'t',ST_SetSRID(ST_MakePoint(%s,55.75),4326),'msk');""",
+                            (eid, lon))
+                cur.execute("""INSERT INTO urban_evidence
+                    (source_id, source, city, layer, geom, db, observed_at)
+                    VALUES (%s,'test','msk','noise',
+                            ST_SetSRID(ST_MakePoint(%s,55.75),4326),%s,now());""",
+                            (eid, lon, db))
+        conn.commit()
+        enrich_all(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT external_id, noise_level FROM listings ORDER BY external_id;")
+            got = dict(cur.fetchall())
+    assert got == {"L": "high", "M": "medium", "Q": "low"}

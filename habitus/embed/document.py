@@ -33,8 +33,9 @@ def build_doc_text(row: dict) -> str:
     bd = row.get("bar_density_500m")
     if bd is not None:
         parts.append("баров в 500 м нет" if bd == 0 else f"баров рядом: {bd}")
-    if row.get("noise_level"):
-        parts.append("тихо" if row["noise_level"] == "low" else "шумно")
+    noise = row.get("noise_level")
+    if noise:
+        parts.append({"low": "тихо", "medium": "умеренно шумно"}.get(noise, "шумно"))
     return ", ".join(parts)
 
 

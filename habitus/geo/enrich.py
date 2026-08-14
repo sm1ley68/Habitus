@@ -36,10 +36,18 @@ UPDATE listings l SET
   walk_min_park   = {_nearest_min('park')},
   -- источник в приоритете, вычисленное — фолбэк (см. спеку: провенанс)
   walk_min_metro  = COALESCE(l.walk_min_metro_src, {_nearest_min('metro')}),
-  noise_level = CASE
-    WHEN (SELECT count(*) FROM poi p WHERE p.kind='bar' AND p.city = l.city
-          AND ST_DWithin(l.geom::geography, p.geom::geography, 200)) > 2 THEN 'high'
-    ELSE 'low' END,
+  -- пороги — обычная шкала транспортного шума: до 55 дБ тихо, 55-65 умеренно,
+  -- выше — шумно. Барный прокси остаётся фолбэком там, где слоя нет.
+  noise_level = COALESCE(
+    (SELECT CASE WHEN avg(e.db) < 55 THEN 'low'
+                 WHEN avg(e.db) < 65 THEN 'medium'
+                 ELSE 'high' END
+     FROM urban_evidence e
+     WHERE e.city = l.city AND e.layer = 'noise'
+       AND ST_DWithin(e.geom::geography, l.geom::geography, 500)),
+    CASE WHEN (SELECT count(*) FROM poi p WHERE p.kind='bar' AND p.city = l.city
+               AND ST_DWithin(l.geom::geography, p.geom::geography, 200)) > 2
+         THEN 'high' ELSE 'low' END),
   updated_at = now()
 WHERE l.geom IS NOT NULL
   AND (%(filter_geog)s::text IS NULL

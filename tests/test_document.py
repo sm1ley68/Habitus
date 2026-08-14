@@ -54,3 +54,10 @@ def test_doc_text_without_address_is_unchanged():
     text = build_doc_text({"rooms": 1, "area": 30.0})
     assert ", ," not in text
     assert text.startswith("1-комн")
+
+
+def test_doc_text_medium_noise_is_not_called_loud():
+    # три градации: medium — это не «шумно», иначе текст завышает факт
+    assert "умеренно шумно" in build_doc_text({"rooms": 1, "noise_level": "medium"})
+    assert "тихо" in build_doc_text({"rooms": 1, "noise_level": "low"})
+    assert "шумно" in build_doc_text({"rooms": 1, "noise_level": "high"})

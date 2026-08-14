@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"habitus-backend/internal/client"
@@ -36,5 +37,14 @@ func TestBuildFinalResultObjectFallsBackToSynthName(t *testing.T) {
 	}
 	if obj.Name != "2-комн, 54 м²" {
 		t.Fatalf("должен сработать SynthName, получено %q", obj.Name)
+	}
+}
+
+func TestBuildTagsDoesNotClaimMeasuredNoise(t *testing.T) {
+	tags := BuildTags(map[string]any{"noise_level": "low", "bar_density_500m": 0.0})
+	for _, tag := range tags {
+		if strings.HasPrefix(tag, "шум:") {
+			t.Fatalf("noise_level — прокси по барам, нельзя подавать как замер: %q", tag)
+		}
 	}
 }

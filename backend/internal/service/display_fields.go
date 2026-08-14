@@ -73,11 +73,14 @@ func BuildTags(facts map[string]any) []string {
 	if v, ok := numFact(facts, "walk_min_park"); ok {
 		tags = append(tags, fmt.Sprintf("%.0f минут до парка", v))
 	}
+	// noise_level — модельная величина (слой дорог + барный прокси), поэтому
+	// наружу идёт то, что реально посчитано: плотность баров.
 	if v, ok := numFact(facts, "bar_density_500m"); ok {
-		tags = append(tags, fmt.Sprintf("%.0f баров в радиусе 500м", v))
-	}
-	if v, ok := facts["noise_level"].(string); ok && v != "" {
-		tags = append(tags, "шум: "+v)
+		if v == 0 {
+			tags = append(tags, "баров рядом нет")
+		} else {
+			tags = append(tags, fmt.Sprintf("баров рядом: %.0f", v))
+		}
 	}
 	return tags
 }
