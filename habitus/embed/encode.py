@@ -7,6 +7,15 @@ from habitus.embed.document import content_hash
 # размер словаря BGE-M3 (XLM-RoBERTa). Должен совпадать с sparsevec(...) в schema.sql.
 SPARSE_DIM = 250002
 
+# pgvector индексирует sparsevec только до 1000 ненулевых элементов
+# (HNSW_MAX_NNZ в src/hnsw.h). Длинное объявление BGE-M3 раскладывает в больший
+# словарь, и такая строка не даёт создать/наполнить HNSW — а без индекса
+# sparse-канал ходит по всей таблице последовательным сканом на каждый поиск.
+# Держим top-N по весу: отбрасываются самые слабые лексические сигналы, на
+# ранжирование это влияет пренебрежимо (официально рекомендованное лечение —
+# «prune the sparse vector»).
+SPARSE_MAX_NNZ = 1000
+
 # Общий лок инференса. HuggingFace fast-токенизаторы (BGE-M3 и реранкер)
 # НЕ потокобезопасны: два конкурентных запроса, перенастраивающих усечение
 # токенизатора, роняют "RuntimeError: Already borrowed". FastAPI гоняет sync-
@@ -32,6 +41,20 @@ def get_model():
     return _model
 
 
+def prune_sparse(sparse: dict[int, float],
+                 max_nnz: int = SPARSE_MAX_NNZ) -> dict[int, float]:
+    """Оставить top-N весов, чтобы вектор был индексируемым.
+
+    Тай-брейк по индексу токена — при равных весах результат детерминирован,
+    иначе один и тот же документ давал бы разные векторы между прогонами.
+    Ключи возвращаются отсортированными: to_sparsevec_literal ждёт порядок.
+    """
+    if len(sparse) <= max_nnz:
+        return sparse
+    kept = sorted(sparse.items(), key=lambda kv: (-kv[1], kv[0]))[:max_nnz]
+    return dict(sorted(kept))
+
+
 def encode_texts(texts: list[str], model=None) -> list[dict]:
     m = model or get_model()
     # Умеренный batch_size: дефолтные 256 текстов BGE-M3 на MPS перегружают память
@@ -46,7 +69,8 @@ def encode_texts(texts: list[str], model=None) -> list[dict]:
         # спец-токены (id 0–3), поэтому id 0 не появляется; фильтр — защита от
         # редкого id=0, чтобы невалидный индекс не ронял UPDATE всего батча.
         sparse = {int(k): float(v) for k, v in lex.items() if int(k) >= 1}
-        results.append({"dense": list(map(float, dense)), "sparse": sparse})
+        results.append({"dense": list(map(float, dense)),
+                        "sparse": prune_sparse(sparse)})
     return results
 
 
