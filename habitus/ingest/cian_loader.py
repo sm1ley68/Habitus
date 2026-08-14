@@ -1,5 +1,6 @@
 # habitus/ingest/cian_loader.py
 import csv
+import json
 from pathlib import Path
 
 # Циановский CSV (выхлоп Go-парсера бэка) уже содержит проза-`description` и
@@ -23,6 +24,30 @@ def _to_float(v):
         return None
 
 
+# Циан отдаёт станции как JSON-массив {name, time, transport_type}. Приводим к
+# общей форме {name, minutes, mode}: у следующего источника (Дубай) поля будут
+# называться иначе, а promote_to_listings должен читать одинаково.
+def parse_metro(raw: str | None) -> list[dict]:
+    if not raw or not str(raw).strip():
+        return []
+    try:
+        items = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(items, list):
+        return []
+    out = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        minutes, name = _to_int(it.get("time")), (it.get("name") or "").strip()
+        if minutes is None or not name:
+            continue
+        mode = "walk" if it.get("transport_type") == "walk" else "transport"
+        out.append({"name": name, "minutes": minutes, "mode": mode})
+    return out
+
+
 def parse_csv(path: Path) -> list[dict]:
     out = []
     with open(path, newline="", encoding="utf-8") as f:
@@ -44,5 +69,14 @@ def parse_csv(path: Path) -> list[dict]:
                 "lat": _to_float(row.get("latitude")),
                 "lon": _to_float(row.get("longitude")),
                 "description": (row.get("description") or "").strip() or None,
+                "city": "msk",
+                "address": (row.get("address") or "").strip() or None,
+                "source_url": (row.get("url") or "").strip() or None,
+                "source_extra": {
+                    "metro": parse_metro(row.get("metro")),
+                    "zhk": (row.get("zhk") or "").strip() or None,
+                    "building_material": (row.get("building_material") or "").strip() or None,
+                    "deadline": (row.get("deadline") or "").strip() or None,
+                },
             })
     return out

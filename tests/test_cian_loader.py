@@ -1,6 +1,6 @@
 from pathlib import Path
 import psycopg
-from habitus.ingest.cian_loader import parse_csv
+from habitus.ingest.cian_loader import parse_csv, parse_metro
 from habitus.ingest.kaggle_loader import load_to_raw
 from habitus.db.init_db import init_db
 from habitus.config import settings
@@ -38,3 +38,28 @@ def test_load_to_raw_upsert_idempotent():
             total = cur.fetchone()[0]
         assert n1 == 2
         assert total == 2  # не задвоилось
+
+
+def test_parse_metro_normalizes_entries():
+    raw = ('[{"name":"Ленинский проспект","time":7,"transport_type":"walk"},'
+           '{"name":"Шаболовская","time":3,"transport_type":"transport"}]')
+    assert parse_metro(raw) == [
+        {"name": "Ленинский проспект", "minutes": 7, "mode": "walk"},
+        {"name": "Шаболовская", "minutes": 3, "mode": "transport"},
+    ]
+
+
+def test_parse_metro_survives_broken_input():
+    # Битый JSON не должен ронять строку: объявление грузится, работает OSM-фолбэк
+    for raw in ("", "   ", "не json", "{}", "null", None):
+        assert parse_metro(raw) == []
+
+
+def test_parse_csv_keeps_address_url_and_extra():
+    rows = parse_csv(FIX)
+    row = rows[0]
+    assert row["city"] == "msk"
+    assert row["address"]
+    assert row["source_url"].startswith("http")
+    assert isinstance(row["source_extra"]["metro"], list)
+    assert "zhk" in row["source_extra"]
