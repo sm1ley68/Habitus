@@ -1635,12 +1635,16 @@ Expected: FAIL — `{'L': 'low', 'M': 'low', 'Q': 'low'}`, градации `med
 -- road classes.  `db` is therefore a modelled value, not an observed one — it
 -- must always be published together with `source`.  Runtime code never
 -- replaces absent values with zero.
+```
 
-В `dossier.py` в блоках `social_environment` и `view_and_climate` дописать происхождение в `verdict_line`:
+В `dossier.py` дописать происхождение в `verdict_line`. В блоке `social_environment`:
 
 ```python
             verdict_line="Оценка по модельным слоям: коммунальность — по году постройки, риск — по плотности алкомаркетов.",
 ```
+
+В блоке `view_and_climate`:
+
 ```python
             verdict_line="Свет рассчитан по геометрии зданий; шум — модель по типам дорог.",
 ```
