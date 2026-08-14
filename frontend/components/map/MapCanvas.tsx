@@ -90,6 +90,7 @@ export default function MapCanvas() {
   const activeLayers = useSession((s) => s.activeLayers);
   const layerData = useSession((s) => s.layerData);
   const selectProperty = useSession((s) => s.selectProperty);
+  const setViewport = useSession((s) => s.setViewport);
   const markers = useRef<maplibregl.Marker[]>([]);
   const pendingRemoval = useRef<Record<string, number>>({});
   const reduce = useReducedMotion();
@@ -216,6 +217,19 @@ export default function MapCanvas() {
     return () => { map.off("move", update); };
   }, [map, previewIndex, properties]);
 
+  // Границы вьюпорта уезжают в store: evidence-слои (communal/noise/crime)
+  // без bbox приходят пустыми, поэтому карта обязана сообщить, что видно.
+  useEffect(() => {
+    if (!map || !ready) return;
+    const publish = () => {
+      const b = map.getBounds();
+      setViewport([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+    };
+    publish();
+    map.on("moveend", publish);
+    return () => { map.off("moveend", publish); };
+  }, [map, ready, setViewport]);
+
   // Card <-> pin cross-highlight: scale up whichever pin the store says is hovered.
   useEffect(() => {
     markers.current.forEach((m) => {
@@ -234,8 +248,8 @@ export default function MapCanvas() {
     MAP_LAYER_IDS.forEach((id) => {
       const srcId = `layer-${id}`;
       const data = layerData[id];
-      // Слой ещё не приехал (или бэк отдал по нему пусто — communal/noise/
-      // ecology не имеют источника) — рисовать нечего.
+      // Слой ещё не приехал (или бэк отдал по нему пусто — evidence-слои без
+      // bbox и слои без данных приходят пустыми) — рисовать нечего.
       const on = !!activeLayers[id] && !!data?.features.length;
       const geom = data?.features[0]?.geometry.type ?? "Polygon";
       const color = layerPaintColor(geom);

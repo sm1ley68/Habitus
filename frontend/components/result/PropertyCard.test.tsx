@@ -18,4 +18,16 @@ describe("PropertyCard", () => {
     fireEvent.click(screen.getByRole("button"));
     expect(onOpen).toHaveBeenCalledWith(0);
   });
+
+  it("показывает реальный адрес вместо синтезированного имени", () => {
+    const property = { ...PROPERTIES[0], address: "Москва, 2-й Донской проезд" };
+    render(<PropertyCard property={property} index={0} onOpen={() => {}} />);
+    expect(screen.getByText("Москва, 2-й Донской проезд")).toBeInTheDocument();
+  });
+
+  it("откатывается к имени, когда адреса нет", () => {
+    const property = { ...PROPERTIES[0], address: "" };
+    render(<PropertyCard property={property} index={0} onOpen={() => {}} />);
+    expect(screen.getByText("ЖК Neva Residence")).toBeInTheDocument();
+  });
 });

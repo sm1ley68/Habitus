@@ -8,7 +8,8 @@ test("renders one card per property with match scores", () => {
     useSession.getState().finish({ properties: PROPERTIES, zoneGeoJSON: null, areaLabel: null, chatId: "c1" }),
   );
   render(<PropertyList />);
-  expect(screen.getByText("ЖК Neva Residence")).toBeInTheDocument();
+  // карточка ведёт адресом, имя — фолбэк (см. PropertyCard.test)
+  expect(screen.getByText(PROPERTIES[0].address)).toBeInTheDocument();
   expect(screen.getByLabelText("96% совпадение")).toBeInTheDocument();
   expect(screen.getAllByRole("button").length).toBe(PROPERTIES.length);
 });

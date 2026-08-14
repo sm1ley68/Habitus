@@ -21,6 +21,8 @@ interface SessionState {
   /** area_label текущего поиска — человекочитаемая зона для чипа над выдачей. */
   areaLabel: string | null;
   hoveredId: string | null;
+  /** Границы вьюпорта карты [minLon, minLat, maxLon, maxLat] — нужны evidence-слоям. */
+  viewport: [number, number, number, number] | null;
   /** chat_id текущего поиска — контекст для паспорта и чата по объекту. */
   chatId: string | null;
   errorMessage: string | null;
@@ -38,6 +40,7 @@ interface SessionState {
   toggleLayer: (id: LayerId) => void;
   loadLayer: (id: LayerId) => Promise<void>;
   setHoveredProperty: (id: string | null) => void;
+  setViewport: (b: [number, number, number, number]) => void;
 }
 
 const initial = {
@@ -48,11 +51,12 @@ const initial = {
   selectedIndex: 0,
   city: "msk" as City,
   historyOpen: false,
-  activeLayers: { communal: false, noise: false, schools: true, bars: false, ecology: false, parks: true } as Record<LayerId, boolean>,
+  activeLayers: { communal: false, noise: false, schools: true, bars: false, crime: false, parks: true, metro: true } as Record<LayerId, boolean>,
   layerData: {} as LayerCollections,
   zoneGeoJSON: null as GeoZone | null,
   areaLabel: null as string | null,
   hoveredId: null as string | null,
+  viewport: null as [number, number, number, number] | null,
   chatId: null as string | null,
   errorMessage: null as string | null,
 };
@@ -86,7 +90,10 @@ export const useSession = create<SessionState>((set, get) => ({
 
   setScreen: (screen) => set({ screen }),
   selectProperty: (selectedIndex) => set({ selectedIndex, screen: "passport" }),
-  setCity: (city) => set({ city }),
+  // Смена города обесценивает всё, что было посчитано для прежнего: слои,
+  // выдачу и зону. Иначе на карте Питера остались бы московские полигоны.
+  setCity: (city) => set({ city, layerData: {}, properties: [], zoneGeoJSON: null,
+                           areaLabel: null, selectedIndex: 0 }),
   toggleHistory: () => set((s) => ({ historyOpen: !s.historyOpen })),
 
   toggleLayer: (id) => {
@@ -95,11 +102,12 @@ export const useSession = create<SessionState>((set, get) => ({
     if (on) void get().loadLayer(id);
   },
 
-  // Слой тянется один раз и остаётся в кэше: повторные вкл/выкл не бьют по сети.
+  // Слой тянется под текущий вьюпорт. Повторные вкл/выкл по сети не бьют,
+  // но смена города сбрасывает кэш (см. setCity).
   loadLayer: async (id) => {
     if (get().layerData[id]) return;
     try {
-      const fetched = await fetchLayers(get().city, [id]);
+      const fetched = await fetchLayers(get().city, [id], get().viewport ?? undefined);
       set((s) => ({ layerData: { ...s.layerData, ...fetched } }));
     } catch {
       // Слой не пришёл — карта просто его не покажет. Молча, без падения.
@@ -107,4 +115,5 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   setHoveredProperty: (hoveredId) => set({ hoveredId }),
+  setViewport: (viewport) => set({ viewport }),
 }));

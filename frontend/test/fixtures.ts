@@ -11,10 +11,10 @@ export const SCHOOL_239: [number, number] = [30.3479, 59.9439];
 export const LOGISTICS_HOME: [number, number] = [30.3625, 59.949];
 
 export const PROPERTIES: Property[] = [
-  { id: "jk-neva-residence", name: "ЖК Neva Residence", cover_image: "/covers/neva.svg", match_score: 96, price_from: 18500000, rooms: 3, area_sqm: 78.5, floor: "7/12", tags: ["11 минут до школы", "0% баров вокруг", "Окна во двор-парк"], coordinates: [30.3625, 59.9490] },
-  { id: "jk-ligovsky-garden", name: "ЖК Ligovsky Garden", cover_image: "/covers/ligovsky.svg", match_score: 91, price_from: 15200000, rooms: 2, area_sqm: 54, floor: "4/9", tags: ["8 минут до сада", "Тихий двор", "Рядом парк Есенина"], coordinates: [30.3550, 59.9280] },
-  { id: "jk-zelenogorsk-view", name: "ЖК Zelenogorsk View", cover_image: "/covers/zelenogorsk.svg", match_score: 87, price_from: 21000000, rooms: 3, area_sqm: 82, floor: "12/16", tags: ["Вид на залив", "15 минут до школы №47", "Низкий шумовой фон"], coordinates: [30.3400, 59.9520] },
-  { id: "jk-rechnoy-kvartal", name: "ЖК Rechnoy Kvartal", cover_image: "/covers/rechnoy.svg", match_score: 78, price_from: 12800000, rooms: 2, area_sqm: 48, floor: "2/5", tags: ["5 минут до метро", "Рядом ТЦ", "Шум требует уточнения"], coordinates: [30.3700, 59.9410] },
+  { id: "jk-neva-residence", address: "Санкт-Петербург, Кирочная ул., 12", name: "ЖК Neva Residence", cover_image: "/covers/neva.svg", match_score: 96, price_from: 18500000, rooms: 3, area_sqm: 78.5, floor: "7/12", tags: ["11 минут до школы", "0% баров вокруг", "Окна во двор-парк"], coordinates: [30.3625, 59.9490] },
+  { id: "jk-ligovsky-garden", address: "Санкт-Петербург, Лиговский пр., 44", name: "ЖК Ligovsky Garden", cover_image: "/covers/ligovsky.svg", match_score: 91, price_from: 15200000, rooms: 2, area_sqm: 54, floor: "4/9", tags: ["8 минут до сада", "Тихий двор", "Рядом парк Есенина"], coordinates: [30.3550, 59.9280] },
+  { id: "jk-zelenogorsk-view", address: "Санкт-Петербург, Приморское шоссе, 8", name: "ЖК Zelenogorsk View", cover_image: "/covers/zelenogorsk.svg", match_score: 87, price_from: 21000000, rooms: 3, area_sqm: 82, floor: "12/16", tags: ["Вид на залив", "15 минут до школы №47", "Низкий шумовой фон"], coordinates: [30.3400, 59.9520] },
+  { id: "jk-rechnoy-kvartal", address: "Санкт-Петербург, Речной пр., 3", name: "ЖК Rechnoy Kvartal", cover_image: "/covers/rechnoy.svg", match_score: 78, price_from: 12800000, rooms: 2, area_sqm: 48, floor: "2/5", tags: ["5 минут до метро", "Рядом ТЦ", "Шум требует уточнения"], coordinates: [30.3700, 59.9410] },
 ];
 
 // Search zone polygon loosely enclosing the properties (ring closed).
@@ -43,7 +43,8 @@ export const LAYER_GEOJSON: Record<LayerId, GeoJSON.FeatureCollection> = {
   schools: fc([pt(SCHOOL_239, { name: "ФМЛ №239", rating: "Top-1" }), pt([30.358, 59.945], { name: "Школа №47" })]),
   parks: fc([pt([30.352, 59.948], { name: "Сквер" }), pt([30.366, 59.935], { name: "Парк Есенина" })]),
   bars: fc([pt([30.361, 59.941], { name: "Бар" }), pt([30.369, 59.944], { name: "Алкомаркет" })]),
-  ecology: fc([pt([30.345, 59.951], { weight: 0.8 })]),
+  crime: fc([pt([30.345, 59.951], { weight: 0.8, source: "mvd-open-data" })]),
+  metro: fc([pt([30.360, 59.947], { name: "Чернышевская" })]),
   communal: fc([{ type: "Feature", properties: { weight: 0.9 }, geometry: { type: "Polygon", coordinates: [[[30.370, 59.940], [30.377, 59.940], [30.377, 59.946], [30.370, 59.946], [30.370, 59.940]]] } }]),
   noise: fc([{ type: "Feature", properties: { db_level: 75, source: "Магистраль" }, geometry: { type: "LineString", coordinates: [[30.332, 59.950], [30.378, 59.948]] } }]),
 };

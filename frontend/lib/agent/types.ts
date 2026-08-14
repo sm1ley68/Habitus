@@ -15,15 +15,17 @@ export interface AgentEvent {
 export type LifestyleIcon =
   | "school" | "users" | "sun" | "volume" | "leaf" | "hospital" | "route";
 
-export type LayerId = "communal" | "noise" | "schools" | "bars" | "ecology" | "parks";
+export type LayerId =
+  | "communal" | "noise" | "schools" | "bars" | "crime" | "parks" | "metro";
 
 export const LAYER_LABELS: Record<LayerId, string> = {
   communal: "Коммунальный фонд",
   noise: "Шум",
   schools: "Школы",
   bars: "Бары",
-  ecology: "Экология",
+  crime: "Риск-зоны",
   parks: "Парки",
+  metro: "Метро",
 };
 
 export const MAP_LAYER_IDS = Object.keys(LAYER_LABELS) as LayerId[];
@@ -43,11 +45,12 @@ export interface GeoZone {
 export interface Property {
   id: string;
   name: string;
+  address: string;
   cover_image: string;
   match_score: number;
-  price_from: number;
-  rooms: number;
-  area_sqm: number;
+  price_from: number | null;
+  rooms: number | null;
+  area_sqm: number | null;
   floor: string;
   tags: string[];
   coordinates: [number, number]; // [lng, lat]

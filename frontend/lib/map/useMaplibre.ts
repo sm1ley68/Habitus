@@ -39,5 +39,12 @@ export function useMaplibre(container: RefObject<HTMLDivElement | null>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Смена города не требует пересоздания карты — достаточно перелёта.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    map.flyTo({ center: CITY_CENTER[city], zoom: 12.5, duration: 900 });
+  }, [city, ready]);
+
   return { map: mapRef.current, ready, missingKey: !style };
 }

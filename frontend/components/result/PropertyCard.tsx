@@ -41,7 +41,9 @@ export default function PropertyCard({
       </div>
 
       <div className="p-5">
-        <h3 className="font-medium text-[15px] tracking-tight text-[#1c1d20]">{property.name}</h3>
+        <h3 className="font-medium text-[15px] tracking-tight text-[#1c1d20]">
+          {property.address || property.name}
+        </h3>
         <p className="mt-1.5 font-mono text-sm text-zinc-700">{money(property.price_from)}</p>
         <p className="mt-0.5 text-xs text-zinc-400">
           {property.rooms}-комн · {property.area_sqm} м² · {property.floor} этаж
