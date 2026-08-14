@@ -7,27 +7,37 @@ WALK_SPEED_MPS = 1.33  # средняя пешая скорость
 #   filter_geog IS NULL         → обогащаем всю таблицу (enrich_all);
 #   filter_geog = 'SRID=4326;…'  → только listings в радиусе точки (enrich_around).
 # poi_geom_wkt никогда не склеивается в текст запроса — защита от SQL-инъекции.
+
+
+# Ближайший POI ищем KNN-оператором <-> (по нему работает GIST), но берём пять
+# кандидатов, а не одного: <-> упорядочивает по ПЛАНАРНОМУ расстоянию в градусах,
+# а планарно ближайший на широте Москвы не всегда геодезически ближайший.
+# Итоговое расстояние по-прежнему считается через geography — значения
+# сопоставимы с прежними.
+# kind подставляется из литерала внутри модуля (module-level constants), не из
+# пользовательского ввода — инъекции нет; не вызывать с внешними переменными.
+def _nearest_min(kind: str) -> str:
+    return f"""(
+      SELECT MIN(ST_Distance(l.geom::geography, p.geom::geography)) / {WALK_SPEED_MPS} / 60.0
+      FROM (SELECT geom FROM poi
+            WHERE kind = '{kind}' AND city = l.city
+            ORDER BY geom <-> l.geom LIMIT 5) p
+    )"""
+
+
 _ENRICH_SQL = f"""
 UPDATE listings l SET
   bar_density_500m = (
     SELECT count(*) FROM poi p
-    WHERE p.kind IN ('bar','alcohol')
+    WHERE p.kind IN ('bar','alcohol') AND p.city = l.city
       AND ST_DWithin(l.geom::geography, p.geom::geography, %(radius)s)
   ),
-  walk_min_school = (
-    SELECT MIN(ST_Distance(l.geom::geography, p.geom::geography)) / {WALK_SPEED_MPS} / 60.0
-    FROM poi p WHERE p.kind='school'
-  ),
-  walk_min_metro = (
-    SELECT MIN(ST_Distance(l.geom::geography, p.geom::geography)) / {WALK_SPEED_MPS} / 60.0
-    FROM poi p WHERE p.kind='metro'
-  ),
-  walk_min_park = (
-    SELECT MIN(ST_Distance(l.geom::geography, p.geom::geography)) / {WALK_SPEED_MPS} / 60.0
-    FROM poi p WHERE p.kind='park'
-  ),
+  walk_min_school = {_nearest_min('school')},
+  walk_min_park   = {_nearest_min('park')},
+  -- источник в приоритете, вычисленное — фолбэк (см. спеку: провенанс)
+  walk_min_metro  = COALESCE(l.walk_min_metro_src, {_nearest_min('metro')}),
   noise_level = CASE
-    WHEN (SELECT count(*) FROM poi p WHERE p.kind='bar'
+    WHEN (SELECT count(*) FROM poi p WHERE p.kind='bar' AND p.city = l.city
           AND ST_DWithin(l.geom::geography, p.geom::geography, 200)) > 2 THEN 'high'
     ELSE 'low' END,
   updated_at = now()

@@ -55,6 +55,43 @@ def test_enrich_around_only_touches_nearby():
         assert far_density is None    # far не пересчитывался
 
 
+def test_source_metro_time_wins_over_computed():
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings, poi;")
+            # станция в ~1.5 км → вычисленное время ~19 мин
+            cur.execute("""INSERT INTO poi (osm_id, kind, name, geom, city) VALUES
+                (1,'metro','Дальняя',ST_SetSRID(ST_MakePoint(37.63,55.75),4326),'msk');""")
+            cur.execute("""INSERT INTO listings (external_id, source, geom, city,
+                                                 walk_min_metro_src) VALUES
+                ('WITH_SRC','t',ST_SetSRID(ST_MakePoint(37.61,55.75),4326),'msk',7),
+                ('NO_SRC','t',ST_SetSRID(ST_MakePoint(37.61,55.75),4326),'msk',NULL);""")
+        conn.commit()
+        enrich_all(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT external_id, walk_min_metro FROM listings ORDER BY external_id;")
+            got = dict(cur.fetchall())
+    assert got["WITH_SRC"] == 7.0            # источник не перезаписан
+    assert got["NO_SRC"] > 10                # посчитано по OSM
+
+
+def test_enrich_does_not_cross_cities():
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings, poi;")
+            cur.execute("""INSERT INTO poi (osm_id, kind, name, geom, city) VALUES
+                (2,'school','Чужая',ST_SetSRID(ST_MakePoint(37.611,55.75),4326),'dxb');""")
+            cur.execute("""INSERT INTO listings (external_id, source, geom, city) VALUES
+                ('M1','t',ST_SetSRID(ST_MakePoint(37.61,55.75),4326),'msk');""")
+        conn.commit()
+        enrich_all(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT walk_min_school FROM listings WHERE external_id='M1';")
+            assert cur.fetchone()[0] is None    # школа чужого города не считается
+
+
 def test_enrich_around_wkt_not_injectable():
     """Вредоносный WKT должен трактоваться как данные, а не исполняться."""
     with psycopg.connect(settings.db_dsn) as conn:
