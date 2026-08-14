@@ -84,6 +84,15 @@ type Listing struct {
 	MetroStation *string
 }
 
+// EvidenceFeature — строка urban_evidence с уже сериализованной геометрией.
+type EvidenceFeature struct {
+	Layer        string
+	Source       string
+	Weight       *float64
+	DB           *float64
+	GeometryJSON string
+}
+
 // POI is a read-only projection of the Python-owned `poi` table.
 type POI struct {
 	Kind string

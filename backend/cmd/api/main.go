@@ -54,6 +54,7 @@ func main() {
 	chatSearchRepo := repository.NewChatSearchRepo(pool)
 	listingRepo := repository.NewListingRepo(pool)
 	poiRepo := repository.NewPOIRepo(pool)
+	evidenceRepo := repository.NewEvidenceRepo(pool)
 
 	authService := service.NewAuthService(userRepo, sessionRepo)
 	chatService := service.NewChatService(chatRepo, messageRepo)
@@ -61,7 +62,7 @@ func main() {
 	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo, mlClient, dossierTimeout)
 	objectAskTimeout := time.Duration(cfg.MLObjectAskTimeoutS) * time.Second
 	objectAskService := service.NewObjectAskService(chatSearchRepo, mlClient, objectAskTimeout)
-	geoLayersService := service.NewGeoLayersService(poiRepo)
+	geoLayersService := service.NewGeoLayersService(poiRepo, evidenceRepo)
 	streamService := service.NewSearchStreamService(chatRepo, messageRepo, chatSearchRepo, listingRepo, mlClient, mlTimeout)
 
 	fiberApp := app.New(cfg, app.Services{

@@ -2,6 +2,8 @@
 // coordinates are always [lng, lat] (WGS84), per frontend/Пайплайн фронт.md.
 package geojson
 
+import "encoding/json"
+
 type Geometry struct {
 	Type        string `json:"type"`
 	Coordinates any    `json:"coordinates"`
@@ -46,4 +48,18 @@ func Polygon(ring [][2]float64, props map[string]any) Feature {
 		Properties: props,
 		Geometry:   Geometry{Type: "Polygon", Coordinates: [][][]float64{coords}},
 	}
+}
+
+// RawFeature оборачивает уже сериализованный GeoJSON из ST_AsGeoJSON —
+// разбирать и пересобирать его на стороне Go незачем. Битая геометрия даёт
+// фичу без geometry, а не панику: слой деградирует, ответ остаётся валидным.
+func RawFeature(geometryJSON string, props map[string]any) Feature {
+	if props == nil {
+		props = map[string]any{}
+	}
+	var g Geometry
+	if err := json.Unmarshal([]byte(geometryJSON), &g); err != nil {
+		return Feature{Type: "Feature", Properties: props}
+	}
+	return Feature{Type: "Feature", Properties: props, Geometry: g}
 }
