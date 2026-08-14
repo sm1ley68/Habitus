@@ -14,7 +14,8 @@ NOISE_ORDER = ["low", "medium", "high"]
 
 # факты, которые едут в ResultItem.address_facts и в объяснение
 FACT_COLUMNS = ("walk_min_school", "walk_min_metro", "walk_min_park",
-                "bar_density_500m", "noise_level", "window_orientation")
+                "bar_density_500m", "noise_level", "window_orientation",
+                "address", "metro_station")
 
 
 @dataclass

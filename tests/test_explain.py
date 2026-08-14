@@ -1,4 +1,5 @@
-from habitus.online.explain import explain, facts_block, template_explanation
+from habitus.online.explain import (GROUNDED_SYSTEM, explain, facts_block,
+                                    template_explanation)
 from habitus.online.llm import FakeLLM, LLMResponse
 from habitus.online.schema import ResultItem
 
@@ -46,3 +47,21 @@ def test_template_mentions_relaxations_and_empty_results():
     assert "ничего не найдено" in text.lower()
     text2 = template_explanation([_item()], ["снят фильтр уровня шума"])
     assert "снят фильтр уровня шума" in text2
+
+
+def test_facts_block_carries_address_and_station():
+    item = ResultItem(external_id="A", price=20000000, area=54.0, rooms=2,
+                      address_facts={"address": "Москва, Хамовники",
+                                     "metro_station": "Парк культуры",
+                                     "walk_min_metro": 7.0}, score=0.9)
+    block = facts_block([item], [])
+    assert "Хамовники" in block
+    assert "Парк культуры" in block
+
+
+def test_prompt_allows_address_but_still_forbids_invented_geography():
+    # разрешение снимается ровно с двух grounded-полей — они названы по именам,
+    # иначе тест не отличил бы разрешение от прежнего запрета «называть адреса»
+    assert "address" in GROUNDED_SYSTEM
+    assert "metro_station" in GROUNDED_SYSTEM
+    assert "названия школ" in GROUNDED_SYSTEM   # запрет на названия школ остаётся

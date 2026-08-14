@@ -99,3 +99,15 @@ def test_empty_sparse_vector_skips_sparse_channel_and_does_not_crash(conn):
                           query_vec=(_axis(1), {}), channels=("dense", "sparse"))
     assert cands[0].external_id == "B"
     assert all(c.score > 0 for c in cands)
+
+
+def test_facts_carry_address_and_station(conn):
+    with conn.cursor() as cur:
+        cur.execute("UPDATE listings SET address=%s, metro_station=%s "
+                    "WHERE external_id='A';",
+                    ("Москва, Хамовники, Комсомольский проспект", "Парк культуры"))
+    conn.commit()
+    cands = filter_only_search(conn, ParsedQuery())
+    a = next(c for c in cands if c.external_id == "A")
+    assert a.facts["address"] == "Москва, Хамовники, Комсомольский проспект"
+    assert a.facts["metro_station"] == "Парк культуры"
