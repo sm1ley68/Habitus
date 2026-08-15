@@ -38,7 +38,8 @@ log "цикл начат"
 #    трогать нельзя, иначе гашение сочтёт все объявления пропавшими.
 if [ "${HABITUS_SKIP_COLLECT:-0}" = "1" ]; then
     log "сбор пропущен (HABITUS_SKIP_COLLECT=1), заливаю имеющийся $CSV"
-elif [ -z "${CIAN_PROXIES:-}" ] && [ -z "${HABITUS_PROXY_FILE:-}" ]; then
+elif [ -z "${CIAN_PROXIES:-}" ] && [ -z "${HABITUS_PROXY_FILE:-}" ] \
+     && [ "${HABITUS_ALLOW_DIRECT:-0}" != "1" ]; then
     # Без резидентного прокси Циан отдаёт капчу на любой запрос. Планировщику
     # незачем падать каждый цикл: пропускаем сбор, но заливку делаем — база
     # остаётся консистентной, а сбор начнётся сам, как только появятся прокси.
@@ -49,6 +50,7 @@ else
         --output "$CSV" \
         --rooms "$ROOMS" \
         --max-offers "$MAX_OFFERS" \
+        ${HABITUS_ALLOW_DIRECT:+--allow-direct} \
         ${HABITUS_PROXY_FILE:+--proxy-file "$HABITUS_PROXY_FILE"} ) >>"$LOG" 2>&1
 fi
 
