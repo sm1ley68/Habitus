@@ -1,13 +1,19 @@
 # Postgres 16 + PostGIS + pgvector (для sparsevec нужен pgvector >= 0.7).
-# База содержит PGDG-репозиторий, ставим pgvector оттуда.
 #
-# imresamu/postgis — мультиарх-сборка тех же образов PostGIS. Официальный
-# postgis/postgis:16-3.4 существует ТОЛЬКО под amd64, и на Apple Silicon Docker
-# гонял его полной эмуляцией QEMU (UseVirtualizationFramework=False, то есть без
-# Rosetta): отсюда и медленные гео-запросы, и, по всей видимости, случайная
-# гибель бэкендов на длинных прогонах. Тег обязан оставаться мультиарх — при
-# возврате на postgis/postgis эмуляция вернётся молча.
-FROM imresamu/postgis:16-3.4
+# База — ОФИЦИАЛЬНЫЙ образ postgres (мультиарх), расширения ставятся из PGDG,
+# канонического репозитория и PostGIS, и pgvector. Сторонних издателей в цепочке
+# нет.
+#
+# Почему не postgis/postgis: тот образ публикуется только под amd64, и на Apple
+# Silicon Docker гонял его полной эмуляцией QEMU (UseVirtualizationFramework=False,
+# то есть даже без Rosetta). Гео-запросы под эмуляцией шли в ~19 раз медленнее, и
+# на длинных прогонах бэкенды случайно умирали. Базовый образ обязан оставаться
+# мультиарх — иначе эмуляция вернётся молча.
+#
+# Расширения создаёт habitus/db/schema.sql (CREATE EXTENSION postgis/vector),
+# поэтому авто-инициализация из образа PostGIS не нужна.
+FROM postgres:16
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-16-pgvector \
+    && apt-get install -y --no-install-recommends \
+        postgresql-16-postgis-3 postgresql-16-pgvector \
     && rm -rf /var/lib/apt/lists/*
