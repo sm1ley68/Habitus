@@ -101,3 +101,51 @@ building_material,deadline,latitude,longitude,url,collected_at
 cd backend
 go run ./cmd/cian-parser --help
 ```
+
+## Постоянное обновление
+
+Один цикл обновления — `scripts/refresh.sh`: сбор с Циана, заливка в БД,
+гашение снятых с продажи объявлений. Цикл идемпотентен (и парсер, и загрузчик
+обновляют строки по внешнему id) и защищён блокировкой: параллельный запуск
+молча выходит, не портя CSV и не конкурируя за GPU при переэмбеддинге.
+
+```bash
+./scripts/refresh.sh                      # полный цикл
+HABITUS_SKIP_COLLECT=1 ./scripts/refresh.sh   # только заливка имеющегося CSV
+```
+
+Переменные: `HABITUS_CSV`, `HABITUS_LOG`, `HABITUS_MAX_OFFERS`, `HABITUS_ROOMS`,
+`HABITUS_PROXY_FILE`, `HABITUS_SKIP_COLLECT`.
+
+**Без прокси сбор пропускается, а не падает.** Цикл честно пишет это в лог и
+делает заливку — база остаётся консистентной, а сбор начнётся сам, как только в
+`CIAN_PROXIES` или `HABITUS_PROXY_FILE` появятся рабочие адреса.
+
+### По расписанию (macOS, launchd)
+
+```bash
+sed -e "s|__ROOT__|$PWD|g" -e "s|__HOME__|$HOME|g" \
+    scripts/com.habitus.refresh.plist > ~/Library/LaunchAgents/com.habitus.refresh.plist
+launchctl load ~/Library/LaunchAgents/com.habitus.refresh.plist
+launchctl start com.habitus.refresh        # прогнать немедленно
+```
+
+Интервал по умолчанию — раз в 6 часов (`StartInterval`). Снять: `launchctl unload`.
+
+### По расписанию (Linux, cron)
+
+```cron
+0 */6 * * * cd /path/to/Habitus && ./scripts/refresh.sh
+```
+
+### Что происходит с объявлениями между циклами
+
+| Событие у источника | Что делает цикл |
+|---|---|
+| новое объявление | добавляется, считается doc_text и эмбеддинг |
+| изменилась цена/описание/фото | строка обновляется целиком (upsert по всем колонкам) |
+| текст изменился | переэмбеддинг только этой строки — по `content_hash` |
+| объявление пропало из выдачи | `is_active=false`, из поиска уходит |
+| объявление вернулось | снова `is_active=true` (ON CONFLICT в promote) |
+
+Гашение скоупится по источнику: прогон Циана не трогает объявления Kaggle.

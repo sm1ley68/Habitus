@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Периодический запуск scripts/refresh.sh через launchd (штатный планировщик
+  macOS; cron на маке считается устаревшим и не переживает сон/пробуждение так
+  же аккуратно).
+
+  Установка:
+      sed "s|__ROOT__|$PWD|g" scripts/com.habitus.refresh.plist \
+        > ~/Library/LaunchAgents/com.habitus.refresh.plist
+      launchctl load ~/Library/LaunchAgents/com.habitus.refresh.plist
+
+  Снять:
+      launchctl unload ~/Library/LaunchAgents/com.habitus.refresh.plist
+
+  Проверить, что зарегистрирован:  launchctl list | grep habitus
+  Запустить немедленно:            launchctl start com.habitus.refresh
+
+  StartInterval — раз в 6 часов. Объявления так часто не меняются, а каждый цикл
+  занимает GPU/MPS под переэмбеддинг изменившихся строк.
+  RunAtLoad=false намеренно: загрузка агента не должна дёргать тяжёлый цикл.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.habitus.refresh</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>__ROOT__/scripts/refresh.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Пути к uv и go: launchd запускает job с урезанным PATH, без ~/.local/bin. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin</string>
+        <!-- Раскомментируйте, когда появятся прокси; без них цикл пропускает сбор. -->
+        <!-- <key>HABITUS_PROXY_FILE</key><string>__ROOT__/.cian-proxies</string> -->
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>21600</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__ROOT__/data/refresh.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>__ROOT__/data/refresh.launchd.log</string>
+</dict>
+</plist>

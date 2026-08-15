@@ -8,6 +8,7 @@ from habitus.db.connection import get_conn
 from habitus.ingest.kaggle_loader import parse_csv as parse_kaggle_csv, load_to_raw
 from habitus.ingest.cian_loader import parse_csv as parse_cian_csv
 from habitus.clean.normalize import promote_to_listings
+from habitus.update.incremental import deactivate_missing
 from habitus.clean.geocode import backfill_missing_coords
 from habitus.geo.osm_extract import fetch_kind, upsert_poi, OVERPASS_QUERIES
 from habitus.geo.enrich import enrich_all
@@ -34,8 +35,15 @@ def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
                 source="kaggle") -> dict:
     init_db(conn)
     stats = {}
-    stats["raw"] = load_to_raw(_PARSERS[source](csv_path), conn)
+    rows = _PARSERS[source](csv_path)
+    stats["raw"] = load_to_raw(rows, conn)
     stats["listings"] = promote_to_listings(conn)
+    # Снятое с продажи должно уходить из выдачи: всё, чего нет в свежем снимке
+    # ЭТОГО источника, гасим. Вернувшееся объявление оживит promote_to_listings
+    # (is_active=true в ON CONFLICT). Скоуп по источнику обязателен — иначе
+    # прогон Циана погасил бы объявления Kaggle.
+    stats["deactivated"] = deactivate_missing(
+        {r["external_id"] for r in rows}, conn, source=source)
     geo_kwargs = {} if geocoder is None else {"geocoder": geocoder}
     stats["geocoded"] = backfill_missing_coords(conn, **geo_kwargs)
     if fetch_osm:

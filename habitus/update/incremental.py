@@ -12,9 +12,19 @@ def apply_new_poi(rows: list[dict], conn: psycopg.Connection) -> int:
     return affected
 
 
-def deactivate_missing(active_ids: set[str], conn: psycopg.Connection) -> int:
+def deactivate_missing(active_ids: set[str], conn: psycopg.Connection,
+                       source: str | None = None) -> int:
+    """Гасит объявления источника, которых больше нет в его свежем снимке.
+
+    `source` обязателен на практике: external_id разных источников не
+    пересекаются, поэтому снимок Циана без скоупа погасил бы вообще всё чужое.
+    Обратное включение делает promote_to_listings — там is_active=true в
+    ON CONFLICT, так что вернувшееся в продажу объявление оживает само.
+    """
+    where = "is_active = true" + (" AND source = %s" if source else "")
+    params = (source,) if source else ()
     with conn.cursor() as cur:
-        cur.execute("SELECT external_id FROM listings WHERE is_active=true;")
+        cur.execute(f"SELECT external_id FROM listings WHERE {where};", params)
         current = {r[0] for r in cur.fetchall()}
         missing = current - active_ids
         if missing:
