@@ -23,7 +23,7 @@ func TestGeoLayersReturnsMetro(t *testing.T) {
 		{Kind: "metro", Name: "Тверская", Lon: 37.604, Lat: 55.765},
 		{Kind: "school", Name: "Школа", Lon: 37.6, Lat: 55.7},
 	}}
-	svc := NewGeoLayersService(repo, &fakeEvidenceLister{})
+	svc := NewGeoLayersService(repo, &fakeEvidenceLister{}, &fakeListingLister{})
 
 	got, _, err := svc.Layers(context.Background(), "msk", []string{"metro", "unknown"}, nil)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestGeoLayersReturnsMetro(t *testing.T) {
 
 func TestGeoLayersDropsUnknownWithoutQuery(t *testing.T) {
 	repo := &fakePOILister{}
-	svc := NewGeoLayersService(repo, &fakeEvidenceLister{})
+	svc := NewGeoLayersService(repo, &fakeEvidenceLister{}, &fakeListingLister{})
 	got, _, err := svc.Layers(context.Background(), "msk", []string{"unknown"}, nil)
 	if err != nil {
 		t.Fatalf("Layers() error = %v", err)
@@ -75,7 +75,7 @@ func (f *fakeEvidenceLister) ListByLayers(_ context.Context, _ string, layers []
 
 func TestEvidenceLayerRequiresBbox(t *testing.T) {
 	ev := &fakeEvidenceLister{}
-	svc := NewGeoLayersService(&fakePOILister{}, ev)
+	svc := NewGeoLayersService(&fakePOILister{}, ev, &fakeListingLister{})
 	out, truncated, err := svc.Layers(context.Background(), "msk", []string{"communal"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestEvidenceLayerCarriesGeometryAndSource(t *testing.T) {
 		Layer: "communal", Source: "reformagkh", Weight: &w,
 		GeometryJSON: `{"type":"Point","coordinates":[37.6,55.7]}`,
 	}}}
-	svc := NewGeoLayersService(&fakePOILister{}, ev)
+	svc := NewGeoLayersService(&fakePOILister{}, ev, &fakeListingLister{})
 	box := [4]float64{37.5, 55.6, 37.7, 55.8}
 	out, truncated, err := svc.Layers(context.Background(), "msk", []string{"communal"}, &box)
 	if err != nil {
@@ -131,7 +131,7 @@ func TestEvidenceLayerMarksTruncation(t *testing.T) {
 		rows[i] = domain.EvidenceFeature{Layer: "noise", Source: "osm",
 			GeometryJSON: `{"type":"Point","coordinates":[37.6,55.7]}`}
 	}
-	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{rows: rows})
+	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{rows: rows}, &fakeListingLister{})
 	box := [4]float64{37.5, 55.6, 37.7, 55.8}
 	out, truncated, err := svc.Layers(context.Background(), "msk", []string{"noise"}, &box)
 	if err != nil {
@@ -152,5 +152,79 @@ func TestEcologyIsGoneAndCrimeIsAllowed(t *testing.T) {
 	}
 	if !AllowedLayers["crime"] || !AllowedLayers["metro"] {
 		t.Fatal("crime и metro должны быть разрешены")
+	}
+}
+
+type fakeListingLister struct {
+	rows   []domain.Listing
+	bbox   [4]float64
+	city   string
+	limit  int
+	called bool
+}
+
+func (f *fakeListingLister) ListInBBox(_ context.Context, city string, bbox [4]float64,
+	limit int) ([]domain.Listing, error) {
+	f.called, f.city, f.bbox, f.limit = true, city, bbox, limit
+	return f.rows, nil
+}
+
+func TestListingsLayerRequiresBbox(t *testing.T) {
+	lister := &fakeListingLister{}
+	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister)
+	fc, err := svc.Listings(context.Background(), "msk", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fc.Features) != 0 {
+		t.Fatal("без вьюпорта отдавать нечего — 2143 объекта в браузер не грузим")
+	}
+	if lister.called {
+		t.Fatal("без bbox репозиторий не должен опрашиваться")
+	}
+}
+
+func TestListingsLayerCarriesCardFields(t *testing.T) {
+	price := int64(21_300_000)
+	rooms, area := 2, 40.0
+	lon, lat := 37.62, 55.75
+	lister := &fakeListingLister{rows: []domain.Listing{{
+		ExternalID: "cian_1", Price: &price, Rooms: &rooms, Area: &area,
+		Lon: &lon, Lat: &lat, Address: strp("Москва, Снежная улица, 4"),
+		Photos: []string{"https://cdn/a.jpg"},
+	}}}
+	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister)
+	box := [4]float64{37.5, 55.6, 37.7, 55.8}
+	fc, err := svc.Listings(context.Background(), "msk", &box)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lister.bbox != box || lister.city != "msk" || lister.limit != listingsLimit {
+		t.Fatalf("репозиторий вызван неверно: %#v", lister)
+	}
+	if len(fc.Features) != 1 {
+		t.Fatalf("ожидалась одна точка, получено %#v", fc.Features)
+	}
+	f := fc.Features[0]
+	if f.Geometry.Type != "Point" {
+		t.Fatalf("геометрия должна быть точкой: %#v", f.Geometry)
+	}
+	for key, want := range map[string]any{
+		"id": "cian_1", "address": "Москва, Снежная улица, 4",
+		"cover_image": "https://cdn/a.jpg", "rooms": 2,
+	} {
+		if f.Properties[key] != want {
+			t.Fatalf("properties[%q] = %#v; want %#v", key, f.Properties[key], want)
+		}
+	}
+}
+
+func TestListingsLayerSkipsRowsWithoutCoordinates(t *testing.T) {
+	lister := &fakeListingLister{rows: []domain.Listing{{ExternalID: "no_geo"}}}
+	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister)
+	box := [4]float64{37.5, 55.6, 37.7, 55.8}
+	fc, _ := svc.Listings(context.Background(), "msk", &box)
+	if len(fc.Features) != 0 {
+		t.Fatal("объект без координат на карту попасть не может")
 	}
 }

@@ -43,13 +43,64 @@ type evidenceLister interface {
 		bbox [4]float64, limit int) ([]domain.EvidenceFeature, error)
 }
 
+// Потолок точек на один вьюпорт. Без него на зуме «вся Москва» в браузер уедут
+// все объявления города разом; кластеризация на стороне карты этого не спасает —
+// платить придётся сетью и парсингом JSON.
+const listingsLimit = 2000
+
+type listingLister interface {
+	ListInBBox(ctx context.Context, city string, bbox [4]float64, limit int) ([]domain.Listing, error)
+}
+
 type GeoLayersService struct {
 	pois     poiLister
 	evidence evidenceLister
+	listings listingLister
 }
 
-func NewGeoLayersService(pois poiLister, evidence evidenceLister) *GeoLayersService {
-	return &GeoLayersService{pois: pois, evidence: evidence}
+func NewGeoLayersService(pois poiLister, evidence evidenceLister,
+	listings listingLister) *GeoLayersService {
+	return &GeoLayersService{pois: pois, evidence: evidence, listings: listings}
+}
+
+// Listings — объявления в границах вьюпорта, точками для карты. Позволяет
+// открыть ЛЮБОЙ объект, а не только попавший в выдачу подбора.
+// Без bbox возвращается пустая коллекция: отдавать весь город бессмысленно.
+func (s *GeoLayersService) Listings(ctx context.Context, city string,
+	bbox *[4]float64) (geojson.FeatureCollection, error) {
+	fc := geojson.NewFeatureCollection()
+	if bbox == nil {
+		return fc, nil
+	}
+	rows, err := s.listings.ListInBBox(ctx, city, *bbox, listingsLimit)
+	if err != nil {
+		return geojson.FeatureCollection{}, err
+	}
+	for _, l := range rows {
+		if l.Lon == nil || l.Lat == nil {
+			continue // без координат точку не поставить
+		}
+		props := map[string]any{"id": l.ExternalID, "name": SynthName(l.Rooms, l.Area)}
+		if l.Address != nil && *l.Address != "" {
+			props["address"] = *l.Address
+		}
+		if l.Price != nil {
+			props["price"] = *l.Price
+		}
+		if l.Rooms != nil {
+			props["rooms"] = *l.Rooms
+		}
+		if l.Area != nil {
+			props["area_sqm"] = *l.Area
+		}
+		cover := PlaceholderCoverImage
+		if len(l.Photos) > 0 && l.Photos[0] != "" {
+			cover = l.Photos[0]
+		}
+		props["cover_image"] = cover
+		fc.Features = append(fc.Features, geojson.Point(*l.Lon, *l.Lat, props))
+	}
+	return fc, nil
 }
 
 // Layers returns a FeatureCollection per requested (and recognized) layer

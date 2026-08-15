@@ -273,6 +273,18 @@ func NewObjectService(chats *ChatService, results *repository.ChatSearchRepo,
 }
 
 func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUID, objectID string) (ObjectPassport, error) {
+	// chatID == uuid.Nil — объект открыт с карты, вне подбора: контекста запроса
+	// нет, поэтому ни процента совпадения, ни досье не будет (см.
+	// buildStandalonePassport). Так карта может открыть ЛЮБОЕ объявление, а не
+	// только попавшее в выдачу.
+	if chatID == uuid.Nil {
+		listing, err := s.listings.GetByExternalID(ctx, objectID)
+		if err != nil {
+			return ObjectPassport{}, apperr.ObjectNotFound()
+		}
+		return buildStandalonePassport(listing), nil
+	}
+
 	chat, err := s.chats.GetOwned(ctx, userID, chatID)
 	if err != nil {
 		return ObjectPassport{}, err
@@ -280,7 +292,13 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 
 	res, err := s.results.GetResult(ctx, chatID, objectID)
 	if errors.Is(err, repository.ErrNotFound) {
-		return ObjectPassport{}, apperr.ObjectNotFound()
+		// Объект есть в базе, но в этом чате не искался — отдаём его как с карты,
+		// а не 404: пользователь мог прийти по прямой ссылке.
+		listing, lerr := s.listings.GetByExternalID(ctx, objectID)
+		if lerr != nil {
+			return ObjectPassport{}, apperr.ObjectNotFound()
+		}
+		return buildStandalonePassport(listing), nil
 	}
 	if err != nil {
 		return ObjectPassport{}, err
@@ -291,11 +309,6 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 		// Defensive only: chat_search_results.external_id only ever comes from
 		// a real listings row written moments earlier during a search stream.
 		return ObjectPassport{}, apperr.ObjectNotFound()
-	}
-
-	var coords []float64
-	if listing.Lon != nil && listing.Lat != nil {
-		coords = []float64{*listing.Lon, *listing.Lat}
 	}
 
 	analysis := fallbackAnalysis(res.MatchScore, res.Explanation, res.AddressFacts)
@@ -310,27 +323,87 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 		}
 	}
 
+	p := staticPassport(listing)
+	p.LifestyleAnalysis = analysis
+	return p, nil
+}
+
+// staticPassport — часть паспорта, которая не зависит от запроса: всё берётся
+// из строки listings.
+func staticPassport(l domain.Listing) ObjectPassport {
 	address := ""
-	if listing.Address != nil {
-		address = *listing.Address
+	if l.Address != nil {
+		address = *l.Address
 	}
-	images := listing.Photos
+	images := l.Photos
 	if len(images) == 0 {
 		images = []string{PlaceholderCoverImage}
 	}
-
+	var coords []float64
+	if l.Lon != nil && l.Lat != nil {
+		coords = []float64{*l.Lon, *l.Lat}
+	}
 	return ObjectPassport{
-		ID:                objectID,
-		Name:              SynthName(listing.Rooms, listing.Area),
-		Address:           address,
-		Price:             listing.Price,
-		Rooms:             listing.Rooms,
-		AreaSqm:           listing.Area,
-		Floor:             FormatFloor(listing.Level, listing.Levels),
-		Images:            images,
-		Coordinates:       coords,
-		LifestyleAnalysis: analysis,
-	}, nil
+		ID:          l.ExternalID,
+		Name:        SynthName(l.Rooms, l.Area),
+		Address:     address,
+		Price:       l.Price,
+		Rooms:       l.Rooms,
+		AreaSqm:     l.Area,
+		Floor:       FormatFloor(l.Level, l.Levels),
+		Images:      images,
+		Coordinates: coords,
+	}
+}
+
+// buildStandalonePassport — объект, открытый с карты, вне подбора.
+//
+// Ни процента совпадения, ни досье здесь быть не может: оба привязаны к запросу
+// (match_score считается по скору выдачи, досье строится из raw_query/
+// parsed_query). Выдумывать их для объекта без запроса — ровно то, что проект
+// запрещает. Остаются факты объекта: статика и блоки, собранные из его же
+// address_facts.
+func buildStandalonePassport(l domain.Listing) ObjectPassport {
+	p := staticPassport(l)
+	p.LifestyleAnalysis = LifestyleAnalysis{
+		MatchScore: 0,
+		Summary:    "",
+		Verdict: VerdictInfo{Headline: "Объект открыт с карты, вне подбора",
+			Confidence: 0, LayersChecked: 0},
+		Brief:       []BriefItem{},
+		Blocks:      buildBlocks(listingFacts(l)),
+		Compromises: []CompromiseNote{},
+		Relaxation:  []RelaxationNote{},
+	}
+	return p
+}
+
+// listingFacts — факты объекта в той же форме, что приходят из ML в
+// address_facts, чтобы buildBlocks работал одинаково в обоих режимах.
+func listingFacts(l domain.Listing) map[string]any {
+	facts := map[string]any{}
+	if l.MetroStation != nil && *l.MetroStation != "" {
+		facts["metro_station"] = *l.MetroStation
+	}
+	if l.Address != nil && *l.Address != "" {
+		facts["address"] = *l.Address
+	}
+	if l.WalkMinSchool != nil {
+		facts["walk_min_school"] = *l.WalkMinSchool
+	}
+	if l.WalkMinMetro != nil {
+		facts["walk_min_metro"] = *l.WalkMinMetro
+	}
+	if l.WalkMinPark != nil {
+		facts["walk_min_park"] = *l.WalkMinPark
+	}
+	if l.BarDensity500m != nil {
+		facts["bar_density_500m"] = float64(*l.BarDensity500m)
+	}
+	if l.NoiseLevel != nil && *l.NoiseLevel != "" {
+		facts["noise_level"] = *l.NoiseLevel
+	}
+	return facts
 }
 
 func fallbackAnalysis(matchScore int, summary string, facts map[string]any) LifestyleAnalysis {

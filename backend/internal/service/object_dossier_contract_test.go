@@ -2,11 +2,13 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"habitus-backend/internal/client"
+	"habitus-backend/internal/domain"
 )
 
 func TestDecodeDossierNarrowsHeroDataByKey(t *testing.T) {
@@ -90,5 +92,41 @@ func TestPassportScoreMatchesListScore(t *testing.T) {
 	analysis := fallbackAnalysis(stored, "", map[string]any{})
 	if analysis.MatchScore != stored {
 		t.Fatalf("паспорт показывает %d, список — %d", analysis.MatchScore, stored)
+	}
+}
+
+func TestStandalonePassportHasNoInventedMatchScore(t *testing.T) {
+	// Объект, открытый с карты, вне подбора: процента совпадения не существует —
+	// показывать его нельзя, он привязан к запросу. Досье тоже строится из
+	// raw_query/parsed_query, поэтому в этом режиме его нет.
+	price := int64(21_300_000)
+	rooms, area := 2, 40.0
+	lon, lat := 37.6, 55.75
+	school, metro := 6.0, 4.0
+	l := domain.Listing{
+		ExternalID: "cian_1", Price: &price, Rooms: &rooms, Area: &area,
+		Lon: &lon, Lat: &lat, Address: strp("Москва, Снежная улица, 4"),
+		Photos:        []string{"https://cdn/a.jpg", "https://cdn/b.jpg"},
+		WalkMinSchool: &school, WalkMinMetro: &metro,
+	}
+	p := buildStandalonePassport(l)
+	if p.LifestyleAnalysis.MatchScore != 0 {
+		t.Fatalf("процент совпадения без запроса должен быть пустым, получено %d",
+			p.LifestyleAnalysis.MatchScore)
+	}
+	if len(p.LifestyleAnalysis.Blocks) == 0 {
+		t.Fatal("блоки из фактов объекта должны остаться")
+	}
+	if p.Address != "Москва, Снежная улица, 4" || len(p.Images) != 2 {
+		t.Fatalf("статика объекта потерялась: %#v", p)
+	}
+	if p.Coordinates[0] != lon || p.Coordinates[1] != lat {
+		t.Fatalf("координаты потерялись: %#v", p.Coordinates)
+	}
+	for _, c := range [][]string{{"brief", fmt.Sprint(p.LifestyleAnalysis.Brief)},
+		{"compromises", fmt.Sprint(p.LifestyleAnalysis.Compromises)}} {
+		if c[1] == "" {
+			t.Fatalf("%s должен быть пустым срезом, а не nil", c[0])
+		}
 	}
 }

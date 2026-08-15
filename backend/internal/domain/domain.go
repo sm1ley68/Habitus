@@ -84,6 +84,14 @@ type Listing struct {
 	Address      *string
 	MetroStation *string
 	Photos       []string
+	// Факты обогащения — те же величины, что ML кладёт в address_facts.
+	// Нужны, чтобы паспорт объекта, открытого с карты (вне подбора), собирал
+	// блоки из данных самого объекта, а не из контекста поиска.
+	WalkMinSchool  *float64
+	WalkMinMetro   *float64
+	WalkMinPark    *float64
+	BarDensity500m *int
+	NoiseLevel     *string
 }
 
 // EvidenceFeature — строка urban_evidence с уже сериализованной геометрией.

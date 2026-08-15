@@ -55,3 +55,17 @@ func (h *GeoHandler) Layers(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"city": city, "layers": layers, "truncated": truncated})
 }
+
+// Listings implements GET /geo/listings?city=&bbox= — объявления под вьюпортом
+// карты. Без bbox отдаётся пустая коллекция, а не весь город.
+func (h *GeoHandler) Listings(c *fiber.Ctx) error {
+	city := c.Query("city")
+	if city == "" {
+		city = "msk"
+	}
+	fc, err := h.layers.Listings(c.Context(), city, parseBbox(c.Query("bbox")))
+	if err != nil {
+		return err
+	}
+	return c.JSON(fiber.Map{"city": city, "listings": fc})
+}

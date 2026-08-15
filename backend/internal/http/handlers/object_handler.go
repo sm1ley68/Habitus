@@ -21,9 +21,15 @@ func NewObjectHandler(objects *service.ObjectService) *ObjectHandler {
 // query-specific dossier from its versioned lazy cache and falls back to an
 // honest secondary-only response when exact evidence is unavailable.
 func (h *ObjectHandler) Get(c *fiber.Ctx) error {
-	chatID, err := uuid.Parse(c.Query("chat_id"))
-	if err != nil {
-		return apperr.ChatNotFound()
+	// chat_id необязателен: без него объект открывается «с карты», вне подбора.
+	// Переданный, но битый chat_id — по-прежнему ошибка, а не тихий фолбэк.
+	var chatID uuid.UUID
+	if raw := c.Query("chat_id"); raw != "" {
+		parsed, err := uuid.Parse(raw)
+		if err != nil {
+			return apperr.ChatNotFound()
+		}
+		chatID = parsed
 	}
 	objectID := c.Params("object_id")
 

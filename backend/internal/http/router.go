@@ -43,4 +43,5 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService) {
 	api.Post("/objects/:object_id/ask/stream", authMw, h.ObjectAsk.PostStream)
 
 	api.Get("/geo/layers", authMw, h.Geo.Layers)
+	api.Get("/geo/listings", authMw, h.Geo.Listings)
 }
