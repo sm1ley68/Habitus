@@ -91,6 +91,7 @@ export default function MapCanvas() {
   const layerData = useSession((s) => s.layerData);
   const selectProperty = useSession((s) => s.selectProperty);
   const setViewport = useSession((s) => s.setViewport);
+  const mapListings = useSession((s) => s.mapListings);
   const markers = useRef<maplibregl.Marker[]>([]);
   const pendingRemoval = useRef<Record<string, number>>({});
   const reduce = useReducedMotion();
@@ -229,6 +230,87 @@ export default function MapCanvas() {
     map.on("moveend", publish);
     return () => { map.off("moveend", publish); };
   }, [map, ready, setViewport]);
+
+  // Слой ВСЕХ объявлений под вьюпортом — отдельно от маркеров выдачи. Кликом по
+  // точке открывается паспорт любого объекта, а не только попавшего в подбор.
+  // Кластеризация нативная: под вьюпорт приходит до 2000 точек, россыпью они
+  // кладут кадры и перекрывают маркеры результатов.
+  //
+  // Источник и обработчики создаются ОДИН раз, данные обновляются отдельным
+  // эффектом: mapListings меняется на каждом moveend, и будь всё в одном эффекте,
+  // cleanup снимал бы обработчики, а повторный проход уходил бы в ранний return
+  // по уже существующему источнику — клики переставали бы работать после первого
+  // же сдвига карты.
+  useEffect(() => {
+    if (!map || !ready) return;
+    const SRC = "all-listings";
+    if (map.getSource(SRC)) return;
+
+    map.addSource(SRC, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+      cluster: true, clusterRadius: 55, clusterMaxZoom: 15,
+    });
+    map.addLayer({
+      id: `${SRC}-clusters`, type: "circle", source: SRC, filter: ["has", "point_count"],
+      paint: {
+        "circle-color": "#1c1d20", "circle-opacity": 0.55,
+        "circle-radius": ["step", ["get", "point_count"], 14, 25, 18, 100, 24],
+      },
+    });
+    // Подписи числа в кластере намеренно нет: symbol-слой требует glyphs в
+    // стиле карты, а dataviz-light их не обязан отдавать — упавший слой рушит
+    // весь эффект и с ним остальные слои. Размер круга и так кодирует объём.
+    map.addLayer({
+      id: `${SRC}-point`, type: "circle", source: SRC, filter: ["!", ["has", "point_count"]],
+      paint: {
+        "circle-radius": 5, "circle-color": "#1c1d20", "circle-opacity": 0.5,
+        "circle-stroke-width": 1.5, "circle-stroke-color": "#ffffff",
+      },
+    });
+
+    const openPassport = (e: maplibregl.MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const p = f.properties as Record<string, unknown>;
+      const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
+      // Стор читаем через getState: обработчик навешан один раз и не должен
+      // держать замыкание на устаревший экшен.
+      useSession.getState().openListingFromMap({
+        id: String(p.id), name: String(p.name ?? ""),
+        address: typeof p.address === "string" ? p.address : "",
+        cover_image: String(p.cover_image ?? ""),
+        match_score: 0,   // процента совпадения вне подбора не существует
+        price_from: typeof p.price === "number" ? p.price : null,
+        rooms: typeof p.rooms === "number" ? p.rooms : null,
+        area_sqm: typeof p.area_sqm === "number" ? p.area_sqm : null,
+        floor: "", tags: [], coordinates: [lng, lat],
+      });
+    };
+    const zoomCluster = (e: maplibregl.MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      map.easeTo({
+        center: (f.geometry as GeoJSON.Point).coordinates as [number, number],
+        zoom: map.getZoom() + 2,
+      });
+    };
+    const cursor = (v: string) => () => { map.getCanvas().style.cursor = v; };
+
+    map.on("click", `${SRC}-point`, openPassport);
+    map.on("click", `${SRC}-clusters`, zoomCluster);
+    map.on("mouseenter", `${SRC}-point`, cursor("pointer"));
+    map.on("mouseleave", `${SRC}-point`, cursor(""));
+    map.on("mouseenter", `${SRC}-clusters`, cursor("pointer"));
+    map.on("mouseleave", `${SRC}-clusters`, cursor(""));
+  }, [map, ready]);
+
+  // Данные слоя объявлений — отдельно от его создания (см. комментарий выше).
+  useEffect(() => {
+    if (!map || !ready || !mapListings) return;
+    const src = map.getSource("all-listings") as maplibregl.GeoJSONSource | undefined;
+    src?.setData(mapListings);
+  }, [map, ready, mapListings]);
 
   // Card <-> pin cross-highlight: scale up whichever pin the store says is hovered.
   useEffect(() => {

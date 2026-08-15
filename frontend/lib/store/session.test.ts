@@ -77,3 +77,31 @@ it("toggleLayer flips a typed layer id", () => {
   useSession.getState().toggleLayer("schools");
   expect(useSession.getState().activeLayers.schools).toBe(false);
 });
+
+test("объект, открытый с карты, показывается в паспорте без контекста чата", () => {
+  const fromMap = {
+    id: "cian_42", name: "2-комн, 40 м²", address: "Москва, Снежная улица, 4",
+    cover_image: "https://cdn/a.jpg", match_score: 0, price_from: 21_300_000,
+    rooms: 2, area_sqm: 40, floor: "", tags: [],
+    coordinates: [37.62, 55.75] as [number, number],
+  };
+  useSession.getState().openListingFromMap(fromMap);
+  expect(useSession.getState().mapProperty?.id).toBe("cian_42");
+  expect(useSession.getState().screen).toBe("passport");
+
+  // возврат к выдаче обязан снять карточку с карты, иначе она перекроет
+  // обычный выбор из результатов подбора
+  useSession.getState().setScreen("result");
+  expect(useSession.getState().mapProperty).toBeNull();
+});
+
+test("выбор объекта из выдачи сбрасывает карточку, открытую с карты", () => {
+  const fromMap = {
+    id: "cian_42", name: "x", address: "", cover_image: "", match_score: 0,
+    price_from: null, rooms: null, area_sqm: null, floor: "", tags: [],
+    coordinates: [37.62, 55.75] as [number, number],
+  };
+  useSession.getState().openListingFromMap(fromMap);
+  useSession.getState().selectProperty(0);
+  expect(useSession.getState().mapProperty).toBeNull();
+});

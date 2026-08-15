@@ -23,3 +23,25 @@ export async function fetchLayers(
   const body = await res.json();
   return (body.layers ?? {}) as LayerCollections;
 }
+
+export type ListingFeature = GeoJSON.Feature<GeoJSON.Point, {
+  id: string; name: string; address?: string; price?: number;
+  rooms?: number; area_sqm?: number; cover_image: string;
+}>;
+
+// GET /geo/listings?city=&bbox= — объявления под вьюпортом карты. Позволяет
+// открыть ЛЮБОЙ объект города, а не только попавший в выдачу подбора.
+// Без bbox бэк отдаёт пустую коллекцию: весь город на карту не грузится.
+export async function fetchListings(
+  city: string,
+  bbox?: [number, number, number, number],
+): Promise<GeoJSON.FeatureCollection> {
+  if (!bbox) return { type: "FeatureCollection", features: [] };
+  const res = await fetch(
+    `${API_BASE}/geo/listings?city=${encodeURIComponent(city)}&bbox=${bbox.join(",")}`,
+    { credentials: "include" },
+  );
+  if (!res.ok) throw new Error(`fetchListings failed: ${res.status}`);
+  const body = await res.json();
+  return (body.listings ?? { type: "FeatureCollection", features: [] }) as GeoJSON.FeatureCollection;
+}

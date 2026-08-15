@@ -18,10 +18,16 @@ import { useSession } from "@/lib/store/session";
 // lib/api/passport, so the UI below never builds facts of its own.
 export default function PassportScreen() {
   const idx = useSession((s) => s.selectedIndex);
-  const property = useSession((s) => s.properties[idx]);
+  // Объект, открытый с карты, живёт отдельно от выдачи и имеет приоритет.
+  const fromMap = useSession((s) => s.mapProperty);
+  const fromResults = useSession((s) => s.properties[idx]);
+  const property = fromMap ?? fromResults;
   const back = useSession((s) => s.setScreen);
   // chat_id поиска — контекст критериев пользователя для досье и чата по объекту.
-  const chatId = useSession((s) => s.chatId) ?? undefined;
+  // Для объекта с карты контекста запроса нет: бэк отдаст паспорт без процента
+  // совпадения и без досье — оба привязаны к запросу.
+  const chatIdOfSearch = useSession((s) => s.chatId) ?? undefined;
+  const chatId = fromMap ? undefined : chatIdOfSearch;
 
   const [passport, setPassport] = useState<ObjectPassport | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");

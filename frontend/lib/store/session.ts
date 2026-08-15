@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Stage, AgentEvent, Property, City, GeoZone, LayerId } from "@/lib/agent/types";
 import { nextStage } from "@/lib/agent/stageMachine";
 import type { AgentClient, RunResult } from "@/lib/agent/AgentClient";
-import { fetchLayers, type LayerCollections } from "@/lib/api/geo";
+import { fetchLayers, fetchListings, type LayerCollections } from "@/lib/api/geo";
 
 export type Screen = "chat" | "result" | "map" | "passport";
 
@@ -23,6 +23,10 @@ interface SessionState {
   hoveredId: string | null;
   /** Границы вьюпорта карты [minLon, minLat, maxLon, maxLat] — нужны evidence-слоям. */
   viewport: [number, number, number, number] | null;
+  /** Все объявления под вьюпортом — чтобы открыть любое, а не только из выдачи. */
+  mapListings: GeoJSON.FeatureCollection | null;
+  /** Объект, открытый КЛИКОМ ПО КАРТЕ: он вне выдачи, поэтому лежит отдельно. */
+  mapProperty: Property | null;
   /** chat_id текущего поиска — контекст для паспорта и чата по объекту. */
   chatId: string | null;
   errorMessage: string | null;
@@ -41,6 +45,8 @@ interface SessionState {
   loadLayer: (id: LayerId) => Promise<void>;
   setHoveredProperty: (id: string | null) => void;
   setViewport: (b: [number, number, number, number]) => void;
+  loadMapListings: () => Promise<void>;
+  openListingFromMap: (p: Property) => void;
 }
 
 const initial = {
@@ -57,6 +63,8 @@ const initial = {
   areaLabel: null as string | null,
   hoveredId: null as string | null,
   viewport: null as [number, number, number, number] | null,
+  mapListings: null as GeoJSON.FeatureCollection | null,
+  mapProperty: null as Property | null,
   chatId: null as string | null,
   errorMessage: null as string | null,
 };
@@ -88,12 +96,15 @@ export const useSession = create<SessionState>((set, get) => ({
 
   reset: () => { get()._cancel?.(); set({ ...initial }); },
 
-  setScreen: (screen) => set({ screen }),
-  selectProperty: (selectedIndex) => set({ selectedIndex, screen: "passport" }),
+  // Уход с паспорта снимает объект, открытый с карты: иначе он перекрыл бы
+  // обычный выбор из выдачи при следующем открытии.
+  setScreen: (screen) => set(screen === "passport" ? { screen } : { screen, mapProperty: null }),
+  selectProperty: (selectedIndex) => set({ selectedIndex, screen: "passport", mapProperty: null }),
   // Смена города обесценивает всё, что было посчитано для прежнего: слои,
   // выдачу и зону. Иначе на карте Питера остались бы московские полигоны.
   setCity: (city) => set({ city, layerData: {}, properties: [], zoneGeoJSON: null,
-                           areaLabel: null, selectedIndex: 0 }),
+                           areaLabel: null, selectedIndex: 0, mapListings: null,
+                           mapProperty: null }),
   toggleHistory: () => set((s) => ({ historyOpen: !s.historyOpen })),
 
   toggleLayer: (id) => {
@@ -115,5 +126,18 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   setHoveredProperty: (hoveredId) => set({ hoveredId }),
-  setViewport: (viewport) => set({ viewport }),
+  setViewport: (viewport) => { set({ viewport }); void get().loadMapListings(); },
+
+  // Точки объявлений перезапрашиваются под каждый новый вьюпорт: bbox — часть
+  // запроса, кэшировать по городу нельзя.
+  loadMapListings: async () => {
+    const { city, viewport } = get();
+    try {
+      set({ mapListings: await fetchListings(city, viewport ?? undefined) });
+    } catch {
+      // Точек не будет — карта просто останется без слоя объявлений.
+    }
+  },
+
+  openListingFromMap: (mapProperty) => set({ mapProperty, screen: "passport" }),
 }));
