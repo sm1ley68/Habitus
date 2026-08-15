@@ -61,3 +61,21 @@ def test_doc_text_medium_noise_is_not_called_loud():
     assert "умеренно шумно" in build_doc_text({"rooms": 1, "noise_level": "medium"})
     assert "тихо" in build_doc_text({"rooms": 1, "noise_level": "low"})
     assert "шумно" in build_doc_text({"rooms": 1, "noise_level": "high"})
+
+
+def test_facts_precede_long_description():
+    """Реранкер обрезает документ по 512 токенов, а описание съедает медианно 428.
+    Структурные факты обязаны стоять ДО прозы, иначе адрес и минуты до метро
+    просто не доезжают до кросс-энкодера (замерено: адрес виден у 69% объектов)."""
+    text = build_doc_text({
+        "description": "очень длинное описание " * 200,
+        "rooms": 2, "area": 54.0,
+        "address": "Москва, Хамовники, Комсомольский проспект",
+        "metro_station": "Парк культуры", "walk_min_metro": 7.0,
+        "walk_min_school": 3.0, "noise_level": "low",
+    })
+    facts = ["Хамовники", "Парк культуры", "2-комн", "школа", "тихо"]
+    desc_at = text.index("очень длинное описание")
+    for fact in facts:
+        assert fact in text, fact
+        assert text.index(fact) < desc_at, f"{fact} должен стоять до описания"

@@ -6,9 +6,16 @@ def _plural_rooms(n) -> str:
 
 
 def build_doc_text(row: dict) -> str:
+    """Структурные факты идут ПЕРЕД описанием.
+
+    Кросс-энкодер реранкера обрезает пару по rerank_max_length (512 токенов), а
+    одно описание занимает медианно 428. Пока проза стояла первой, адрес доезжал
+    до реранкера лишь у 69% объектов, а метро/школа/шум — и того реже: сильные
+    структурные сигналы просто не попадали в окно. Теперь режется хвост прозы,
+    а не факты. Для эмбеддинга порядок безразличен — BGE-M3 берёт до 8192 токенов
+    и наши документы целиком в него влезают.
+    """
     parts = []
-    if row.get("description"):
-        parts.append(row["description"].strip())
     if row.get("address"):
         parts.append(row["address"].strip())
     parts.append(_plural_rooms(row.get("rooms")))
@@ -36,6 +43,8 @@ def build_doc_text(row: dict) -> str:
     noise = row.get("noise_level")
     if noise:
         parts.append({"low": "тихо", "medium": "умеренно шумно"}.get(noise, "шумно"))
+    if row.get("description"):
+        parts.append(row["description"].strip())
     return ", ".join(parts)
 
 
