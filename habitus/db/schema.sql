@@ -75,6 +75,12 @@ CREATE TABLE IF NOT EXISTS urban_evidence (
 );
 CREATE INDEX IF NOT EXISTS urban_evidence_geom_gix
     ON urban_evidence USING GIST (geom);
+-- Обогащение ищет слой шума через ST_DWithin в метрах, то есть по geography.
+-- Каст geom::geography делает индекс по geom неприменимым, и запрос сваливается
+-- в Seq Scan по 46 тыс. геометрий на каждый объект. Функциональный индекс по
+-- касту возвращает поиск на индекс.
+CREATE INDEX IF NOT EXISTS urban_evidence_geog_gix
+    ON urban_evidence USING GIST ((geom::geography));
 CREATE INDEX IF NOT EXISTS urban_evidence_city_layer_ix
     ON urban_evidence (city, layer);
 

@@ -87,3 +87,17 @@ def test_existing_rows_default_to_moscow():
             city, extra = cur.fetchone()
     assert city == "msk"
     assert extra == {}
+
+
+def test_noise_layer_has_geography_index():
+    # Обогащение ищет шум через ST_DWithin в метрах (geography). Без индекса по
+    # касту запрос идёт Seq Scan по 46 тыс. геометрий на каждый объект — прогон
+    # enrich растягивается с секунд до десятков минут.
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT indexdef FROM pg_indexes "
+                        "WHERE indexname='urban_evidence_geog_gix';")
+            row = cur.fetchone()
+    assert row is not None, "нет GIST-индекса по (geom::geography) на urban_evidence"
+    assert "geography" in row[0]
