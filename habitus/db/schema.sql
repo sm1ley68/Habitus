@@ -162,6 +162,9 @@ ALTER TABLE listings ADD COLUMN IF NOT EXISTS metro_station      text;
 -- провенанс: итог = COALESCE(walk_min_metro_src, вычисленное по OSM).
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS walk_min_metro_src real;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS source_extra       jsonb NOT NULL DEFAULT '{}';
+-- Ссылки на снимки объявления (CDN источника). Явная колонка, а не source_extra:
+-- фото участвуют в общем UI — обложка карточки и галерея паспорта.
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS photos             text[];
 CREATE INDEX IF NOT EXISTS listings_city_ix ON listings (city);
 
 ALTER TABLE poi ADD COLUMN IF NOT EXISTS city text NOT NULL DEFAULT 'msk';
@@ -171,4 +174,5 @@ CREATE INDEX IF NOT EXISTS poi_city_kind_ix ON poi (city, kind);
 ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS city         text NOT NULL DEFAULT 'msk';
 ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS address      text;
 ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS source_url   text;
+ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS photos       text[];
 ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS source_extra jsonb NOT NULL DEFAULT '{}';

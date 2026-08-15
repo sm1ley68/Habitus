@@ -48,3 +48,26 @@ func TestBuildTagsDoesNotClaimMeasuredNoise(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildFinalResultObjectUsesFirstPhotoAsCover(t *testing.T) {
+	lon, lat := 37.61, 55.75
+	listings := map[string]domain.Listing{"A": {
+		ExternalID: "A", Lon: &lon, Lat: &lat,
+		Photos: []string{"https://cdn.cian.site/a.jpg", "https://cdn.cian.site/b.jpg"},
+	}}
+	obj, _ := BuildFinalResultObject(client.ResultItem{ExternalID: "A"}, 0, nil, listings)
+	if obj.CoverImage != "https://cdn.cian.site/a.jpg" {
+		t.Fatalf("обложка = %q; ждали первое фото", obj.CoverImage)
+	}
+}
+
+func TestBuildFinalResultObjectFallsBackToPlaceholderWithoutPhotos(t *testing.T) {
+	lon, lat := 37.61, 55.75
+	for name, photos := range map[string][]string{"nil": nil, "пустой": {}} {
+		listings := map[string]domain.Listing{"A": {ExternalID: "A", Lon: &lon, Lat: &lat, Photos: photos}}
+		obj, _ := BuildFinalResultObject(client.ResultItem{ExternalID: "A"}, 0, nil, listings)
+		if obj.CoverImage != PlaceholderCoverImage {
+			t.Fatalf("%s: обложка = %q; ждали заглушку", name, obj.CoverImage)
+		}
+	}
+}

@@ -62,3 +62,27 @@ func TestStoreJSONRoundTrip(t *testing.T) {
 		t.Fatalf("items = %#v", reopened.items)
 	}
 }
+
+func TestStoreRoundTripsPhotos(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "listings.csv")
+	store, err := OpenStore(path, FormatCSV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Merge([]Listing{{
+		CianID: "1", Description: "с фото", CollectedAt: time.Unix(1, 0),
+		Photos: []string{"https://cdn.cian.site/a.jpg", "https://cdn.cian.site/b.jpg"},
+	}})
+	if err := store.Save(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(path, FormatCSV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := reopened.items[0].Photos
+	if len(got) != 2 || got[0] != "https://cdn.cian.site/a.jpg" {
+		t.Fatalf("Photos после перечитывания = %#v", got)
+	}
+}

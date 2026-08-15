@@ -23,7 +23,7 @@ const (
 var csvHeader = []string{
 	"cian_id", "description", "price", "area", "rooms", "floor", "floors",
 	"address", "metro", "zhk", "building_material", "deadline", "latitude",
-	"longitude", "url", "collected_at",
+	"longitude", "url", "photos", "collected_at",
 }
 
 type Store struct {
@@ -177,6 +177,14 @@ func writeCSV(writer io.Writer, items []Listing) error {
 		if err != nil {
 			return err
 		}
+		photos := item.Photos
+		if photos == nil {
+			photos = []string{}
+		}
+		photosJSON, err := json.Marshal(photos)
+		if err != nil {
+			return err
+		}
 		record := []string{
 			item.CianID,
 			item.Description,
@@ -193,6 +201,7 @@ func writeCSV(writer io.Writer, items []Listing) error {
 			formatFloat(item.Latitude),
 			formatFloat(item.Longitude),
 			item.URL,
+			string(photosJSON),
 			item.CollectedAt.UTC().Format(time.RFC3339),
 		}
 		if err := csvWriter.Write(record); err != nil {
@@ -251,6 +260,14 @@ func readCSV(reader io.Reader) ([]Listing, error) {
 		}
 		if item.Metro == nil {
 			item.Metro = []Metro{}
+		}
+		if text := value("photos"); text != "" {
+			if err := json.Unmarshal([]byte(text), &item.Photos); err != nil {
+				return nil, fmt.Errorf("row %d photos: %w", rowNumber+2, err)
+			}
+		}
+		if item.Photos == nil {
+			item.Photos = []string{}
 		}
 		if text := value("collected_at"); text != "" {
 			item.CollectedAt, err = time.Parse(time.RFC3339, text)

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Habitus — Введение в проект / Project Introduction</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  :root {
+    --ink: #1a1d24;
+    --muted: #565d6b;
+    --accent: #2b5ce6;
+    --accent-soft: #eef2fe;
+    --line: #e2e6ee;
+    --hero-bg: #12141a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Helvetica Neue", Arial, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    color: var(--ink);
+    font-size: 10.5pt;
+    line-height: 1.55;
+    margin: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .hero {
+    background: var(--hero-bg);
+    color: #fff;
+    padding: 34px 32px;
+    border-radius: 14px;
+    margin-bottom: 30px;
+  }
+  .hero .kicker {
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    font-size: 8pt;
+    color: #8fa6ff;
+    margin: 0 0 10px;
+    font-weight: 700;
+  }
+  .hero h1 {
+    margin: 0 0 8px;
+    font-size: 27pt;
+    letter-spacing: -0.5px;
+    line-height: 1.05;
+  }
+  .hero .tag { color: #b9c0cf; font-size: 11pt; margin: 0; }
+  .hero .langline { margin-top: 16px; font-size: 8.5pt; color: #6d7688; letter-spacing: 1px; }
+
+  h2.lang {
+    font-size: 15pt;
+    margin: 0 0 4px;
+    padding-top: 6px;
+    color: var(--ink);
+    border-bottom: 2px solid var(--accent);
+    display: inline-block;
+    letter-spacing: -0.2px;
+  }
+  .lang-badge {
+    display:inline-block; font-size:7.5pt; font-weight:700; letter-spacing:1.5px;
+    color: var(--accent); background: var(--accent-soft);
+    padding: 2px 8px; border-radius: 20px; vertical-align: middle; margin-left: 8px;
+  }
+  h3 {
+    font-size: 11.5pt;
+    margin: 20px 0 6px;
+    color: var(--ink);
+  }
+  h3::before {
+    content: "";
+    display: inline-block;
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 2px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  p { margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  ul { margin: 6px 0 12px; padding-left: 0; list-style: none; }
+  li { margin: 0 0 7px; padding-left: 20px; position: relative; }
+  li::before {
+    content: "→";
+    position: absolute; left: 0; top: 0;
+    color: var(--accent); font-weight: 700;
+  }
+  strong { color: var(--ink); }
+  .pill {
+    display:inline-block; background: var(--accent-soft); color: var(--accent);
+    font-weight:700; padding: 1px 7px; border-radius: 6px; font-size: 9.5pt;
+  }
+  section.doc { margin-bottom: 8px; }
+  .divider { border: none; border-top: 1px solid var(--line); margin: 34px 0; }
+  .wordcount { font-size: 8pt; color: #9aa2b1; margin-top: 4px; }
+  .page-break { page-break-before: always; }
+  .callout {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 4px 0 18px;
+    font-size: 9.5pt;
+    color: #2a3550;
+  }
+  .callout b { color: var(--accent); }
+  .glossary {
+    margin: 6px 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 9pt;
+  }
+  .glossary div {
+    display: grid;
+    grid-template-columns: 34% 66%;
+    border-bottom: 1px solid var(--line);
+  }
+  .glossary div:last-child { border-bottom: none; }
+  .glossary div:nth-child(odd) { background: #f7f9fd; }
+  .glossary span { padding: 6px 12px; }
+  .glossary .k { font-weight: 700; color: var(--ink); border-right: 1px solid var(--line); }
+  .glossary .v { color: var(--muted); }
+  .footer {
+    margin-top: 30px; padding-top: 12px; border-top: 1px solid var(--line);
+    font-size: 8pt; color: #9aa2b1; display:flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <p class="kicker">Хакатон · Введение в проект / Hackathon · Project Introduction</p>
+  <h1>Habitus</h1>
+  <p class="tag">ИИ-агент по недвижимости · AI real-estate agent — a “digital urbanist-detective”</p>
+  <p class="langline">РУССКИЙ · ENGLISH</p>
+</div>
+
+<!-- ================= RUSSIAN ================= -->
+<section class="doc">
+  <h2 class="lang">Введение в проект</h2><span class="lang-badge">RU</span>
+
+  <div class="callout">
+    <b>Контекст для жюри.</b> Habitus работает на реальных данных <b>Москвы и Санкт-Петербурга</b>, но подход переносится на любой мегаполис мира. Ниже — расшифровка локальных реалий в универсальных терминах.
+  </div>
+  <div class="glossary">
+    <div><span class="k">ЦИАН / Авито / Домклик</span><span class="v">крупнейшие российские площадки объявлений о недвижимости (аналог Zillow / Beike)</span></div>
+    <div><span class="k">ЕГЭ · сильные школы</span><span class="v">государственный выпускной экзамен и рейтинг школ по его результатам (аналог школьного округа)</span></div>
+    <div><span class="k">Сколково ↔ Сити</span><span class="v">два разных места работы: технопарк и деловой центр (аналог CBD)</span></div>
+    <div><span class="k">ТТК / ЗСД</span><span class="v">городские магистрали — источник шума (аналог кольцевой / скоростной эстакады)</span></div>
+    <div><span class="k">Коммуналки</span><span class="v">советские коммунальные квартиры на несколько семей — маркер старого фонда и сложного окружения</span></div>
+  </div>
+
+  <h3>Проблема</h3>
+  <p>Покупка квартиры — это решение на 10–15 лет и на десятки миллионов рублей, которое сегодня принимается вслепую. Классические агрегаторы (ЦИАН, Авито, Домклик) устроены как фильтр по таблице: цена, метраж, число комнат, метка на карте. Но человек выбирает <strong>не квадратные метры — он выбирает образ жизни</strong>. Реальные вопросы звучат иначе: «Дойдёт ли ребёнок до сильной школы сам, не пересекая проспект?», «Будет ли солнце в комнате после обеда, или я упрусь взглядом в стену соседнего корпуса?», «Не орут ли под окнами из баров?», «Где точка компромисса, если я работаю в Сколково, а жена — в Сити?».</p>
+  <p>Ни один фильтр на такие вопросы не отвечает. Покупатель вручную сводит десятки источников — карты школ, рейтинги ЕГЭ, розу ветров, шумовые карты, стороны света, отзывы жильцов — и всё равно узнаёт правду только после переезда, когда что-то менять уже поздно и дорого.</p>
+
+  <h3>Решение</h3>
+  <p><strong>Habitus — это ИИ-агент по недвижимости, «цифровой урбанист-детектив».</strong> Он превращает запрос на естественном языке — <em>«тихая двушка рядом с метро до 40 млн, окна на юго-запад, без баров под окнами»</em> — в ранжированный список конкретных квартир, где к каждому объекту прилагается <strong>досье</strong>: логистика перемещений всей семьи, социальное окружение дома, реальный вид из окна, инсоляция по сезонам и уровень шума.</p>
+  <ul>
+    <li><strong>Логистический трекинг для всей семьи.</strong> Habitus строит не «расстояние до метро», а замкнутые суточные маршруты каждого члена семьи — с типом транспорта, расписанием и изохронами доступности. Он проверит, что дорога ребёнка до школы не пересекает крупных проспектов и промзон.</li>
+    <li><strong>Социально-демографический аудит локации.</strong> Модель анализирует «скрытый контингент» вокруг дома: долю нерасселённого старого фонда и коммуналок, плотность баров и алкомаркетов, криминальные тепловые карты — то, что не видно на красивой фотографии подъезда.</li>
+    <li><strong>«Взгляд из окна».</strong> По ориентации корпуса, высотности соседних зданий и геоданным Habitus считает реальную инсоляцию, шум от магистралей (ТТК, ЗСД) и сам вид: двор-колодец, глухая стена или парк.</li>
+  </ul>
+
+  <h3>Ключевое преимущество</h3>
+  <p><span class="pill">Honest AI</span> — никаких выдуманных фактов. Каждое объяснение и каждая строка досье строятся строго поверх реальных данных из базы. Если по объекту нет замера — блок деградирует или исчезает, но система <strong>никогда не подставляет синтетический ноль</strong> и не галлюцинирует. Ответы grounded: за каждым утверждением стоит конкретный факт из базы, а не фантазия языковой модели. Для решения ценой в квартиру доверие — это не фича, а фундамент.</p>
+  <p>Технологически ценность продукта — <strong>не в обучении собственной модели, а в оркестрации агентов и гибридном RAG</strong> поверх готовой геопространственной базы. Это делает решение быстрым в разработке, дешёвым в эксплуатации и устойчивым: каждый слой умеет деградировать, не роняя всю систему (нет ключа к LLM — работает семантический поиск; нет сервиса изохрон — считаем по радиусу).</p>
+
+  <h3>Целевая аудитория</h3>
+  <ul>
+    <li><strong>Семьи с детьми</strong>, для которых главный критерий — школа, безопасный пеший маршрут ребёнка и «чистое» окружение без социального неблагополучия.</li>
+    <li><strong>Молодые профессионалы и удалёнщики</strong>, которым важны тишина, свет и вид из окна, а не только близость к метро.</li>
+    <li><strong>Пары перед крупным жизненным шагом</strong> (совместная ипотека, планирование ребёнка), которым нужен логистический компромисс между двумя работами и экология района.</li>
+    <li><strong>Риелторы и консьерж-сервисы премиум-сегмента</strong> — как инструмент, который за минуты обосновывает подбор клиенту фактами, а не интуицией.</li>
+  </ul>
+
+  <h3>Почему сейчас</h3>
+  <p>Данные о городе (геометрия зданий, POI, реестры школ, шумовые и криминальные слои) стали доступны, а языковые модели впервые научились надёжно превращать размытое человеческое «хочу, чтобы было красиво и без алкашей» в строгие SQL- и векторные запросы. Habitus стоит ровно на стыке этих двух возможностей — и превращает выбор жилья из лотереи в осознанное решение.</p>
+</section>
+
+<hr class="divider">
+
+<!-- ================= ENGLISH ================= -->
+<section class="doc page-break">
+  <h2 class="lang">Project Introduction</h2><span class="lang-badge">EN</span>
+
+  <div class="callout">
+    <b>Context for the jury.</b> Habitus runs on real data from <b>Moscow and St. Petersburg</b>, but the approach transfers to any megacity in the world. Below is a plain-terms decoder for the local references used throughout.
+  </div>
+  <div class="glossary">
+    <div><span class="k">CIAN / Avito / Domclick</span><span class="v">Russia’s largest property-listing platforms (think Zillow / Beike)</span></div>
+    <div><span class="k">EGE · strong schools</span><span class="v">the national school-leaving exam and school rankings based on it (akin to a school district)</span></div>
+    <div><span class="k">Skolkovo ↔ City</span><span class="v">two different workplaces: a tech park and a business district (a CBD)</span></div>
+    <div><span class="k">TTK / ZSD</span><span class="v">urban arterial roads — a source of noise (like a ring road / elevated expressway)</span></div>
+    <div><span class="k">Kommunalki</span><span class="v">Soviet-era communal flats shared by several families — a marker of old housing stock and a complex neighborhood</span></div>
+  </div>
+
+  <h3>The Problem</h3>
+  <p>Buying an apartment is a 10–15 year, multi-million commitment — and today it is made blind. Conventional listing aggregators are built as a spreadsheet filter: price, floor area, number of rooms, a pin on a map. But people don’t choose <strong>square meters — they choose a way of life</strong>. The real questions sound different: “Can my child walk to a strong school alone, without crossing a major avenue?”, “Will there be afternoon sun, or will I stare into the neighboring building’s wall?”, “Do bars roar under the windows at night?”, “Where is the compromise location if I work in one district and my partner in another?”.</p>
+  <p>No filter answers these. The buyer manually stitches together dozens of sources — school maps, exam ratings, wind roses, noise maps, cardinal orientation, resident reviews — and still learns the truth only after moving in, when changing anything is late and expensive.</p>
+
+  <h3>The Solution</h3>
+  <p><strong>Habitus is an AI real-estate agent — a “digital urbanist-detective.”</strong> It turns a natural-language request — <em>“a quiet two-room flat near the metro under 40M, windows facing south-west, no bars underneath”</em> — into a ranked list of specific apartments, each accompanied by a <strong>dossier</strong>: the whole family’s daily logistics, the building’s social surroundings, the real view from the window, seasonal sunlight, and noise level.</p>
+  <ul>
+    <li><strong>Multi-hop lifestyle routing for the whole family.</strong> Habitus builds not “distance to the metro,” but closed daily route graphs for each family member — transport mode, schedule, and reachability isochrones. It verifies that the child’s path to school never crosses major avenues or industrial zones.</li>
+    <li><strong>Social-demographic location audit.</strong> The model analyzes the “hidden” profile around a building: the share of unrenovated, not-yet-resettled old housing stock and communal flats, the density of bars and liquor stores, crime heat maps — everything a pretty entrance photo hides.</li>
+    <li><strong>“The view from the window.”</strong> From building orientation, neighboring heights, and geodata, Habitus computes real insolation, noise from arterial roads, and the view itself: a courtyard-well, a blank wall, or a park.</li>
+  </ul>
+
+  <h3>The Key Advantage</h3>
+  <p><span class="pill">Honest AI</span> — no invented facts. Every explanation and every dossier line is built strictly on top of real data from the database. If a measurement is missing for an object, the block degrades or disappears — but the system <strong>never substitutes a synthetic zero</strong> and never hallucinates. Answers are grounded: behind every statement stands a concrete fact from the database, not a language model’s fantasy. For a decision that costs an apartment, trust is not a feature — it is the foundation.</p>
+  <p>Technologically, the product’s value lies <strong>not in training a proprietary model, but in agent orchestration and hybrid RAG</strong> over a ready geospatial database. That makes the solution fast to build, cheap to run, and resilient: every layer can degrade without bringing the whole system down (no LLM key — semantic search still works; no isochrone service — we fall back to radius).</p>
+
+  <h3>Target Audience</h3>
+  <ul>
+    <li><strong>Families with children</strong>, whose main criteria are the school, a safe walking route for the child, and a “clean” environment free of social disadvantage.</li>
+    <li><strong>Young professionals and remote workers</strong>, who value silence, light, and the view — not just metro proximity.</li>
+    <li><strong>Couples before a major life step</strong> (a joint mortgage, planning a child), who need a logistical compromise between two workplaces and a district’s ecology.</li>
+    <li><strong>Realtors and premium concierge services</strong> — as a tool that justifies a shortlist to the client in minutes with facts, not intuition.</li>
+  </ul>
+
+  <h3>Why Now</h3>
+  <p>City data (building geometry, POIs, school registries, noise and crime layers) has become accessible, and language models have — for the first time — learned to reliably turn a fuzzy human “I want it to look nice and have no drunks around” into strict SQL and vector queries. Habitus sits exactly at the intersection of these two capabilities — and turns choosing a home from a lottery into an informed decision.</p>
+</section>
+
+<div class="footer">
+  <span>Habitus · AI real-estate agent</span>
+  <span>Введение в проект / Project Introduction · 2026</span>
+</div>
+
+</body>
+</html>

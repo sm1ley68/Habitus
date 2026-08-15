@@ -30,4 +30,12 @@ describe("PropertyCard", () => {
     render(<PropertyCard property={property} index={0} onOpen={() => {}} />);
     expect(screen.getByText("ЖК Neva Residence")).toBeInTheDocument();
   });
+
+  it("рисует обложку, пришедшую с бэка (ссылка на CDN источника)", () => {
+    const url = "https://cdn.cian.site/1-full.jpg";
+    const property = { ...PROPERTIES[0], cover_image: url };
+    render(<PropertyCard property={property} index={0} onOpen={() => {}} />);
+    const img = screen.getByAltText(property.name) as HTMLImageElement;
+    expect(img.src).toBe(url);
+  });
 });

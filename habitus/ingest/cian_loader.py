@@ -48,6 +48,21 @@ def parse_metro(raw: str | None) -> list[dict]:
     return out
 
 
+# Фото приходят JSON-массивом ссылок на CDN Циана — тем же способом, что и
+# станции метро. Битый или отсутствующий JSON даёт пустой список: объявление
+# грузится и просто остаётся без снимков, показ деградирует до заглушки.
+def parse_photos(raw: str | None) -> list[str]:
+    if not raw or not str(raw).strip():
+        return []
+    try:
+        items = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(items, list):
+        return []
+    return [u.strip() for u in items if isinstance(u, str) and u.strip()]
+
+
 def parse_csv(path: Path) -> list[dict]:
     out = []
     with open(path, newline="", encoding="utf-8") as f:
@@ -72,6 +87,7 @@ def parse_csv(path: Path) -> list[dict]:
                 "city": "msk",
                 "address": (row.get("address") or "").strip() or None,
                 "source_url": (row.get("url") or "").strip() or None,
+                "photos": parse_photos(row.get("photos")),
                 "source_extra": {
                     "metro": parse_metro(row.get("metro")),
                     "zhk": (row.get("zhk") or "").strip() or None,

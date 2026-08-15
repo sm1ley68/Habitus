@@ -61,6 +61,7 @@ func parseOffer(offer map[string]any, collectedAt time.Time) (Listing, bool) {
 		Floors:             firstInt(offer, []string{"building", "floorsCount"}),
 		Address:            parseAddress(offer),
 		Metro:              parseMetro(offer),
+		Photos:             parsePhotos(offer),
 		ResidentialComplex: firstString(offer, []string{"newbuilding", "name"}),
 		BuildingMaterial:   firstString(offer, []string{"building", "materialType"}),
 		Deadline:           firstString(offer, []string{"building", "deadline"}),
@@ -102,6 +103,38 @@ func parseAddress(offer map[string]any) string {
 		parts = append(parts, part)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// parsePhotos собирает ссылки на снимки объявления. Полный размер в приоритете,
+// миниатюра — фолбэк: на части офферов Cian отдаёт только её. Отсутствие поля
+// даёт пустой список, а не ошибку — этот внутренний endpoint не версионируется
+// и переименование поля не должно ронять весь сбор.
+func parsePhotos(offer map[string]any) []string {
+	items, ok := sliceAt(offer, "photos")
+	if !ok {
+		return []string{}
+	}
+	photos := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		url := ""
+		if object, ok := item.(map[string]any); ok {
+			url = firstString(object, []string{"fullUrl"}, []string{"thumbnailUrl"},
+				[]string{"miniUrl"}, []string{"url"})
+		} else {
+			url = scalarString(item)
+		}
+		url = strings.TrimSpace(url)
+		if url == "" {
+			continue
+		}
+		if _, exists := seen[url]; exists {
+			continue
+		}
+		seen[url] = struct{}{}
+		photos = append(photos, url)
+	}
+	return photos
 }
 
 func parseMetro(offer map[string]any) []Metro {

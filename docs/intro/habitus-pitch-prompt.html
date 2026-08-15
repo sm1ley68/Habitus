@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Habitus — Pitch Deck Prompt / Brief</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  :root {
+    --ink:#1a1d24; --muted:#565d6b; --accent:#2b5ce6; --accent-soft:#eef2fe;
+    --line:#e2e6ee; --hero:#12141a; --good:#0f9d6b; --good-soft:#e7f7f0;
+  }
+  * { box-sizing:border-box; }
+  body {
+    font-family:"Helvetica Neue",Arial,"Segoe UI",sans-serif;
+    color:var(--ink); font-size:10pt; line-height:1.5; margin:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .hero { background:var(--hero); color:#fff; padding:30px 30px; border-radius:14px; margin-bottom:22px; }
+  .hero .kicker { text-transform:uppercase; letter-spacing:2.5px; font-size:8pt; color:#8fa6ff; margin:0 0 8px; font-weight:700; }
+  .hero h1 { margin:0 0 6px; font-size:24pt; letter-spacing:-0.5px; }
+  .hero p { margin:0; color:#b9c0cf; font-size:10.5pt; }
+  h2 { font-size:13pt; margin:26px 0 10px; border-bottom:2px solid var(--accent); padding-bottom:4px; }
+  h3 { font-size:10.5pt; margin:16px 0 6px; }
+  p { margin:0 0 8px; }
+  .muted { color:var(--muted); }
+  ul { margin:5px 0 10px; padding-left:18px; }
+  li { margin:0 0 4px; }
+  strong { color:var(--ink); }
+  .box { border:1px solid var(--line); border-radius:10px; padding:12px 15px; margin:0 0 12px; }
+  .instr { background:var(--accent-soft); border-left:3px solid var(--accent); border-radius:8px; padding:12px 15px; margin:0 0 16px; font-size:9.5pt; }
+  .instr b { color:var(--accent); }
+  /* slide card */
+  .slide { border:1px solid var(--line); border-radius:11px; margin:0 0 13px; overflow:hidden; page-break-inside:avoid; }
+  .slide .head { background:#f5f7fc; padding:9px 15px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--line); }
+  .slide .num { background:var(--hero); color:#fff; font-weight:800; font-size:9pt; width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+  .slide .stitle { font-weight:800; font-size:11pt; }
+  .slide .role { margin-left:auto; font-size:7.5pt; letter-spacing:1px; text-transform:uppercase; color:var(--muted); }
+  .slide .body { padding:12px 15px; }
+  .field { margin:0 0 8px; }
+  .field .lab { font-size:7.5pt; letter-spacing:1.2px; text-transform:uppercase; color:var(--accent); font-weight:700; display:block; margin-bottom:2px; }
+  .headline { font-size:11pt; font-weight:700; color:var(--ink); }
+  .kv { font-size:9.5pt; }
+  .note { font-size:8.5pt; color:var(--muted); font-style:italic; }
+  .adv { background:var(--good-soft); border-left:3px solid var(--good); border-radius:6px; padding:8px 12px; margin:6px 0; font-size:9.5pt; }
+  .adv b { color:var(--good); }
+  .pill { display:inline-block; background:var(--accent-soft); color:var(--accent); font-weight:700; padding:1px 7px; border-radius:6px; font-size:9pt; }
+  code { background:#f1f3f8; padding:1px 5px; border-radius:4px; font-size:8.5pt; }
+  .page-break { page-break-before:always; }
+  .footer { margin-top:24px; padding-top:10px; border-top:1px solid var(--line); font-size:8pt; color:#9aa2b1; display:flex; justify-content:space-between; }
+  table.market { width:100%; border-collapse:collapse; font-size:9pt; margin:6px 0; }
+  table.market td, table.market th { border:1px solid var(--line); padding:5px 8px; text-align:left; }
+  table.market th { background:#f5f7fc; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <p class="kicker">Prompt / Brief for the Pitch Deck</p>
+  <h1>Habitus — Pitch Deck</h1>
+  <p>An AI real-estate agent — a “digital urbanist-detective”. Full slide-by-slide content brief. Language of the deck: English.</p>
+</div>
+
+<div class="instr">
+  <b>HOW TO USE THIS DOCUMENT.</b> This is a content brief for generating a 13-slide pitch deck.
+  Apply <b>our existing design system</b> (colors, fonts, logo, layout grid) — do <u>not</u> invent a new visual style.
+  Keep the tone confident, concrete and technical; investors are the audience. <b>Write every slide in English.</b>
+  Prefer short, punchy on-slide copy (headline + 3–5 bullets max); put the longer explanations into the speaker notes.
+  Highlight the three product advantages — <b>Convenient · Precise · Honest</b> — wherever they fit.
+  Fields per slide: <b>Headline</b> (big on-slide title), <b>On-slide</b> (bullet copy), <b>Visual</b> (what to show),
+  <b>Speaker notes</b> (what the presenter says).
+</div>
+
+<h2>Global messaging — the spine of the pitch</h2>
+<div class="box">
+  <p><strong>One-liner:</strong> Habitus turns a plain-language wish into a ranked shortlist of real apartments, each with a lifestyle dossier — grounded in real city data, never invented.</p>
+  <p><strong>The problem in one sentence:</strong> People buy a way of life, but every listing portal only lets them filter square meters.</p>
+  <p><strong>Why we win (repeat this trio everywhere):</strong></p>
+  <div class="adv"><b>Convenient</b> — one conversation in natural language replaces a dozen browser tabs and manual filters.</div>
+  <div class="adv"><b>Precise</b> — we rank by real life: family logistics, social surroundings, sunlight, noise and the view — not just price and size.</div>
+  <div class="adv"><b>Honest</b> — every claim is grounded in database facts; if data is missing, the block degrades — we never invent a number or hallucinate.</div>
+  <p class="note">Golden thread of the pitch: “A home is a 10–15 year, multi-million decision made blind today. Habitus makes it informed.”</p>
+</div>
+
+<!-- ================= SLIDES ================= -->
+<h2>Slide-by-slide content</h2>
+
+<div class="slide">
+  <div class="head"><span class="num">1</span><span class="stitle">Title</span><span class="role">Hook</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Habitus</span></div>
+    <div class="field"><span class="lab">Sub</span><span class="kv">An AI real-estate agent — your “digital urbanist-detective.”</span></div>
+    <div class="field"><span class="lab">On-slide</span><span class="kv">Logo · one-line tagline · team name · hackathon name & date.</span></div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Full-bleed hero using our design system. A single striking product screenshot (map + ranked results) behind a dark overlay.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">Open with the golden thread: buying a home is the biggest decision most people make — and today they make it blind.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">2</span><span class="stitle">The Problem</span><span class="role">Pain</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">People choose a way of life. Portals only sell square meters.</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li>Listing portals (CIAN, Avito, Zillow-like) are spreadsheet filters: price, area, rooms, a pin.</li>
+        <li>The real questions have no filter: “Can my child walk to a good school without crossing a highway?” · “Afternoon sun or a wall?” · “Bars roaring under the window?”</li>
+        <li>Buyers stitch together dozens of sources by hand — and learn the truth only after moving in, when it’s late and expensive.</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Split screen: a boring filter form vs. a messy pile of browser tabs (maps, school ratings, noise maps).</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">Make it visceral with one persona — a family relocating with a school-age child.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">3</span><span class="stitle">The Solution</span><span class="role">Aha</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Say what you want. Get a ranked shortlist — with a dossier on each home.</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li>Input: one natural-language request — <em>“a quiet 2-room near the metro under 40M, windows south-west, no bars underneath.”</em></li>
+        <li>Output: a ranked list of real apartments + a lifestyle <strong>dossier</strong> per object.</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">The actual product: chat input on the left → ranked cards + map on the right. Real screenshot from our UI.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">This is the “aha”. Show, don’t tell — ideally a 10-second live/GIF demo of one query resolving.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">4</span><span class="stitle">How It Works — 3 intelligence layers</span><span class="role">Depth</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Three layers no filter can replicate</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li><strong>Multi-hop lifestyle routing</strong> — closed daily route graphs for the whole family (walk / scooter / transit / car), with reachability isochrones. Verifies the child’s route never crosses a major road.</li>
+        <li><strong>Social-demographic audit</strong> — the “hidden” profile around a building: communal-flat share, bar & liquor-store density, crime heat maps.</li>
+        <li><strong>“The view from the window”</strong> — real insolation by season, arterial-road noise, and the view itself: courtyard-well, blank wall, or park.</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Three icon columns (route / people / sun) each with a mini map or diagram.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">This is the moat of insight — data no portal computes.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">5</span><span class="stitle">Product — the Dossier</span><span class="role">Wow</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Every home comes with an evidence-based dossier</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li>A verdict headline + confidence + how many layers were checked.</li>
+        <li>Blocks: family routing · social environment · view/climate · sun · noise — each graded A+…D, each backed by a real metric.</li>
+        <li>Ask any object a free-form question — answers cite the exact facts they stand on.</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">A real dossier screenshot with callouts pointing at grade, metric and the route drawn on the map.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">Tie back to trust: notice every statement is attached to a fact.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">6</span><span class="stitle">Key Advantages</span><span class="role">Why us</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Convenient · Precise · Honest</span></div>
+    <div class="adv"><b>Convenient</b> — one chat in plain language replaces a dozen tabs and manual filters.</div>
+    <div class="adv"><b>Precise</b> — ranking by logistics, surroundings, sunlight and view — not just price and size.</div>
+    <div class="adv"><b>Honest</b> — grounded answers only; missing data degrades a block gracefully, we never fabricate a number or hallucinate. <span class="note">(In the schema: evidence paths, “unknown” status, explicit “degraded” flags.)</span></div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Comparison table “Habitus vs. classic portals” — rows: input, ranking basis, hidden-context, trust/grounding.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">For a decision that costs an apartment, trust is not a feature — it is the foundation.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">7</span><span class="stitle">Market & Audience</span><span class="role">Size</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Two motions: B2C reach, B2B revenue</span></div>
+    <table class="market">
+      <tr><th>B2C users</th><th>B2B customers</th></tr>
+      <tr>
+        <td>Families with children · remote workers · couples before a purchase (joint mortgage, planning a child)</td>
+        <td>Listing aggregators · developers · banks / mortgage · realtors</td>
+      </tr>
+    </table>
+    <div class="field"><span class="lab">On-slide</span><span class="kv">Add TAM/SAM/SOM if numbers are ready. Anchor to the size of the residential real-estate + proptech market in the target geography.</span></div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Two-column persona strip; optional funnel TAM→SAM→SOM.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">B2C proves the magic; B2B integrations scale the revenue. <b>[Insert real market figures for the target region.]</b></span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">8</span><span class="stitle">Business Model</span><span class="role">Money</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Subscription now, API layer at scale</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li><strong>B2C</strong> — freemium search; premium subscription unlocks full dossiers & unlimited queries.</li>
+        <li><strong>B2B</strong> — Habitus embeds via API as a smart-search + dossier layer inside portals, banks and developer sites (per-seat / per-call / white-label).</li>
+        <li>Lean cost base — we <strong>orchestrate</strong> ready models (no proprietary training), so gross margins stay high.</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Two revenue pillars with example price tags. <b>[Confirm pricing.]</b></span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">Emphasize capital efficiency: value is in orchestration + hybrid RAG, not GPU training bills.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">9</span><span class="stitle">Technology</span><span class="role">Credibility</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Agent orchestration over a geospatial RAG database</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li><strong>Pipeline:</strong> NLU (LLM parses the wish → structured query) → hybrid retrieval (SQL filters + dense + sparse, fused with RRF) → proximity re-rank + cross-encoder → grounded explanation.</li>
+        <li><strong>Stack:</strong> BGE-M3 embeddings + bge-reranker · Postgres 16 + PostGIS + pgvector · Qwen-72B via OpenRouter · FastAPI (ML) · Go/Fiber gateway with SSE streaming · Next.js.</li>
+        <li><strong>Resilient by design:</strong> every layer degrades independently — no LLM key → semantic search still works; no isochrone service → radius fallback.</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Clean architecture diagram: browser → frontend → gateway → ML-service → DB, with the 3 agents (Linguistic / Geo-Spatial / Context-Analytic) called out.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">Key defensibility line: we don’t train a model — the value is orchestration + hybrid RAG over real city data.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">10</span><span class="stitle">Traction / Status</span><span class="role">Proof</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Working end-to-end today</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li>Offline + online pipelines are built and running; the full stack boots with one <code>docker compose up</code>.</li>
+        <li>Live endpoints: search · dossier · per-object Q&A · geo layers, with real streaming to the UI.</li>
+        <li>Real Moscow / St. Petersburg data ingested; quality tracked with an eval suite (recall / nDCG / MRR).</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">A short demo GIF + a couple of metric chips. <b>[Insert current eval numbers.]</b></span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">Stress this is not a mockup — it runs.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">11</span><span class="stitle">Why Now</span><span class="role">Timing</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">Two curves just crossed</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li>City data (building geometry, POIs, school registries, noise & crime layers) is finally accessible.</li>
+        <li>LLMs can now reliably turn a fuzzy human wish into strict SQL + vector queries.</li>
+        <li>Habitus sits exactly at that intersection.</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Two rising curves meeting at a “Habitus” point.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">This was impossible to build well even two years ago.</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">12</span><span class="stitle">Team</span><span class="role">Trust</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">The team to build it</span></div>
+    <div class="field"><span class="lab">On-slide</span><span class="kv">Photos, names, roles, one-line relevant credential each. <b>[Insert team members.]</b></span></div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Clean team grid in our design system.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">One sentence on why this team is uniquely able to execute (ML + geo + product).</span></div>
+  </div>
+</div>
+
+<div class="slide">
+  <div class="head"><span class="num">13</span><span class="stitle">Closing / Ask</span><span class="role">CTA</span></div>
+  <div class="body">
+    <div class="field"><span class="lab">Headline</span><span class="headline">From a lottery to an informed decision</span></div>
+    <div class="field"><span class="lab">On-slide</span>
+      <ul class="kv">
+        <li>Recap the trio: <strong>Convenient · Precise · Honest.</strong></li>
+        <li>The ask / next steps. <b>[What you want from the jury / investors.]</b></li>
+        <li>Contact + QR to the live demo.</li>
+      </ul>
+    </div>
+    <div class="field"><span class="lab">Visual</span><span class="kv">Bold closing statement on a hero background; QR code to the running product.</span></div>
+    <div class="field"><span class="lab">Speaker notes</span><span class="note">End on the golden thread: we turn the biggest blind decision people make into an informed one.</span></div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>Habitus · Pitch Deck Prompt / Brief</span>
+  <span>Deck language: English · 2026</span>
+</div>
+
+</body>
+</html>

@@ -83,6 +83,7 @@ type Listing struct {
 	Lat          *float64
 	Address      *string
 	MetroStation *string
+	Photos       []string
 }
 
 // EvidenceFeature — строка urban_evidence с уже сериализованной геометрией.

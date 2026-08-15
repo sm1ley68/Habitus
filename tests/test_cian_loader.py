@@ -86,3 +86,19 @@ def test_load_to_raw_updates_columns_added_later():
         assert address == rows[0]["address"]
         assert url == rows[0]["source_url"]
         assert extra.get("metro"), "нормализованное метро должно доехать до raw"
+
+
+def test_parse_csv_reads_photos():
+    rows = parse_csv(FIX)
+    assert rows[0]["photos"] == ["https://cdn.cian.site/1-a.jpg",
+                                 "https://cdn.cian.site/1-b.jpg"]
+    assert rows[1]["photos"] == []          # пустой список, не None
+
+
+def test_parse_csv_survives_broken_photos(tmp_path):
+    # Битый JSON в колонке не должен ронять загрузку всей выгрузки
+    src = FIX.read_text(encoding="utf-8").replace(
+        '"[""https://cdn.cian.site/1-a.jpg"",""https://cdn.cian.site/1-b.jpg""]"', 'не json')
+    dst = tmp_path / "broken.csv"
+    dst.write_text(src, encoding="utf-8")
+    assert parse_csv(dst)[0]["photos"] == []

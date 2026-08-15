@@ -87,3 +87,30 @@ def test_promote_carries_source_fields_into_listings():
             row = cur.fetchone()
     assert row == ("msk", "Москва, 2-й Донской проезд", "https://cian.ru/1",
                    "Ленинский проспект", 7.0, "SHIFT")
+
+
+def test_photos_promoted_and_updated_on_conflict():
+    """Фото должны доезжать из сырого слоя в listings и обновляться при
+    повторной загрузке — иначе перезаливка оставит старый набор снимков."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings; DELETE FROM raw_listings;")
+        conn.commit()
+        row = {"external_id": "P1", "source": "cian", "price": 20_000_000,
+               "area": 54.0, "kitchen_area": None, "rooms": 2, "level": 3,
+               "levels": 9, "building_type": None, "object_type": None,
+               "lat": 55.75, "lon": 37.62, "description": "с фото",
+               "city": "msk", "address": "Москва", "source_url": None,
+               "source_extra": {}, "photos": ["https://cdn/a.jpg"]}
+        load_to_raw([row], conn)
+        promote_to_listings(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT photos FROM listings WHERE external_id='P1';")
+            assert cur.fetchone()[0] == ["https://cdn/a.jpg"]
+
+        load_to_raw([{**row, "photos": ["https://cdn/b.jpg", "https://cdn/c.jpg"]}], conn)
+        promote_to_listings(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT photos FROM listings WHERE external_id='P1';")
+            assert cur.fetchone()[0] == ["https://cdn/b.jpg", "https://cdn/c.jpg"]

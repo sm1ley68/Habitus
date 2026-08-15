@@ -44,9 +44,9 @@ def parse_csv(path: Path) -> list[dict]:
 def load_to_raw(rows: list[dict], conn: psycopg.Connection) -> int:
     cols = ["external_id","source","price","area","kitchen_area","rooms",
             "level","levels","building_type","object_type","lat","lon","description",
-            "city","address","source_url","source_extra"]
+            "city","address","source_url","photos","source_extra"]
     rows = [{**{"city": "msk", "address": None, "source_url": None,
-                "source_extra": Json({})}, **r} for r in rows]
+                "photos": None, "source_extra": Json({})}, **r} for r in rows]
     for r in rows:
         if isinstance(r["source_extra"], dict):
             r["source_extra"] = Json(r["source_extra"])

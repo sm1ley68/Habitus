@@ -127,11 +127,17 @@ func BuildFinalResultObject(item client.ResultItem, rank int, degraded []string,
 	if l.Address != nil {
 		address = *l.Address
 	}
+	// Первое фото источника — обложка. Нет снимков — честная заглушка, а не
+	// пустая строка: фронт рисует <img> без проверки.
+	cover := PlaceholderCoverImage
+	if len(l.Photos) > 0 && l.Photos[0] != "" {
+		cover = l.Photos[0]
+	}
 	return FinalResultObject{
 		ID:          item.ExternalID,
 		Name:        SynthName(l.Rooms, l.Area),
 		Address:     address,
-		CoverImage:  PlaceholderCoverImage,
+		CoverImage:  cover,
 		MatchScore:  RescaleScore(item.Score, rank, degraded),
 		Coordinates: []float64{*l.Lon, *l.Lat},
 		PriceFrom:   l.Price,

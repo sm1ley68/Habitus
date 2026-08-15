@@ -21,6 +21,7 @@ type Listing struct {
 	Floors             *int      `json:"floors,omitempty"`
 	Address            string    `json:"address"`
 	Metro              []Metro   `json:"metro"`
+	Photos             []string  `json:"photos"`
 	ResidentialComplex string    `json:"zhk"`
 	BuildingMaterial   string    `json:"building_material,omitempty"`
 	Deadline           string    `json:"deadline,omitempty"`

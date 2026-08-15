@@ -48,19 +48,21 @@ def promote_to_listings(conn: psycopg.Connection) -> int:
         INSERT INTO listings
           (external_id, source, price, area, kitchen_area, rooms, level, levels,
            building_type, object_type, geom, description,
-           city, address, source_url, source_extra, metro_station, walk_min_metro_src)
+           city, address, source_url, source_extra, metro_station, walk_min_metro_src,
+           photos)
         VALUES
           (%(external_id)s, %(source)s, %(price)s, %(area)s, %(kitchen_area)s,
            %(rooms)s, %(level)s, %(levels)s, %(building_type)s, %(object_type)s,
            ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326), %(description)s,
            %(city)s, %(address)s, %(source_url)s, %(source_extra)s,
-           %(metro_station)s, %(walk_min_metro_src)s)
+           %(metro_station)s, %(walk_min_metro_src)s, %(photos)s)
         ON CONFLICT (external_id) DO UPDATE SET
            price=EXCLUDED.price, area=EXCLUDED.area, geom=EXCLUDED.geom,
            description=EXCLUDED.description, city=EXCLUDED.city,
            address=EXCLUDED.address, source_url=EXCLUDED.source_url,
            source_extra=EXCLUDED.source_extra, metro_station=EXCLUDED.metro_station,
            walk_min_metro_src=EXCLUDED.walk_min_metro_src,
+           photos=EXCLUDED.photos,
            is_active=true, updated_at=now();
     """
     with conn.cursor() as cur:

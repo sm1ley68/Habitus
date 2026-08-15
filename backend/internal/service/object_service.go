@@ -314,6 +314,10 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 	if listing.Address != nil {
 		address = *listing.Address
 	}
+	images := listing.Photos
+	if len(images) == 0 {
+		images = []string{PlaceholderCoverImage}
+	}
 
 	return ObjectPassport{
 		ID:                objectID,
@@ -323,7 +327,7 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 		Rooms:             listing.Rooms,
 		AreaSqm:           listing.Area,
 		Floor:             FormatFloor(listing.Level, listing.Levels),
-		Images:            []string{PlaceholderCoverImage},
+		Images:            images,
 		Coordinates:       coords,
 		LifestyleAnalysis: analysis,
 	}, nil

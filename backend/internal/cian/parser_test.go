@@ -74,3 +74,39 @@ func TestParseSearchResponseRequiresOffersArray(t *testing.T) {
 		t.Fatalf("error = %v; want ErrMissingOffers", err)
 	}
 }
+
+func TestParseSearchResponseExtractsPhotos(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{
+  "data": {"offersSerialized": [
+    {
+      "cianId": 1,
+      "description": "С фото",
+      "photos": [
+        {"fullUrl": "https://cdn.cian.site/1-full.jpg", "thumbnailUrl": "https://cdn.cian.site/1-thumb.jpg"},
+        {"thumbnailUrl": "https://cdn.cian.site/2-thumb.jpg"},
+        {"fullUrl": ""}
+      ]
+    },
+    {"cianId": 2, "description": "Без фото"}
+  ]}
+}`)
+	offers, err := ParseSearchResponse(body, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// fullUrl в приоритете, при его отсутствии — миниатюра, пустые пропускаются
+	want := []string{"https://cdn.cian.site/1-full.jpg", "https://cdn.cian.site/2-thumb.jpg"}
+	if len(offers[0].Photos) != len(want) {
+		t.Fatalf("Photos = %#v; want %#v", offers[0].Photos, want)
+	}
+	for i, url := range want {
+		if offers[0].Photos[i] != url {
+			t.Fatalf("Photos[%d] = %q; want %q", i, offers[0].Photos[i], url)
+		}
+	}
+	// отсутствие поля не должно ронять разбор — пустой список, а не nil-паника
+	if offers[1].Photos == nil || len(offers[1].Photos) != 0 {
+		t.Fatalf("объявление без фото должно давать пустой список, получено %#v", offers[1].Photos)
+	}
+}
