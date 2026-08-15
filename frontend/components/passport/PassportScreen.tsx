@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useScroll, useSpring } from "framer-motion";
 import HeroVerdict from "./dossier/HeroVerdict";
+import PhotoGallery from "./PhotoGallery";
 import BriefStrip from "./dossier/BriefStrip";
 import Chapter from "./dossier/Chapter";
 import SecondaryGrid from "./dossier/SecondaryGrid";
@@ -90,6 +91,9 @@ export default function PassportScreen() {
               titleLayoutId={`property-${idx}`}
             />
           </div>
+
+          {/* Все снимки объявления: геро несёт только обложку. */}
+          <PhotoGallery images={passport?.images ?? []} alt={property.address || property.name} />
 
           <BriefStrip brief={analysis.brief} />
 
