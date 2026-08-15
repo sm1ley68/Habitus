@@ -15,6 +15,12 @@ services:
       POSTGRES_DB: habitus
     ports:
       - "5544:5432"
+    # Дефолтные 64 МБ /dev/shm малы: dynamic_shared_memory_type=posix, и
+    # параллельные воркеры кладут туда свои сегменты. На тяжёлых гео-запросах
+    # (обогащение сканирует 46 тыс. геометрий слоя шума) сегмент исчерпывается,
+    # воркер падает, и постмастер перезапускает весь кластер — со стороны это
+    # выглядит как «server closed the connection unexpectedly» и роняет прогон.
+    shm_size: 1gb
     volumes:
       - habitus_pg:/var/lib/postgresql/data
     healthcheck:
