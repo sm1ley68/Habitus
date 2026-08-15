@@ -349,3 +349,16 @@ docker image prune -f
 **`docker compose up` падает с `no space left on device`.**
 Кончилось место (диск хоста или Docker-VM). Освободите место, вычистите кэш
 сборки (`docker builder prune -af`) и повторите.
+Корень файла — `FeatureCollection`. Для каждого `Feature` обязательны свойства
+`source_id`, `source`, `city: "msk"`, `layer`, `observed_at`. Слои `communal`
+и `crime` принимают только Polygon/MultiPolygon и `weight` в диапазоне `0..1`;
+`noise` принимает геометрию с неотрицательным `db`. Импорт идемпотентен по
+`(source, source_id, layer)`. Пока точного слоя нет, API не подставляет ноль и
+не повышает соответствующий блок dossier до `tier: "hero"`.
+
+## Парсер Cian
+
+Go-парсер объявлений с `description`, структурными полями, Chrome TLS-профилем,
+ротацией прокси и инкрементальной CSV/JSON-выгрузкой находится в
+`backend/cmd/cian-parser`. Инструкция по настройке и запуску:
+[docs/cian-parser.md](docs/cian-parser.md).
