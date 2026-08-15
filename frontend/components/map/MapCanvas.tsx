@@ -1,14 +1,13 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { useMaplibre } from "@/lib/map/useMaplibre";
 import { layerPaintColor } from "@/lib/map/style";
 import { useSession } from "@/lib/store/session";
 import { MAP_LAYER_IDS, type GeoZone } from "@/lib/agent/types";
-import { DUR, SPRING } from "@/lib/motion";
-import MatchScore from "@/components/result/MatchScore";
-import { money } from "@/lib/format";
+import { DUR } from "@/lib/motion";
+import MapPreviewCard, { type PreviewData } from "./MapPreviewCard";
 
 // Periwinkle glow — the ONLY saturated brand color allowed on the neutral canvas.
 const ACCENT = "#7C8CFF";
@@ -92,9 +91,13 @@ export default function MapCanvas() {
   const selectProperty = useSession((s) => s.selectProperty);
   const setViewport = useSession((s) => s.setViewport);
   const mapListings = useSession((s) => s.mapListings);
+  // Превью объявления, выбранного на карте: сама фича + её точка на экране.
+  const [mapPick, setMapPick] = useState<{
+    data: PreviewData; lngLat: [number, number]; anchor: { x: number; y: number };
+  } | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
   const pendingRemoval = useRef<Record<string, number>>({});
-  const reduce = useReducedMotion();
+
 
   // Hover preview: which property is previewed + its projected pixel anchor. A
   // short close delay lets the cursor travel from the pin onto the card to click.
@@ -207,6 +210,15 @@ export default function MapCanvas() {
     return () => markers.current.forEach((m) => m.remove());
   }, [map, ready, properties, setHovered, openPreview, scheduleClose, selectProperty]);
 
+  // Превью объекта карты держится за своей точкой при панораме и зуме.
+  useEffect(() => {
+    if (!map || !mapPick) return;
+    const update = () =>
+      setMapPick((cur) => (cur ? { ...cur, anchor: map.project(cur.lngLat) } : cur));
+    map.on("move", update);
+    return () => { map.off("move", update); };
+  }, [map, mapPick]);
+
   // Keep the preview card pinned to its marker as the camera pans/zooms.
   useEffect(() => {
     if (!map || previewIndex == null) return;
@@ -254,8 +266,14 @@ export default function MapCanvas() {
     map.addLayer({
       id: `${SRC}-clusters`, type: "circle", source: SRC, filter: ["has", "point_count"],
       paint: {
-        "circle-color": "#1c1d20", "circle-opacity": 0.55,
-        "circle-radius": ["step", ["get", "point_count"], 14, 25, 18, 100, 24],
+        // Плотность кодируется и размером, и насыщенностью — на светлой подложке
+        // dataviz-light одного размера мало.
+        "circle-color": ["step", ["get", "point_count"], "#8b8fa3", 25, "#6c718a", 100, "#4b5069"],
+        "circle-opacity": 0.9,
+        "circle-radius": ["step", ["get", "point_count"], 13, 25, 17, 100, 22],
+        "circle-stroke-width": 2,
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-opacity": 0.9,
       },
     });
     // Подписи числа в кластере намеренно нет: symbol-слой требует glyphs в
@@ -264,8 +282,15 @@ export default function MapCanvas() {
     map.addLayer({
       id: `${SRC}-point`, type: "circle", source: SRC, filter: ["!", ["has", "point_count"]],
       paint: {
-        "circle-radius": 5, "circle-color": "#1c1d20", "circle-opacity": 0.5,
-        "circle-stroke-width": 1.5, "circle-stroke-color": "#ffffff",
+        // Тот же язык, что у пинов выдачи (.pin__dot): светлое ядро в белом
+        // гало. Приглушённее результатов подбора — это фон карты, и он не
+        // должен спорить с выдачей за внимание.
+        "circle-color": "#6c718a",
+        "circle-opacity": 0.85,
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 14, 6, 17, 9],
+        "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 14, 2],
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-opacity": 0.95,
       },
     });
 
@@ -274,17 +299,18 @@ export default function MapCanvas() {
       if (!f) return;
       const p = f.properties as Record<string, unknown>;
       const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
-      // Стор читаем через getState: обработчик навешан один раз и не должен
-      // держать замыкание на устаревший экшен.
-      useSession.getState().openListingFromMap({
-        id: String(p.id), name: String(p.name ?? ""),
-        address: typeof p.address === "string" ? p.address : "",
-        cover_image: String(p.cover_image ?? ""),
-        match_score: 0,   // процента совпадения вне подбора не существует
-        price_from: typeof p.price === "number" ? p.price : null,
-        rooms: typeof p.rooms === "number" ? p.rooms : null,
-        area_sqm: typeof p.area_sqm === "number" ? p.area_sqm : null,
-        floor: "", tags: [], coordinates: [lng, lat],
+      // Клик открывает превью прямо на карте, а не уводит на страницу паспорта:
+      // на страницу ведёт уже кнопка внутри карточки.
+      setMapPick({
+        data: {
+          id: String(p.id), name: String(p.name ?? ""),
+          address: typeof p.address === "string" ? p.address : "",
+          cover_image: String(p.cover_image ?? ""),
+          price_from: typeof p.price === "number" ? p.price : null,
+          // match_score НЕ передаём: вне подбора его не существует.
+        },
+        lngLat: [lng, lat],
+        anchor: map.project([lng, lat]),
       });
     };
     const zoomCluster = (e: maplibregl.MapLayerMouseEvent) => {
@@ -298,6 +324,12 @@ export default function MapCanvas() {
     const cursor = (v: string) => () => { map.getCanvas().style.cursor = v; };
 
     map.on("click", `${SRC}-point`, openPassport);
+    // Клик мимо точки — закрыть превью. Слой-специфичный обработчик отработает
+    // раньше и успеет поставить новое, поэтому порядок безопасен.
+    map.on("click", (e: maplibregl.MapMouseEvent) => {
+      const hit = map.queryRenderedFeatures(e.point, { layers: [`${SRC}-point`] });
+      if (!hit.length) setMapPick(null);
+    });
     map.on("click", `${SRC}-clusters`, zoomCluster);
     map.on("mouseenter", `${SRC}-point`, cursor("pointer"));
     map.on("mouseleave", `${SRC}-point`, cursor(""));
@@ -433,65 +465,41 @@ export default function MapCanvas() {
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
         <AnimatePresence>
           {previewIndex != null && anchor && properties[previewIndex] && (
-            <motion.button
-              key={properties[previewIndex].id}
-              type="button"
-              onClick={() => selectProperty(previewIndex)}
+            <MapPreviewCard
+              data={{
+                id: properties[previewIndex].id,
+                name: properties[previewIndex].name,
+                address: properties[previewIndex].address,
+                cover_image: properties[previewIndex].cover_image,
+                price_from: properties[previewIndex].price_from,
+                match_score: properties[previewIndex].match_score,
+                tags: properties[previewIndex].tags,
+              }}
+              anchor={anchor}
+              onOpen={() => selectProperty(previewIndex)}
               onMouseEnter={() => openPreview(previewIndex)}
               onMouseLeave={scheduleClose}
-              onKeyDown={(e) => { if (e.key === "Escape") setPreviewIndex(null); }}
-              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.97 }}
-              animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-              exit={reduce ? { opacity: 0 } : { opacity: 0, y: 4, scale: 0.98 }}
-              transition={reduce ? { duration: DUR.fast } : SPRING.soft}
-              style={{
-                left: anchor.x,
-                top: anchor.y,
-                transformOrigin: "bottom center",
-                translate: "-50% calc(-100% - 18px)",
+              onClose={() => setPreviewIndex(null)}
+            />
+          )}
+
+          {/* Превью объявления, выбранного на слое карты (вне подбора). */}
+          {mapPick && (
+            <MapPreviewCard
+              data={mapPick.data}
+              anchor={mapPick.anchor}
+              onOpen={() => {
+                useSession.getState().openListingFromMap({
+                  id: mapPick.data.id, name: mapPick.data.name,
+                  address: mapPick.data.address ?? "",
+                  cover_image: mapPick.data.cover_image,
+                  match_score: 0, price_from: mapPick.data.price_from,
+                  rooms: null, area_sqm: null, floor: "", tags: [],
+                  coordinates: mapPick.lngLat,
+                });
               }}
-              className="pointer-events-auto absolute block w-56 overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left shadow-[0_18px_40px_-20px_rgba(28,29,32,0.45)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              aria-label={`${properties[previewIndex].name} — открыть карточку`}
-            >
-              <div className="relative w-full aspect-[3/2] overflow-hidden bg-zinc-100">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={properties[previewIndex].cover_image}
-                  alt={properties[previewIndex].name}
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/5" />
-                <div className="absolute right-2.5 top-2.5">
-                  <MatchScore value={properties[previewIndex].match_score} />
-                </div>
-              </div>
-              <div className="p-3.5">
-                <h3 className="text-sm font-medium tracking-tight text-[#1c1d20]">
-                  {properties[previewIndex].name}
-                </h3>
-                <p className="mt-1 font-mono text-sm text-zinc-700">
-                  {money(properties[previewIndex].price_from)}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {properties[previewIndex].tags.slice(0, 2).map((t) => (
-                    <span key={t} className="rounded-md bg-zinc-100 px-2 py-1 text-[11px] text-zinc-600">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-                <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-accent">
-                  Открыть карточку
-                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="none">
-                    <path d="M2.5 6h7M6.5 3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-              </div>
-              {/* Pointer notch aiming at the pin. */}
-              <span
-                aria-hidden
-                className="absolute left-1/2 top-full h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-zinc-200 bg-white"
-              />
-            </motion.button>
+              onClose={() => setMapPick(null)}
+            />
           )}
         </AnimatePresence>
       </div>
