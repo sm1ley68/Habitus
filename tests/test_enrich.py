@@ -136,3 +136,32 @@ def test_noise_has_three_grades_from_evidence():
             cur.execute("SELECT external_id, noise_level FROM listings ORDER BY external_id;")
             got = dict(cur.fetchall())
     assert got == {"L": "high", "M": "medium", "Q": "low"}
+
+
+def test_noise_grades_are_relative_thirds_of_the_city():
+    """Слой шума модельный: у него всего несколько дискретных значений и средние
+    65 дБ, поэтому абсолютная шкала (55/65) отправляет весь город в medium/high и
+    градация перестаёт нести информацию. Пороги берутся по перцентилям самой
+    экспозиции — «тише двух третей города» есть всегда, даже если абсолютно
+    тихих адресов в выборке нет."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings, poi;")
+            cur.execute("DELETE FROM urban_evidence;")
+            for i in range(9):                      # 60..68 дБ — все «шумные»
+                eid, lon, db = f"n{i}", 37.60 + i * 0.02, 60.0 + i
+                cur.execute("""INSERT INTO listings (external_id, source, geom, city)
+                    VALUES (%s,'t',ST_SetSRID(ST_MakePoint(%s,55.75),4326),'msk');""",
+                            (eid, lon))
+                cur.execute("""INSERT INTO urban_evidence
+                    (source_id, source, city, layer, geom, db, observed_at)
+                    VALUES (%s,'test','msk','noise',
+                            ST_SetSRID(ST_MakePoint(%s,55.75),4326),%s,now());""",
+                            (eid, lon, db))
+        conn.commit()
+        enrich_all(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT noise_level, count(*) FROM listings GROUP BY 1;")
+            got = dict(cur.fetchall())
+    assert got == {"low": 3, "medium": 3, "high": 3}

@@ -15,6 +15,7 @@ import psycopg
 import yaml
 
 from habitus.config import settings
+from habitus.online.retrieval import NOISE_ORDER
 
 GOLDEN = Path(__file__).parent / "queries.yaml"
 TOP_N = 10
@@ -51,6 +52,12 @@ def eligible_rows(conn, exp: dict) -> list[dict]:
         params.append(g["walk_minutes"])
     if exp.get("stop_factors") and "bars" in exp["stop_factors"]:
         where.append("bar_density_500m = 0")
+    # «тихо» — такое же жёсткое условие, как комнаты и бюджет: объект, который
+    # продукт не вправе показать, не может быть эталонным ответом. Границы те же,
+    # что в build_where (noise_max — потолок, а не точное значение).
+    if exp.get("noise_max") and exp["noise_max"] != "high":
+        allowed = NOISE_ORDER[: NOISE_ORDER.index(exp["noise_max"]) + 1]
+        where.append("noise_level = ANY(%s)"); params.append(allowed)
 
     sql = f"""
         SELECT external_id, price, rooms, area,
