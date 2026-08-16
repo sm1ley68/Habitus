@@ -43,7 +43,7 @@ export const LAYER_GEOJSON: Record<LayerId, GeoJSON.FeatureCollection> = {
   schools: fc([pt(SCHOOL_239, { name: "ФМЛ №239", rating: "Top-1" }), pt([30.358, 59.945], { name: "Школа №47" })]),
   parks: fc([pt([30.352, 59.948], { name: "Сквер" }), pt([30.366, 59.935], { name: "Парк Есенина" })]),
   bars: fc([pt([30.361, 59.941], { name: "Бар" }), pt([30.369, 59.944], { name: "Алкомаркет" })]),
-  crime: fc([pt([30.345, 59.951], { weight: 0.8, source: "mvd-open-data" })]),
+  crime: fc([pt([30.345, 59.951], { weight: 0.8, source: "poi-alcohol-density-crime-proxy" })]),
   metro: fc([pt([30.360, 59.947], { name: "Чернышевская" })]),
   communal: fc([{ type: "Feature", properties: { weight: 0.9 }, geometry: { type: "Polygon", coordinates: [[[30.370, 59.940], [30.377, 59.940], [30.377, 59.946], [30.370, 59.946], [30.370, 59.940]]] } }]),
   noise: fc([{ type: "Feature", properties: { db_level: 75, source: "Магистраль" }, geometry: { type: "LineString", coordinates: [[30.332, 59.950], [30.378, 59.948]] } }]),

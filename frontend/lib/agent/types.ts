@@ -18,12 +18,17 @@ export type LifestyleIcon =
 export type LayerId =
   | "communal" | "noise" | "schools" | "bars" | "crime" | "parks" | "metro";
 
+// Подписи слоёв. Ключ `crime` остался прежним — он зафиксирован на трёх
+// сторонах (CHECK в schema.sql ↔ Go AllowedLayers ↔ LayerId), — но подпись
+// изменена: слой считается как плотность баров и алкомаркетов
+// (poi-alcohol-density-crime-proxy), статистики преступности за ним нет.
+// «Риск-зоны» обещали замер, которого не существует.
 export const LAYER_LABELS: Record<LayerId, string> = {
   communal: "Коммунальный фонд",
   noise: "Шум",
   schools: "Школы",
   bars: "Бары",
-  crime: "Риск-зоны",
+  crime: "Плотность баров",
   parks: "Парки",
   metro: "Метро",
 };
