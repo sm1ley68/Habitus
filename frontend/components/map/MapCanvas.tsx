@@ -5,7 +5,7 @@ import { AnimatePresence } from "framer-motion";
 import { useMaplibre } from "@/lib/map/useMaplibre";
 import { layerPaintColor } from "@/lib/map/style";
 import { useSession } from "@/lib/store/session";
-import { MAP_LAYER_IDS, type GeoZone } from "@/lib/agent/types";
+import { RENDERED_LAYER_IDS, type GeoZone } from "@/lib/agent/types";
 import { DUR } from "@/lib/motion";
 import MapPreviewCard, { type PreviewData } from "./MapPreviewCard";
 
@@ -359,15 +359,23 @@ export default function MapCanvas() {
     const reduced = prefersReducedMotion();
     const xfade = reduced ? 0 : DUR.base * 1000; // 240ms
 
-    MAP_LAYER_IDS.forEach((id) => {
+    RENDERED_LAYER_IDS.forEach((id) => {
       const srcId = `layer-${id}`;
       const data = layerData[id];
       // Слой ещё не приехал (или бэк отдал по нему пусто — evidence-слои без
       // bbox и слои без данных приходят пустыми) — рисовать нечего.
       const on = !!activeLayers[id] && !!data?.features.length;
       const geom = data?.features[0]?.geometry.type ?? "Polygon";
-      const color = layerPaintColor(geom);
-      const props = layerOpacityProps(geom);
+      // Скопления (crime) — часть слоя «Бары», поэтому красятся в тот же синий,
+      // что и точки заведений, а не в нейтральный серый: иначе на светлой
+      // подложке это выглядит отдельной непонятной сущностью. Прозрачность
+      // низкая намеренно — буферы соседних баров накладываются, и плотность
+      // читается по накоплению цвета.
+      const isDensity = id === "crime";
+      const color = isDensity ? "#5AB8E0" : layerPaintColor(geom);
+      const props: Array<[string, number]> = isDensity
+        ? [["fill-opacity", 0.14]]
+        : layerOpacityProps(geom);
 
       if (on) {
         // Cancel a queued removal if the user re-enabled mid-fade.

@@ -107,10 +107,18 @@ export const useSession = create<SessionState>((set, get) => ({
                            mapProperty: null }),
   toggleHistory: () => set((s) => ({ historyOpen: !s.historyOpen })),
 
+  // «Бары» — один тумблер на две формы одних и тех же данных: точки заведений
+  // и буферы их скоплений (слой crime). Переключаются только вместе.
   toggleLayer: (id) => {
     const on = !get().activeLayers[id];
-    set((s) => ({ activeLayers: { ...s.activeLayers, [id]: on } }));
-    if (on) void get().loadLayer(id);
+    const ids: LayerId[] = id === "bars" ? ["bars", "crime"] : [id];
+    set((s) => ({
+      activeLayers: {
+        ...s.activeLayers,
+        ...Object.fromEntries(ids.map((x) => [x, on])),
+      },
+    }));
+    if (on) ids.forEach((x) => void get().loadLayer(x));
   },
 
   // Слой тянется под текущий вьюпорт. Повторные вкл/выкл по сети не бьют,

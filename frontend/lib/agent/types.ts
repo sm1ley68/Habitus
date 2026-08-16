@@ -18,22 +18,30 @@ export type LifestyleIcon =
 export type LayerId =
   | "communal" | "noise" | "schools" | "bars" | "crime" | "parks" | "metro";
 
-// Подписи слоёв. Ключ `crime` остался прежним — он зафиксирован на трёх
-// сторонах (CHECK в schema.sql ↔ Go AllowedLayers ↔ LayerId), — но подпись
-// изменена: слой считается как плотность баров и алкомаркетов
-// (poi-alcohol-density-crime-proxy), статистики преступности за ним нет.
-// «Риск-зоны» обещали замер, которого не существует.
-export const LAYER_LABELS: Record<LayerId, string> = {
+// Слои, у которых есть СВОЙ тумблер. `crime` сюда не входит намеренно: это
+// буферы вокруг тех же точек bar/alcohol (4466 фич на 4479 точек), то есть не
+// второй слой, а второе прочтение первого. Два контрола на одну сущность —
+// путаница, поэтому скопления включаются вместе с «Барами».
+//
+// Сам ключ `crime` остаётся: он зафиксирован на трёх сторонах (CHECK в
+// schema.sql ↔ Go AllowedLayers ↔ LayerId). И «риск-зонами» он не называется
+// нигде — статистики преступности за ним нет, только плотность алкоточек.
+export type ToggleLayerId = Exclude<LayerId, "crime">;
+
+export const LAYER_LABELS: Record<ToggleLayerId, string> = {
   communal: "Коммунальный фонд",
   noise: "Шум",
   schools: "Школы",
   bars: "Бары",
-  crime: "Плотность баров",
   parks: "Парки",
   metro: "Метро",
 };
 
-export const MAP_LAYER_IDS = Object.keys(LAYER_LABELS) as LayerId[];
+export const MAP_LAYER_IDS = Object.keys(LAYER_LABELS) as ToggleLayerId[];
+
+// Порядок отрисовки на карте: скопления идут ПЕРВЫМИ, чтобы мягкая заливка
+// легла под точки заведений, а не накрыла их.
+export const RENDERED_LAYER_IDS: LayerId[] = ["crime", ...MAP_LAYER_IDS];
 
 export interface GeoZone {
   type: "FeatureCollection";

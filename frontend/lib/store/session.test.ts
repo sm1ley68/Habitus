@@ -105,3 +105,23 @@ test("выбор объекта из выдачи сбрасывает карт�
   useSession.getState().selectProperty(0);
   expect(useSession.getState().mapProperty).toBeNull();
 });
+
+test("тумблера «Плотность баров» больше нет — один контрол на одну сущность", async () => {
+  const { MAP_LAYER_IDS, LAYER_LABELS } = await import("@/lib/agent/types");
+  expect(MAP_LAYER_IDS).not.toContain("crime");
+  expect(Object.values(LAYER_LABELS)).not.toContain("Плотность баров");
+  expect(MAP_LAYER_IDS).toContain("bars");
+});
+
+test("тумблер «Бары» поднимает и точки, и скопления вокруг них", () => {
+  useSession.setState({ activeLayers: { ...useSession.getState().activeLayers, bars: false, crime: false } });
+  useSession.getState().toggleLayer("bars");
+  const on = useSession.getState().activeLayers;
+  expect(on.bars).toBe(true);
+  expect(on.crime).toBe(true);   // буферы — часть того же слоя, не отдельный
+
+  useSession.getState().toggleLayer("bars");
+  const off = useSession.getState().activeLayers;
+  expect(off.bars).toBe(false);
+  expect(off.crime).toBe(false);
+});

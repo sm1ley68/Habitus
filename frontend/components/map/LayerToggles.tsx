@@ -12,7 +12,10 @@ export default function LayerToggles() {
 
   // Слои, включённые по умолчанию, должны приехать без клика пользователя.
   useEffect(() => {
-    MAP_LAYER_IDS.filter((id) => active[id]).forEach((id) => void loadLayer(id));
+    MAP_LAYER_IDS.filter((id) => active[id]).forEach((id) => {
+      void loadLayer(id);
+      if (id === "bars") void loadLayer("crime");   // скопления — часть слоя «Бары»
+    });
     // Один раз на монтировании: дальше загрузку инициирует toggleLayer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

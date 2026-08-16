@@ -240,7 +240,7 @@ export const HISTORY: HistoryItem[] = [
   { title: "До сильной школы за 15 минут", time: "2 недели назад" },
 ];
 
-export const MAP_LAYER_IDS = Object.keys(LAYER_LABELS) as LayerId[];
+export const MAP_LAYER_IDS = Object.keys(LAYER_LABELS) as LayerId[];  // без crime: он рисуется вместе с bars
 export { LAYER_LABELS };
 
 export const ANSWER_TEXT =
