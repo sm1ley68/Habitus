@@ -120,8 +120,14 @@ def main() -> int:
 
     with psycopg.connect(settings.db_dsn) as conn:
         for item in golden:
-            if not item.get("relevant_ids"):
-                continue  # b01-b06 — проверка разбора, эталона выдачи нет
+            # Курируем то, что выражается правилами по колонкам: либо эталон уже
+            # есть (перекурирование), либо запрос явно помечен curate: true.
+            # Флаг нужен для новых структурных запросов — без него запрос с
+            # пустым relevant_ids не мог получить эталон НИКОГДА, и b-серия
+            # оставалась мёртвой. Свободная семантика («старый центр», «лофт»)
+            # флага не имеет: правилами её не построить, размечает человек.
+            if not (item.get("relevant_ids") or item.get("curate")):
+                continue
             old = set(item["relevant_ids"])
             ids, grades, pool = curate(conn, item)
             item["relevant_ids"] = ids

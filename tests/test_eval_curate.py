@@ -1,3 +1,4 @@
+import yaml
 import psycopg
 from habitus.config import settings
 from habitus.db.init_db import init_db
@@ -71,3 +72,40 @@ def test_price_floor_is_far_below_market():
     # Отсечка должна резать аномалии, а не дешёвые окраины: медиана по базе
     # ~650 тыс. ₽/м², 5-й перцентиль ~317 тыс.
     assert MIN_PRICE_PER_SQM < 317_000
+
+
+def test_curate_flag_marks_queries_buildable_by_rules(tmp_path, monkeypatch):
+    """Запрос без эталона, но с флагом curate, обязан курироваться правилами.
+
+    Раньше признаком «курировать» служило наличие уже проставленных
+    relevant_ids — то есть новый запрос нельзя было разметить автоматически,
+    даже когда он целиком выражается условиями по колонкам (комнаты, бюджет,
+    площадь, минуты). Из-за этого b-серия годами оставалась пустой.
+    """
+    from habitus.eval import curate as mod
+
+    golden = [
+        {"id": "b01", "query": "двушка до 35 млн", "curate": True,
+         "expected_parse": {"rooms": [2], "price_max": 35000000},
+         "relevant_ids": []},
+        {"id": "b05", "query": "loft with brick walls",
+         "expected_parse": {}, "relevant_ids": []},
+    ]
+    path = tmp_path / "queries.yaml"
+    path.write_text(yaml.safe_dump(golden, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setattr(mod, "GOLDEN", path)
+
+    seen = []
+
+    def fake_curate(conn, item):
+        seen.append(item["id"])
+        return ["cian_1"], {"cian_1": 3}, 1
+
+    monkeypatch.setattr(mod, "curate", fake_curate)
+    mod.main()
+
+    assert seen == ["b01"]          # структурный — курируется
+    out = yaml.safe_load(path.read_text(encoding="utf-8"))
+    by_id = {x["id"]: x for x in out}
+    assert by_id["b01"]["relevant_ids"] == ["cian_1"]
+    assert by_id["b05"]["relevant_ids"] == []   # семантику правилами не выдумываем

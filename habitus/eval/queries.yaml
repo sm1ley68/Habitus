@@ -331,52 +331,56 @@
     cian_331894681: 1
 - id: b01
   lang: ru
-  query: двушка, 45-60 метров, бюджет до 12 млн
+  curate: true
+  query: двушка 45-60 метров, бюджет до 35 млн
   expected_parse:
     rooms:
     - 2
     area_min: 45.0
     area_max: 60.0
-    price_max: 12000000
+    price_max: 35000000
   relevant_ids: []
 - id: b02
   lang: en
-  query: one-room apartment, budget up to 8 million rubles
+  curate: true
+  query: one-room apartment, budget up to 25 million rubles
   expected_parse:
     rooms:
     - 1
-    price_max: 8000000
+    price_max: 25000000
     lang: en
   relevant_ids: []
 - id: b03
   lang: ru
-  query: трёшка от 60 метров, окна на юго-запад, метро в 7 минутах
+  curate: true
+  query: трёшка от 70 метров, метро в 7 минутах пешком
   expected_parse:
     rooms:
     - 3
-    area_min: 60.0
-    window_orientation:
-    - SW
+    area_min: 70.0
     geo:
     - kind: metro
       walk_minutes: 7
   relevant_ids: []
 - id: b04
   lang: ru
-  query: двор-колодец, атмосфера старого центра, брусчатка во дворе
-  expected_parse: {}
+  query: квартира в старом центре, рядом с Патриаршими
+  expected_parse:
+    area: Патриаршие пруды
   relevant_ids: []
 - id: b05
   lang: en
-  query: loft with high ceilings and exposed brick
+  query: loft with high ceilings and brick walls
   expected_parse:
     lang: en
   relevant_ids: []
 - id: b06
   lang: ru
-  query: не хочу коммуналок и шумных дворов
+  curate: true
+  query: не хочу коммуналок и шумных баров под окнами
   expected_parse:
     noise_max: low
     stop_factors:
     - communal_flats
+    - bars
   relevant_ids: []
