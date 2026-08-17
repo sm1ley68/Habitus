@@ -3,7 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { AnimatePresence } from "framer-motion";
 import { useMaplibre } from "@/lib/map/useMaplibre";
-import { layerPaintColor } from "@/lib/map/style";
+import { layerColor, layerPaintColor } from "@/lib/map/style";
+import { poiIconImageId, registerPoiIcons } from "@/lib/map/icons";
+import {
+  hasGlyphs, iconLayerId, iconLayout, iconPaint, metroLabelLayerId,
+  densityFillOpacity, metroLabelLayout, metroLabelPaint, pickLabelFont,
+  pointCirclePaint,
+} from "@/lib/map/layers";
 import { useSession } from "@/lib/store/session";
 import { RENDERED_LAYER_IDS, type GeoZone } from "@/lib/agent/types";
 import { DUR } from "@/lib/motion";
@@ -372,10 +378,16 @@ export default function MapCanvas() {
       // низкая намеренно — буферы соседних баров накладываются, и плотность
       // читается по накоплению цвета.
       const isDensity = id === "crime";
-      const color = isDensity ? "#5AB8E0" : layerPaintColor(geom);
-      const props: Array<[string, number]> = isDensity
-        ? [["fill-opacity", 0.14]]
+      const color = layerColor(id) ?? layerPaintColor(geom);
+      // Заливка скоплений включается не константой, а выражением по масштабу:
+      // на плане города фон, у земли — ноль. Тумблер по-прежнему гасит её в 0.
+      const props: Array<[string, unknown]> = isDensity
+        ? [["fill-opacity", densityFillOpacity()]]
         : layerOpacityProps(geom);
+      // Значок и подпись живут отдельными слоями поверх кружка: их прозрачность
+      // ведёт масштаб, а не тумблер, поэтому в кроссфейд они не входят.
+      const iconId = iconLayerId(id);
+      const labelId = metroLabelLayerId();
 
       if (on) {
         // Cancel a queued removal if the user re-enabled mid-fade.
@@ -386,19 +398,37 @@ export default function MapCanvas() {
         if (!map.getSource(srcId)) {
           map.addSource(srcId, { type: "geojson", data });
           if (geom === "Point") {
+            registerPoiIcons(map);
             map.addLayer({
               id: srcId, type: "circle", source: srcId,
               paint: {
-                "circle-radius": 5,
-                "circle-color": color,
-                "circle-opacity": 0,
-                "circle-stroke-color": "#ffffff",
-                "circle-stroke-width": 1.5,
-                "circle-stroke-opacity": 0,
+                ...pointCirclePaint(id),
                 "circle-opacity-transition": { duration: xfade, delay: 0 },
                 "circle-stroke-opacity-transition": { duration: xfade, delay: 0 },
-              },
+              } as maplibregl.CircleLayerSpecification["paint"],
             });
+            // Значок рисуем только если картинка действительно зарегистрирована:
+            // без canvas (серверный рендер, тесты) её нет, и слой-символ тогда
+            // светил бы в консоль отсутствующим изображением на каждом тайле.
+            if (map.hasImage(poiIconImageId(id))) {
+              map.addLayer({
+                id: iconId, type: "symbol", source: srcId,
+                layout: iconLayout(id) as maplibregl.SymbolLayerSpecification["layout"],
+                paint: iconPaint() as maplibregl.SymbolLayerSpecification["paint"],
+              });
+            }
+            // Подписи станций — только для метро и только если стиль отдаёт
+            // шрифты. Начертание берём из самого стиля: оно заведомо есть в
+            // наборе глифов и покрывает кириллицу.
+            const style = map.getStyle();
+            if (id === "metro" && hasGlyphs(style) && !map.getLayer(labelId)) {
+              map.addLayer({
+                id: labelId, type: "symbol", source: srcId,
+                layout: metroLabelLayout(pickLabelFont(style)) as
+                  maplibregl.SymbolLayerSpecification["layout"],
+                paint: metroLabelPaint() as maplibregl.SymbolLayerSpecification["paint"],
+              });
+            }
           } else if (geom === "LineString") {
             map.addLayer({
               id: srcId, type: "line", source: srcId,
@@ -431,6 +461,10 @@ export default function MapCanvas() {
         props.forEach(([prop]) => map.setPaintProperty(srcId, prop, 0));
         pendingRemoval.current[srcId] = window.setTimeout(() => {
           try {
+            // Значок и подпись сидят на том же источнике — снимать их надо
+            // ДО него, иначе maplibre падает на слое без источника.
+            if (map.getLayer(labelId) && id === "metro") map.removeLayer(labelId);
+            if (map.getLayer(iconId)) map.removeLayer(iconId);
             if (map.getLayer(srcId)) map.removeLayer(srcId);
             if (map.getSource(srcId)) map.removeSource(srcId);
           } catch {

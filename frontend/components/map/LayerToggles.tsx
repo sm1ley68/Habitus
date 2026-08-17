@@ -1,7 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import { MAP_LAYER_IDS, LAYER_LABELS } from "@/lib/agent/types";
-import { layerPaintColor } from "@/lib/map/style";
+import { layerColor } from "@/lib/map/style";
 import { useSession } from "@/lib/store/session";
 
 export default function LayerToggles() {
@@ -29,7 +29,9 @@ export default function LayerToggles() {
         // данных (geo_layers_service.go). Тумблер честно помечается как пустой,
         // вместо того чтобы притворяться, что слой есть.
         const empty = !!data && data.features.length === 0;
-        const swatch = layerPaintColor(data?.features[0]?.geometry.type ?? "");
+        // Цвет берётся по слою, а не по геометрии: раньше легенда показывала
+        // четыре одинаковых синих кружка для школ, парков, баров и метро.
+        const swatch = layerColor(id);
         return (
           <button
             key={id}
