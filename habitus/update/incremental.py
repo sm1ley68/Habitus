@@ -10,6 +10,11 @@ from habitus.geo.enrich import enrich_around
 # любое значение из широкой безопасной середины.
 CRAWL_GAP = timedelta(hours=1)
 
+# Сколько последних обходов образуют «свежий снимок». Один обход ненадёжен:
+# источник обрывает пагинацию капчей, и усечённый обход выглядит как массовое
+# снятие с продажи. Два обхода — компромисс между ложным гашением и задержкой.
+CRAWLS_KEPT = 2
+
 
 def _parsed_at(row: dict) -> datetime | None:
     raw = str(row.get("collected_at") or "").strip()
@@ -21,12 +26,18 @@ def _parsed_at(row: dict) -> datetime | None:
         return None
 
 
-def latest_snapshot_ids(rows: list[dict], gap: timedelta = CRAWL_GAP) -> set[str]:
-    """external_id последнего обхода источника, а не всего накопленного файла.
+def latest_snapshot_ids(rows: list[dict], gap: timedelta = CRAWL_GAP,
+                        crawls: int = CRAWLS_KEPT) -> set[str]:
+    """external_id последних `crawls` обходов, а не всего накопленного файла.
 
     Сборщик пишет CSV через latest-wins merge по внешнему id: строка, однажды
     попавшая в файл, остаётся там навсегда. Поэтому «чего нет в файле» никогда
     не выполняется, и гашение, построенное на всём файле, молча не работает.
+
+    Окно шире одного обхода намеренно. Обход обрывается: источник отдаёт капчу
+    посреди пагинации, и живое объявление, не попавшее в усечённый обход,
+    неотличимо от снятого с продажи. Двух обходов достаточно, чтобы один
+    сорванный не гасил чужое, и мало, чтобы проданное задерживалось надолго.
 
     Строки без разбираемого времени сбора попадают в снимок ВСЕГДА: не зная
     даты, мы не вправе утверждать, что объявление снято с продажи. Из-за этого
@@ -36,8 +47,20 @@ def latest_snapshot_ids(rows: list[dict], gap: timedelta = CRAWL_GAP) -> set[str
     undated = {r["external_id"] for r in rows if _parsed_at(r) is None}
     if not dated:
         return undated
-    newest = max(t for t, _ in dated)
-    return undated | {r["external_id"] for t, r in dated if newest - t <= gap}
+
+    # Метки времени внутри обхода идут вплотную (обход 2366 объявлений уложился
+    # в 9 минут), между обходами — часы. Кластеризуем по разрыву, а не по
+    # календарным суткам: обход может начаться до полуночи и кончиться после.
+    times = sorted({t for t, _ in dated}, reverse=True)
+    cutoff, seen, prev = times[-1], 0, times[0]
+    for t in times[1:]:
+        if prev - t > gap:          # разрыв — начался предыдущий обход
+            seen += 1
+            if seen >= crawls:      # набрали нужное число, prev — их нижняя граница
+                cutoff = prev
+                break
+        prev = t
+    return undated | {r["external_id"] for t, r in dated if t >= cutoff}
 
 
 def apply_new_poi(rows: list[dict], conn: psycopg.Connection) -> int:

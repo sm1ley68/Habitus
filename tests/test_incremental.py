@@ -101,7 +101,7 @@ def test_latest_snapshot_keeps_only_the_last_crawl():
         {"external_id": "new_1", "collected_at": "2026-08-15T17:30:43Z"},
         {"external_id": "new_2", "collected_at": "2026-08-15T17:35:54Z"},
     ]
-    assert latest_snapshot_ids(rows) == {"new_1", "new_2"}
+    assert latest_snapshot_ids(rows, crawls=1) == {"new_1", "new_2"}
 
 
 def test_rows_without_timestamp_are_never_deactivated():
@@ -117,7 +117,7 @@ def test_undatable_row_survives_alongside_dated_ones():
         {"external_id": "broken", "collected_at": "не дата"},
         {"external_id": "new", "collected_at": "2026-08-15T17:30:43Z"},
     ]
-    got = latest_snapshot_ids(rows)
+    got = latest_snapshot_ids(rows, crawls=1)
     assert "new" in got and "broken" in got and "old" not in got
 
 
@@ -140,3 +140,25 @@ def test_empty_snapshot_deactivates_nothing():
             alive = cur.fetchone()[0]
     assert gone == 0
     assert alive == 3
+
+
+def test_snapshot_spans_two_last_crawls():
+    """Гасим по ДВУМ последним обходам, а не по одному.
+
+    Обход обрывается на середине (сегодня — капча на 22-й странице), и по
+    единственному снимку живые объявления, просто не попавшие в усечённый
+    обход, выглядели бы как снятые с продажи. Объявление, встреченное в
+    предыдущем обходе, переживает один сорванный.
+    """
+    rows = [
+        {"external_id": "июль",   "collected_at": "2026-07-16T13:36:53Z"},
+        {"external_id": "вчера",  "collected_at": "2026-08-15T17:30:43Z"},
+        {"external_id": "сегодня","collected_at": "2026-08-17T19:23:27Z"},
+    ]
+    assert latest_snapshot_ids(rows, crawls=2) == {"вчера", "сегодня"}
+    assert latest_snapshot_ids(rows, crawls=1) == {"сегодня"}
+
+
+def test_more_crawls_requested_than_exist_keeps_everything():
+    rows = [{"external_id": "a", "collected_at": "2026-08-17T19:23:27Z"}]
+    assert latest_snapshot_ids(rows, crawls=5) == {"a"}
