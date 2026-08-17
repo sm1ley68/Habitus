@@ -165,3 +165,65 @@ def test_noise_grades_are_relative_thirds_of_the_city():
             cur.execute("SELECT noise_level, count(*) FROM listings GROUP BY 1;")
             got = dict(cur.fetchall())
     assert got == {"low": 3, "medium": 3, "high": 3}
+
+
+# --- название ближайшей станции ------------------------------------------
+#
+# Циан отдаёт станции с transport_type; пеших среди них может не быть вовсе,
+# и тогда metro_station оставался NULL — при том, что МИНУТЫ до метро уже
+# считались по OSM-фолбэку (у 206 объявлений из 2143 именно так). Название
+# станции лежало ровно в тех же точках poi, просто не записывалось.
+def _seed_metro(conn):
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE listings, poi;")
+        cur.execute("""INSERT INTO listings (external_id, source, geom, metro_station)
+            VALUES ('L_NO_NAME','cian',
+                    ST_SetSRID(ST_MakePoint(37.6173,55.7558),4326), NULL),
+                   ('L_FROM_SOURCE','cian',
+                    ST_SetSRID(ST_MakePoint(37.6175,55.7559),4326), 'Охотный Ряд');""")
+        cur.execute("""INSERT INTO poi (osm_id, kind, name, geom) VALUES
+            (10,'metro','Театральная', ST_SetSRID(ST_MakePoint(37.6190,55.7575),4326)),
+            (11,'metro','Тверская',    ST_SetSRID(ST_MakePoint(37.6060,55.7640),4326));""")
+    conn.commit()
+
+
+def test_enrich_fills_station_name_from_nearest_poi():
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        _seed_metro(conn)
+        enrich_all(conn)
+        with conn.cursor() as cur:
+            cur.execute("""SELECT metro_station, walk_min_metro
+                           FROM listings WHERE external_id='L_NO_NAME';""")
+            station, minutes = cur.fetchone()
+        assert station == "Театральная"   # ближайшая, а не первая попавшаяся
+        assert minutes is not None
+
+
+def test_source_station_is_not_overwritten_by_computed_one():
+    """Данные источника приоритетнее вычисленных: если Циан назвал станцию,
+    вычисленная не имеет права её затереть."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        _seed_metro(conn)
+        enrich_all(conn)
+        with conn.cursor() as cur:
+            cur.execute("""SELECT metro_station FROM listings
+                           WHERE external_id='L_FROM_SOURCE';""")
+            assert cur.fetchone()[0] == "Охотный Ряд"
+
+
+def test_no_metro_poi_leaves_station_empty():
+    """Нет точек метро — станция остаётся NULL. Придумывать название нельзя."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings, poi;")
+            cur.execute("""INSERT INTO listings (external_id, source, geom)
+                VALUES ('L_ALONE','cian',
+                        ST_SetSRID(ST_MakePoint(37.6173,55.7558),4326));""")
+        conn.commit()
+        enrich_all(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT metro_station FROM listings WHERE external_id='L_ALONE';")
+            assert cur.fetchone()[0] is None
