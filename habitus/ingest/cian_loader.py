@@ -87,6 +87,9 @@ def parse_csv(path: Path) -> list[dict]:
                 "city": "msk",
                 "address": (row.get("address") or "").strip() or None,
                 "source_url": (row.get("url") or "").strip() or None,
+                # Не колонка raw_listings, а признак прогона: по нему гашение
+                # отличает последний обход от всего накопленного файла.
+                "collected_at": (row.get("collected_at") or "").strip() or None,
                 "photos": parse_photos(row.get("photos")),
                 "source_extra": {
                     "metro": parse_metro(row.get("metro")),

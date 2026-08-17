@@ -1,6 +1,43 @@
+from datetime import datetime, timedelta
+
 import psycopg
 from habitus.geo.osm_extract import upsert_poi
 from habitus.geo.enrich import enrich_around
+
+# Порог, отделяющий один обход источника от другого. Обход 1500 объявлений
+# укладывается в пять минут, а прогоны идут раз в 6 часов — между этими
+# величинами два порядка, так что час здесь не «подобранная» константа, а
+# любое значение из широкой безопасной середины.
+CRAWL_GAP = timedelta(hours=1)
+
+
+def _parsed_at(row: dict) -> datetime | None:
+    raw = str(row.get("collected_at") or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def latest_snapshot_ids(rows: list[dict], gap: timedelta = CRAWL_GAP) -> set[str]:
+    """external_id последнего обхода источника, а не всего накопленного файла.
+
+    Сборщик пишет CSV через latest-wins merge по внешнему id: строка, однажды
+    попавшая в файл, остаётся там навсегда. Поэтому «чего нет в файле» никогда
+    не выполняется, и гашение, построенное на всём файле, молча не работает.
+
+    Строки без разбираемого времени сбора попадают в снимок ВСЕГДА: не зная
+    даты, мы не вправе утверждать, что объявление снято с продажи. Из-за этого
+    выгрузка без времени (Kaggle) сохраняет прежнее поведение.
+    """
+    dated = [(t, r) for r in rows if (t := _parsed_at(r)) is not None]
+    undated = {r["external_id"] for r in rows if _parsed_at(r) is None}
+    if not dated:
+        return undated
+    newest = max(t for t, _ in dated)
+    return undated | {r["external_id"] for t, r in dated if newest - t <= gap}
 
 
 def apply_new_poi(rows: list[dict], conn: psycopg.Connection) -> int:
@@ -20,7 +57,13 @@ def deactivate_missing(active_ids: set[str], conn: psycopg.Connection,
     пересекаются, поэтому снимок Циана без скоупа погасил бы вообще всё чужое.
     Обратное включение делает promote_to_listings — там is_active=true в
     ON CONFLICT, так что вернувшееся в продажу объявление оживает само.
+
+    Пустой снимок не гасит ничего. Сорванный обход (капча, сеть, пустой файл)
+    неотличим по данным от «всё снято с продажи», и цена ошибки несимметрична:
+    обнулить базу дорого, пропустить один цикл гашения — нет.
     """
+    if not active_ids:
+        return 0
     where = "is_active = true" + (" AND source = %s" if source else "")
     params = (source,) if source else ()
     with conn.cursor() as cur:

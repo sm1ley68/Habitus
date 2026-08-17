@@ -8,7 +8,7 @@ from habitus.db.connection import get_conn
 from habitus.ingest.kaggle_loader import parse_csv as parse_kaggle_csv, load_to_raw
 from habitus.ingest.cian_loader import parse_csv as parse_cian_csv
 from habitus.clean.normalize import promote_to_listings
-from habitus.update.incremental import deactivate_missing
+from habitus.update.incremental import deactivate_missing, latest_snapshot_ids
 from habitus.clean.geocode import backfill_missing_coords
 from habitus.geo.osm_extract import fetch_kind, upsert_poi, OVERPASS_QUERIES
 from habitus.geo.enrich import enrich_all
@@ -42,13 +42,27 @@ def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
     # ЭТОГО источника, гасим. Вернувшееся объявление оживит promote_to_listings
     # (is_active=true в ON CONFLICT). Скоуп по источнику обязателен — иначе
     # прогон Циана погасил бы объявления Kaggle.
+    #
+    # Снимок — последний обход, а НЕ весь файл: CSV сборщика накапливается и
+    # никогда не уменьшается, поэтому сравнение с ним давало deactivated=0
+    # в каждом цикле при полностью активной базе.
     stats["deactivated"] = deactivate_missing(
-        {r["external_id"] for r in rows}, conn, source=source)
+        latest_snapshot_ids(rows), conn, source=source)
     geo_kwargs = {} if geocoder is None else {"geocoder": geocoder}
     stats["geocoded"] = backfill_missing_coords(conn, **geo_kwargs)
+    # Overpass — чужой публичный API, он регулярно отдаёт 504 и рвёт соединение
+    # (четыре ночных цикла подряд упали именно на нём). Точки города меняются
+    # раз в месяцы, объявления — каждый час, поэтому провал загрузки POI не
+    # должен уносить с собой заливку, обогащение и эмбеддинги. Сбой не глотаем
+    # молча: список провалившихся слоёв уезжает в статистику цикла.
+    stats["osm_failed"] = []
     if fetch_osm:
         for kind in OVERPASS_QUERIES:
-            upsert_poi(fetch_kind(kind), conn)
+            try:
+                upsert_poi(fetch_kind(kind), conn)
+            except Exception as e:  # noqa: BLE001 — внешний API, причин отказа много
+                conn.rollback()
+                stats["osm_failed"].append(f"{kind}: {e}")
     stats["enriched"] = enrich_all(conn)
     stats["doc_text"] = _refresh_doc_text(conn)
     stats["embedded"] = embed_pending(conn, model=model)

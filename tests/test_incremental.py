@@ -82,3 +82,61 @@ def test_reappearing_listing_comes_back_active():
         with conn.cursor() as cur:
             cur.execute("SELECT is_active FROM listings WHERE external_id='cian_2';")
             assert cur.fetchone()[0] is True
+
+
+# --- снимок последнего прогона -------------------------------------------
+#
+# CSV сборщика НАКАПЛИВАЕТСЯ: Store.load() читает существующий файл и делает
+# latest-wins merge по cian_id, поэтому из файла никогда ничего не исчезает.
+# Гашение, сравнивавшее базу со всем файлом, из-за этого не могло сработать
+# ни разу: 6 циклов подряд давали deactivated=0 при 100% активных объявлений.
+# Свежий снимок — это строки ПОСЛЕДНЕГО прогона, а не весь файл.
+from habitus.update.incremental import latest_snapshot_ids
+
+
+def test_latest_snapshot_keeps_only_the_last_crawl():
+    rows = [
+        {"external_id": "old_1", "collected_at": "2026-07-16T13:36:53Z"},
+        {"external_id": "old_2", "collected_at": "2026-07-16T13:40:40Z"},
+        {"external_id": "new_1", "collected_at": "2026-08-15T17:30:43Z"},
+        {"external_id": "new_2", "collected_at": "2026-08-15T17:35:54Z"},
+    ]
+    assert latest_snapshot_ids(rows) == {"new_1", "new_2"}
+
+
+def test_rows_without_timestamp_are_never_deactivated():
+    """Kaggle-выгрузка не несёт времени сбора: без метки строка обязана попасть
+    в снимок, иначе прогон другого источника погасил бы её на ровном месте."""
+    rows = [{"external_id": "kag_1"}, {"external_id": "kag_2"}]
+    assert latest_snapshot_ids(rows) == {"kag_1", "kag_2"}
+
+
+def test_undatable_row_survives_alongside_dated_ones():
+    rows = [
+        {"external_id": "old", "collected_at": "2026-07-16T13:36:53Z"},
+        {"external_id": "broken", "collected_at": "не дата"},
+        {"external_id": "new", "collected_at": "2026-08-15T17:30:43Z"},
+    ]
+    got = latest_snapshot_ids(rows)
+    assert "new" in got and "broken" in got and "old" not in got
+
+
+def test_one_crawl_stays_whole_despite_minutes_of_spread():
+    """Обход 1500 объявлений занимает минуты — это ОДИН прогон, а не полтора."""
+    rows = [{"external_id": f"id_{i}",
+             "collected_at": f"2026-08-15T17:3{i}:00Z"} for i in range(6)]
+    assert len(latest_snapshot_ids(rows)) == 6
+
+
+def test_empty_snapshot_deactivates_nothing():
+    """Сорванный сбор не имеет права обнулить базу: пустой снимок — это
+    отсутствие данных, а не сообщение «всё снято с продажи»."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        _seed_two_sources(conn)
+        gone = deactivate_missing(set(), conn, source="cian")
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM listings WHERE is_active;")
+            alive = cur.fetchone()[0]
+    assert gone == 0
+    assert alive == 3

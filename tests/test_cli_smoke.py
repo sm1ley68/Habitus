@@ -62,3 +62,24 @@ def test_run_offline_deactivates_listings_gone_from_source():
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM listings WHERE is_active;")
             assert cur.fetchone()[0] == 1
+
+
+def test_osm_failure_does_not_abort_the_cycle(monkeypatch):
+    """Overpass отваливается регулярно (504 и таймауты положили 4 цикла подряд).
+    Точки города меняются раз в месяцы, а объявления — каждый час: сбой чужого
+    API не имеет права уносить с собой заливку, обогащение и эмбеддинги."""
+    import habitus.cli as cli
+
+    def boom(kind):
+        raise RuntimeError(f"Overpass '{kind}' не удался: HTTP 504")
+
+    monkeypatch.setattr(cli, "fetch_kind", boom)
+    with psycopg.connect(settings.db_dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS listings, raw_listings, poi CASCADE;")
+        conn.commit()
+        stats = run_offline(FIX, conn, model=FakeModel(), fetch_osm=True,
+                            geocoder=_no_network_geocoder)
+    assert stats["listings"] == 2       # цикл дошёл до конца
+    assert stats["embedded"] == 2       # и эмбеддинги посчитаны
+    assert stats["osm_failed"]          # но провал зафиксирован, а не скрыт
