@@ -57,12 +57,13 @@ func pickSuggestedAreas(hull, zone any) any {
 }
 
 type SearchStreamService struct {
-	chats     *repository.ChatRepo
-	messages  *repository.MessageRepo
-	searches  *repository.ChatSearchRepo
-	listings  *repository.ListingRepo
-	ml        *client.MLClient
-	mlTimeout time.Duration
+	chats          *repository.ChatRepo
+	messages       *repository.MessageRepo
+	searches       *repository.ChatSearchRepo
+	listings       *repository.ListingRepo
+	ml             *client.MLClient
+	mlTimeout      time.Duration
+	explainTimeout time.Duration
 
 	mu       sync.Mutex
 	inFlight map[uuid.UUID]struct{}
@@ -75,17 +76,19 @@ func NewSearchStreamService(
 	listings *repository.ListingRepo,
 	ml *client.MLClient,
 	mlTimeout time.Duration,
+	explainTimeout time.Duration,
 ) *SearchStreamService {
 	return &SearchStreamService{
 		chats: chats, messages: messages, searches: searches, listings: listings,
-		ml: ml, mlTimeout: mlTimeout, inFlight: make(map[uuid.UUID]struct{}),
+		ml: ml, mlTimeout: mlTimeout, explainTimeout: explainTimeout,
+		inFlight: make(map[uuid.UUID]struct{}),
 	}
 }
 
-// TotalBudget is the deadline for the whole Run (ML wait + token streaming +
-// persistence) — generous slack on top of the ML sub-timeout.
+// TotalBudget is the deadline for the whole Run (search + explanation stream +
+// persistence) — generous slack on top of both ML sub-timeouts.
 func (s *SearchStreamService) TotalBudget() time.Duration {
-	return s.mlTimeout + 30*time.Second
+	return s.mlTimeout + s.explainTimeout + 30*time.Second
 }
 
 // TryLock returns true if the caller acquired the per-chat stream lock.
@@ -136,8 +139,7 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 
 	resultCh := make(chan mlOutcome, 1)
 	go func() {
-		resp, err := s.ml.Search(mlCtx, client.SearchRequest{
-			Query: text, City: chat.City, Point: point})
+		resp, err := s.ml.Search(mlCtx, searchRequestFor(chat, text, point))
 		resultCh <- mlOutcome{resp: resp, err: err}
 	}()
 
@@ -210,11 +212,15 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 		return
 	}
 
-	for _, tok := range splitTokens(resp.Explanation) {
-		if !s.emit(w, "text_token", TextTokenEvent{Token: tok}) {
-			return
-		}
-		time.Sleep(28 * time.Millisecond)
+	explanation := s.streamExplanation(ctx, text, resp, w)
+	if !explanation.Alive {
+		return
+	}
+	// текст ушёл пользователем токенами, но в историю чата и в результаты
+	// поиска он должен лечь целиком — оттуда его читает GET /messages
+	resp.Explanation = explanation.Text
+	if !explanation.LLMOK {
+		resp.Degraded = withDegradation(resp.Degraded, "llm")
 	}
 
 	if isFirstMessage {
@@ -261,8 +267,64 @@ func mapMLError(err error) (code, message string) {
 	}
 }
 
-// splitTokens mirrors the frontend's own mock streaming split (text.split(/(\s+)/))
-// so real and mock streams feel identical.
+// searchRequestFor собирает запрос к ML. Explain выключен намеренно: объяснение
+// приходит отдельным потоком (streamExplanation), поэтому держать выдачу
+// объектов ради второго вызова LLM незачем.
+func searchRequestFor(chat domain.Chat, text string,
+	point *client.PointConstraint) client.SearchRequest {
+	return client.SearchRequest{
+		Query: text, City: chat.City, Point: point, Explain: false,
+	}
+}
+
+// explanationOutcome — итог потокового объяснения: собранный текст (для истории
+// чата), пришёл ли он от LLM и жив ли ещё SSE-поток к пользователю.
+type explanationOutcome struct {
+	Text  string
+	LLMOK bool
+	Alive bool
+}
+
+// streamExplanation льёт объяснение из ML в SSE токен за токеном.
+//
+// Объекты к этому моменту уже найдены, поэтому падение объяснения — деградация,
+// а не обрыв ответа: пользователь получит карточки и честную пометку слоя.
+func (s *SearchStreamService) streamExplanation(ctx context.Context, query string,
+	resp *client.SearchResponse, w *sse.Writer) explanationOutcome {
+	explainCtx, cancel := context.WithTimeout(ctx, s.explainTimeout)
+	defer cancel()
+
+	var text strings.Builder
+	alive := true
+	llmOK, err := s.ml.ExplainStream(explainCtx, client.ExplainRequest{
+		Query: query, Results: resp.Results, Relaxed: resp.Relaxed,
+	}, func(token string) bool {
+		if !s.emit(w, "text_token", TextTokenEvent{Token: token}) {
+			alive = false
+			return false
+		}
+		text.WriteString(token)
+		return true
+	})
+	if err != nil {
+		llmOK = false
+	}
+	return explanationOutcome{Text: text.String(), LLMOK: llmOK, Alive: alive}
+}
+
+// withDegradation добавляет слой в список деградаций, не задваивая уже
+// отмеченный: список едет и в персист, и в подпись под выдачей.
+func withDegradation(degraded []string, layer string) []string {
+	for _, d := range degraded {
+		if d == layer {
+			return degraded
+		}
+	}
+	return append(degraded, layer)
+}
+
+// splitTokens нарезает готовый текст на псевдо-токены для потоков, где ответ
+// приходит целиком (Q&A по объекту отдаёт предложения с evidence-путями).
 func splitTokens(text string) []string {
 	if text == "" {
 		return nil

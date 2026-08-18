@@ -26,8 +26,10 @@ func main() {
 		log.Fatal().Err(err).Msg("migrations failed")
 	}
 
-	ctx := context.Background()
-	pool, err := db.NewPool(ctx, cfg.DBDSN)
+	ctx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+
+	pool, err := db.NewPool(ctx, cfg.DBDSN, cfg.DBMaxConns)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to postgres")
 	}
@@ -57,13 +59,16 @@ func main() {
 	evidenceRepo := repository.NewEvidenceRepo(pool)
 
 	authService := service.NewAuthService(userRepo, sessionRepo)
+	service.StartSessionSweeper(ctx, sessionRepo,
+		time.Duration(cfg.SessionSweepMinutes)*time.Minute)
 	chatService := service.NewChatService(chatRepo, messageRepo)
 	dossierTimeout := time.Duration(cfg.MLDossierTimeoutS) * time.Second
 	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo, mlClient, dossierTimeout)
 	objectAskTimeout := time.Duration(cfg.MLObjectAskTimeoutS) * time.Second
 	objectAskService := service.NewObjectAskService(chatSearchRepo, mlClient, objectAskTimeout)
 	geoLayersService := service.NewGeoLayersService(poiRepo, evidenceRepo, listingRepo)
-	streamService := service.NewSearchStreamService(chatRepo, messageRepo, chatSearchRepo, listingRepo, mlClient, mlTimeout)
+	explainTimeout := time.Duration(cfg.MLExplainTimeoutS) * time.Second
+	streamService := service.NewSearchStreamService(chatRepo, messageRepo, chatSearchRepo, listingRepo, mlClient, mlTimeout, explainTimeout)
 
 	fiberApp := app.New(cfg, app.Services{
 		Auth:      authService,

@@ -1,4 +1,6 @@
 import contextlib
+import json
+
 from fastapi.testclient import TestClient
 import habitus.online.service as service
 from habitus.online.schema import (DossierPayload, ParsedQuery, SearchResponse,
@@ -107,3 +109,115 @@ def test_object_ask_without_llm_returns_grounded_unknown(monkeypatch):
     })
     assert response.status_code == 200
     assert response.json()["sentences"][0]["unknown"] is True
+
+
+def test_search_endpoint_passes_explain_flag(monkeypatch):
+    fake_resp = SearchResponse(results=[], explanation="", parsed=ParsedQuery(),
+                               data_freshness="нет данных")
+    seen = {}
+
+    def fake_run_search(query, conn, **kw):
+        seen["explain"] = kw.get("explain")
+        return fake_resp
+
+    monkeypatch.setattr(service, "run_search", fake_run_search)
+    monkeypatch.setattr(service, "get_conn", lambda: contextlib.nullcontext(None))
+    client = TestClient(service.app)
+
+    client.post("/search", json={"query": "тихо", "explain": False})
+    assert seen["explain"] is False
+
+    client.post("/search", json={"query": "тихо"})
+    assert seen["explain"] is True      # умолчание — прежнее поведение для CLI и eval
+
+
+def _sse_frames(text: str) -> list[tuple[str, dict]]:
+    frames = []
+    for raw in text.split("\n\n"):
+        if not raw.strip():
+            continue
+        event, data = "message", "{}"
+        for line in raw.splitlines():
+            if line.startswith("event:"):
+                event = line[6:].strip()
+            elif line.startswith("data:"):
+                data = line[5:].strip()
+        frames.append((event, json.loads(data)))
+    return frames
+
+
+def _explain_body():
+    return {"query": "тихая двушка",
+            "results": [{"external_id": "A", "price": 10000000, "area": 45.0,
+                         "rooms": 2, "address_facts": {"walk_min_metro": 6.0},
+                         "score": 0.9}],
+            "relaxed": ["снят фильтр уровня шума"]}
+
+
+def test_explain_stream_without_llm_key_streams_template(monkeypatch):
+    monkeypatch.setattr(service.settings, "openrouter_api_key", "")
+    r = TestClient(service.app).post("/explain/stream", json=_explain_body())
+
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    frames = _sse_frames(r.text)
+    assert frames[-1] == ("done", {"llm_ok": False})
+    text = "".join(d["token"] for e, d in frames if e == "token")
+    assert "Найдено объектов: 1" in text            # факты запроса доехали
+    assert "снят фильтр уровня шума" in text        # и ослабления тоже
+
+
+def test_explain_stream_validates_empty_query():
+    r = TestClient(service.app).post("/explain/stream", json={"query": ""})
+    assert r.status_code == 422
+
+
+def _tokens(frames):
+    return "".join(d["token"] for e, d in frames if e == "token")
+
+
+def test_explain_stream_reuses_cached_text_on_identical_request(monkeypatch):
+    # Кэш объяснений жил в /search; при выносе стрима наружу он обязан
+    # сохраниться, иначе каждый повтор запроса — новый платный вызов LLM.
+    from habitus.online import llm as llm_mod
+    from habitus.online.cache import explain_cache
+    from habitus.online.llm import FakeStreamLLM
+
+    explain_cache.clear()
+    monkeypatch.setattr(service.settings, "openrouter_api_key", "ключ")
+    monkeypatch.setattr(llm_mod, "AsyncOpenRouterLLM",
+                        lambda: FakeStreamLLM(["Тихо ", "и близко."]))
+    client = TestClient(service.app)
+
+    first = _sse_frames(client.post("/explain/stream", json=_explain_body()).text)
+    assert _tokens(first) == "Тихо и близко."
+    assert first[-1] == ("done", {"llm_ok": True})
+
+    def _no_llm():
+        raise AssertionError("повторный запрос не должен ходить в LLM")
+
+    monkeypatch.setattr(llm_mod, "AsyncOpenRouterLLM", _no_llm)
+    second = _sse_frames(client.post("/explain/stream", json=_explain_body()).text)
+    assert _tokens(second) == "Тихо и близко."
+    assert second[-1] == ("done", {"llm_ok": True})
+
+
+def test_explain_stream_does_not_cache_degraded_template(monkeypatch):
+    # Шаблон — деградация, а не ответ: закэшировать его значит навсегда
+    # подменить объяснение для этого запроса.
+    from habitus.online import llm as llm_mod
+    from habitus.online.cache import explain_cache
+    from habitus.online.llm import FakeStreamLLM
+
+    explain_cache.clear()
+    monkeypatch.setattr(service.settings, "openrouter_api_key", "")
+    client = TestClient(service.app)
+    client.post("/explain/stream", json=_explain_body())
+
+    monkeypatch.setattr(service.settings, "openrouter_api_key", "ключ")
+    monkeypatch.setattr(llm_mod, "AsyncOpenRouterLLM",
+                        lambda: FakeStreamLLM(["Живой ответ."]))
+    frames = _sse_frames(client.post("/explain/stream", json=_explain_body()).text)
+
+    assert _tokens(frames) == "Живой ответ."
+    assert frames[-1] == ("done", {"llm_ok": True})

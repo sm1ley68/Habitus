@@ -2,6 +2,8 @@
 package app
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -23,9 +25,25 @@ type Services struct {
 	GeoLayers *service.GeoLayersService
 }
 
+// Границы HTTP-слоя. ReadTimeout не режет SSE (он про чтение запроса, а не
+// ответа), поэтому WriteTimeout здесь намеренно НЕ задан: он оборвал бы
+// живой поиск на середине потока. Бюджет ответа держит контекст стрима.
+const (
+	readTimeout  = 15 * time.Second
+	idleTimeout  = 75 * time.Second
+	bodyLimitDef = 1 << 20
+)
+
 func New(cfg config.Settings, svc Services) *fiber.App {
+	bodyLimit := cfg.BodyLimitBytes
+	if bodyLimit <= 0 {
+		bodyLimit = bodyLimitDef
+	}
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.ErrorHandler,
+		BodyLimit:    bodyLimit,
+		ReadTimeout:  readTimeout,
+		IdleTimeout:  idleTimeout,
 	})
 
 	app.Use(requestid.New())

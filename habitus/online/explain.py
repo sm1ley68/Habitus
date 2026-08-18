@@ -1,7 +1,8 @@
 # habitus/online/explain.py — объяснение строго поверх фактов из БД
 import json
+from collections.abc import AsyncIterator
 
-from habitus.online.llm import LLMClient
+from habitus.online.llm import AsyncStreamLLMClient, LLMClient
 from habitus.online.schema import ResultItem
 
 GROUNDED_SYSTEM = """Ты — ассистент по недвижимости. Объясни пользователю подбор \
@@ -52,17 +53,61 @@ def template_explanation(results: list[ResultItem], relaxed: list[str]) -> str:
     return " ".join(parts)
 
 
-def explain(query: str, results: list[ResultItem], relaxed: list[str],
-            llm: LLMClient | None) -> tuple[str, bool]:
-    """(текст, llm_ok). Любая ошибка LLM → шаблон, llm_ok=False."""
-    if llm is None:
-        return template_explanation(results, relaxed), False
-    messages = [
+def cache_key(query: str, results: list[ResultItem]) -> str:
+    """Ключ кэша объяснений — общий для /search и /explain/stream, чтобы текст,
+    посчитанный одним путём, доставался второму без повторного вызова LLM."""
+    return query + "|" + ",".join(r.external_id for r in results)
+
+
+def build_messages(query: str, results: list[ResultItem],
+                   relaxed: list[str]) -> list[dict]:
+    """Промпт объяснения. Один и тот же для синхронного и потокового пути."""
+    return [
         {"role": "system", "content": GROUNDED_SYSTEM},
         {"role": "user", "content":
          f"Запрос пользователя: {query}\n\nФАКТЫ:\n"
          f"{facts_block(results, relaxed)}\n\nОбъясни подбор."},
     ]
+
+
+async def explain_stream(query: str, results: list[ResultItem],
+                         relaxed: list[str],
+                         llm: AsyncStreamLLMClient | None) -> AsyncIterator[dict]:
+    """Поток объяснения: {"token": …} … затем {"done": True, "llm_ok": bool}.
+
+    Обрыв ДО первого токена ничем не отличается от отсутствия LLM — отдаём
+    шаблон. Обрыв ПОСЛЕ первого токена оставляем как есть: дописывать шаблон
+    поверх уже показанного текста значит выдать пользователю два объяснения
+    подряд. Деградация в обоих случаях честная — llm_ok=False.
+    """
+    delivered = False
+    if llm is not None:
+        try:
+            async for chunk in llm.stream(build_messages(query, results, relaxed),
+                                          temperature=0.0):
+                if not chunk:
+                    continue
+                delivered = True
+                yield {"token": chunk}
+        except Exception:
+            if delivered:
+                yield {"done": True, "llm_ok": False}
+                return
+        else:
+            if delivered:
+                yield {"done": True, "llm_ok": True}
+                return
+
+    yield {"token": template_explanation(results, relaxed)}
+    yield {"done": True, "llm_ok": False}
+
+
+def explain(query: str, results: list[ResultItem], relaxed: list[str],
+            llm: LLMClient | None) -> tuple[str, bool]:
+    """(текст, llm_ok). Любая ошибка LLM → шаблон, llm_ok=False."""
+    if llm is None:
+        return template_explanation(results, relaxed), False
+    messages = build_messages(query, results, relaxed)
     try:
         resp = llm.complete(messages, temperature=0.0)
         if resp.content:

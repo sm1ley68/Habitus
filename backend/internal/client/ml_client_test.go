@@ -3,9 +3,11 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -105,5 +107,188 @@ func TestSearchSendsCity(t *testing.T) {
 	}
 	if got := <-requests; got.City != "spb" {
 		t.Fatalf("Search() city = %q; want %q", got.City, "spb")
+	}
+}
+
+// --- /explain/stream ---------------------------------------------------
+
+// explainServer отдаёт заранее заданные SSE-кадры с паузой перед каждым.
+func explainServer(t *testing.T, frames []string, pause time.Duration,
+	captured chan<- ExplainRequest) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if captured != nil {
+			var req ExplainRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("decode request: %v", err)
+			}
+			captured <- req
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatalf("test server does not support flushing")
+		}
+		for _, frame := range frames {
+			time.Sleep(pause)
+			_, _ = fmt.Fprint(w, frame)
+			flusher.Flush()
+		}
+	}))
+}
+
+func tokenFrame(token string) string {
+	return fmt.Sprintf("event: token\ndata: {\"token\":%q}\n\n", token)
+}
+
+func doneFrame(llmOK bool) string {
+	return fmt.Sprintf("event: done\ndata: {\"llm_ok\":%t}\n\n", llmOK)
+}
+
+func TestExplainStreamDeliversTokensInOrder(t *testing.T) {
+	server := explainServer(t, []string{
+		tokenFrame("Тихая "), tokenFrame("двушка."), doneFrame(true)}, 0, nil)
+	defer server.Close()
+
+	var got []string
+	c := NewMLClient(server.URL, time.Second)
+	llmOK, err := c.ExplainStream(context.Background(), ExplainRequest{Query: "тихо"},
+		func(tok string) bool { got = append(got, tok); return true })
+
+	if err != nil {
+		t.Fatalf("ExplainStream() error = %v", err)
+	}
+	if !llmOK {
+		t.Fatalf("llmOK = false; want true")
+	}
+	if strings.Join(got, "") != "Тихая двушка." {
+		t.Fatalf("tokens = %q; want %q", strings.Join(got, ""), "Тихая двушка.")
+	}
+}
+
+func TestExplainStreamReportsDegradedGeneration(t *testing.T) {
+	server := explainServer(t, []string{tokenFrame("шаблон"), doneFrame(false)}, 0, nil)
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	llmOK, err := c.ExplainStream(context.Background(), ExplainRequest{Query: "тихо"},
+		func(string) bool { return true })
+
+	if err != nil {
+		t.Fatalf("ExplainStream() error = %v", err)
+	}
+	if llmOK {
+		t.Fatalf("llmOK = true; want false — ML отдал деградацию")
+	}
+}
+
+func TestExplainStreamSendsQueryResultsAndRelaxations(t *testing.T) {
+	captured := make(chan ExplainRequest, 1)
+	server := explainServer(t, []string{doneFrame(true)}, 0, captured)
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	_, err := c.ExplainStream(context.Background(), ExplainRequest{
+		Query:   "тихая двушка",
+		Results: []ResultItem{{ExternalID: "A", Score: 0.9}},
+		Relaxed: []string{"бюджет +15%"},
+	}, func(string) bool { return true })
+	if err != nil {
+		t.Fatalf("ExplainStream() error = %v", err)
+	}
+
+	got := <-captured
+	if got.Query != "тихая двушка" || len(got.Results) != 1 ||
+		got.Results[0].ExternalID != "A" || len(got.Relaxed) != 1 {
+		t.Fatalf("request = %#v; факты выдачи должны доехать до ML целиком", got)
+	}
+}
+
+func TestExplainStreamStopsWhenConsumerIsGone(t *testing.T) {
+	server := explainServer(t, []string{
+		tokenFrame("раз"), tokenFrame("два"), doneFrame(true)}, 0, nil)
+	defer server.Close()
+
+	consumed := 0
+	c := NewMLClient(server.URL, time.Second)
+	// Клиент отвалился: onToken вернул false — читать поток дальше незачем.
+	if _, err := c.ExplainStream(context.Background(), ExplainRequest{Query: "q"},
+		func(string) bool { consumed++; return false }); err != nil {
+		t.Fatalf("ExplainStream() error = %v; обрыв потребителя — не ошибка", err)
+	}
+	if consumed != 1 {
+		t.Fatalf("consumed = %d; want 1", consumed)
+	}
+}
+
+func TestExplainStreamOutlivesUnaryTimeout(t *testing.T) {
+	// Таймаут http.Client — общий на весь ответ, поэтому для потока он не
+	// годится: объяснение генерируется дольше, чем считается любой unary-вызов.
+	// Границу держит контекст, а не клиент.
+	server := explainServer(t, []string{
+		tokenFrame("медленно"), doneFrame(true)}, 120*time.Millisecond, nil)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var got []string
+	c := NewMLClient(server.URL, 50*time.Millisecond)
+	llmOK, err := c.ExplainStream(ctx, ExplainRequest{Query: "q"},
+		func(tok string) bool { got = append(got, tok); return true })
+
+	if err != nil {
+		t.Fatalf("ExplainStream() error = %v", err)
+	}
+	if !llmOK || strings.Join(got, "") != "медленно" {
+		t.Fatalf("tokens = %q, llmOK = %t; поток не должен рваться по unary-таймауту",
+			strings.Join(got, ""), llmOK)
+	}
+}
+
+func TestExplainStreamServerErrorIsReported(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	if _, err := c.ExplainStream(context.Background(), ExplainRequest{Query: "q"},
+		func(string) bool { return true }); !errors.Is(err, ErrServer) {
+		t.Fatalf("err = %v; want ErrServer", err)
+	}
+}
+
+func TestExplainStreamWithoutTerminalFrameIsBadResponse(t *testing.T) {
+	// Поток кончился без done — текст мог оборваться на середине, и молча
+	// выдавать его за полный ответ нельзя.
+	server := explainServer(t, []string{tokenFrame("обрывок")}, 0, nil)
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	if _, err := c.ExplainStream(context.Background(), ExplainRequest{Query: "q"},
+		func(string) bool { return true }); !errors.Is(err, ErrBadResponse) {
+		t.Fatalf("err = %v; want ErrBadResponse", err)
+	}
+}
+
+func TestSearchAsksMLToSkipTheExplanation(t *testing.T) {
+	// Объяснение шлюз забирает потоком: если /search посчитает его сам,
+	// выдача объектов задержится на второй вызов LLM (6–17 с) впустую.
+	var raw map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		_, _ = fmt.Fprint(w, `{"results":[],"explanation":"","parsed":{},"data_freshness":""}`)
+	}))
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	if _, err := c.Search(context.Background(),
+		SearchRequest{Query: "тихо", Explain: false}); err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	if got, ok := raw["explain"]; !ok || got != false {
+		t.Fatalf("explain = %v (present=%t); поле обязано доехать до ML", got, ok)
 	}
 }

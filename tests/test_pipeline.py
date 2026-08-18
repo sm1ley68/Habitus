@@ -166,3 +166,23 @@ def test_search_does_not_return_other_cities(conn):
     conn.commit()
     resp = run_search("квартира", conn, city="msk")
     assert all(r.external_id != "DXB1" for r in resp.results)
+
+
+def test_explain_disabled_leaves_explanation_empty(conn):
+    # Шлюз забирает объяснение отдельным потоковым вызовом: второй LLM-вызов
+    # внутри /search только задерживал бы выдачу объектов на 6–17 секунд.
+    llm = FakeLLM([_parse_resp()])          # только NLU; explain дёрнул бы пустой фейк
+    resp = run_search("тихая двушка", conn, llm=llm, model=FakeModel(),
+                      reranker=FakeReranker(), explain=False)
+
+    assert resp.explanation == ""
+    assert len(llm.calls) == 1              # explain не вызывался
+    assert "llm" not in resp.degraded       # объяснения просто ещё нет, деградации нет
+
+
+def test_explain_enabled_by_default(conn):
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", conn, llm=llm, model=FakeModel(),
+                      reranker=FakeReranker())
+
+    assert resp.explanation == "Тихая двушка, школа рядом."

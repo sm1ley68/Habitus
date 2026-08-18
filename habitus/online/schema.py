@@ -106,6 +106,16 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     point: PointConstraint | None = None
     city: Literal["msk", "spb"] = "msk"
+    # False — объяснение забирается отдельно через /explain/stream (так делает
+    # шлюз). Умолчание True сохраняет прежний однократный ответ для CLI и eval.
+    explain: bool = True
+
+
+class ExplainRequest(BaseModel):
+    """Вход /explain/stream: тот же запрос и та же выдача, что вернул /search."""
+    query: str = Field(min_length=1, max_length=2000)
+    results: list[ResultItem] = []
+    relaxed: list[str] = []
 
 
 class LineStringGeometry(BaseModel):

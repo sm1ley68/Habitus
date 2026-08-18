@@ -5,12 +5,14 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -86,6 +88,10 @@ type SearchRequest struct {
 	Query string           `json:"query"`
 	City  string           `json:"city,omitempty"`
 	Point *PointConstraint `json:"point,omitempty"`
+	// Explain=false — ML не тратит второй вызов LLM внутри /search; текст
+	// забирается отдельно через ExplainStream. Без omitempty: false здесь
+	// значимое значение, а не «поле не задано».
+	Explain bool `json:"explain"`
 }
 
 type DossierRequest struct {
@@ -118,15 +124,26 @@ type ObjectAskResponse struct {
 	Sentences []GroundedSentence `json:"sentences"`
 }
 
+type ExplainRequest struct {
+	Query   string       `json:"query"`
+	Results []ResultItem `json:"results"`
+	Relaxed []string     `json:"relaxed"`
+}
+
 type MLClient struct {
 	baseURL string
 	http    *http.Client
+	// stream carries SSE responses. Deliberately without http.Client.Timeout:
+	// that deadline covers the whole response body, so it would cut a live
+	// stream mid-generation. Streaming deadlines come from the context.
+	stream *http.Client
 }
 
 func NewMLClient(baseURL string, timeout time.Duration) *MLClient {
 	return &MLClient{
 		baseURL: baseURL,
 		http:    &http.Client{Timeout: timeout},
+		stream:  &http.Client{},
 	}
 }
 
@@ -209,6 +226,84 @@ func (c *MLClient) AskObject(ctx context.Context, req ObjectAskRequest) (*Object
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ExplainStream reads the ML explanation stream, handing each token to onToken
+// as it arrives, and returns llm_ok from the terminal `done` frame. onToken
+// returning false means the consumer is gone: the read stops, which is not an
+// error. A stream that ends without `done` is — the text may be truncated, and
+// passing it off as a complete answer would be a lie.
+func (c *MLClient) ExplainStream(ctx context.Context, req ExplainRequest,
+	onToken func(string) bool) (bool, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return false, fmt.Errorf("%w: encode request: %v", ErrBadResponse, err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/explain/stream", bytes.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	resp, err := c.stream.Do(httpReq)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return false, ErrTimeout
+		}
+		return false, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 500 {
+		return false, ErrServer
+	}
+	if resp.StatusCode >= 400 {
+		return false, fmt.Errorf("%w: status %d", ErrBadResponse, resp.StatusCode)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	var event, data string
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, "event:"):
+			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		case strings.HasPrefix(line, "data:"):
+			data = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		case line == "": // blank line terminates the frame
+			switch event {
+			case "token":
+				var frame struct {
+					Token string `json:"token"`
+				}
+				if err := json.Unmarshal([]byte(data), &frame); err != nil {
+					return false, fmt.Errorf("%w: decode token: %v", ErrBadResponse, err)
+				}
+				if !onToken(frame.Token) {
+					return false, nil
+				}
+			case "done":
+				var frame struct {
+					LLMOK bool `json:"llm_ok"`
+				}
+				if err := json.Unmarshal([]byte(data), &frame); err != nil {
+					return false, fmt.Errorf("%w: decode done: %v", ErrBadResponse, err)
+				}
+				return frame.LLMOK, nil
+			}
+			event, data = "", ""
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return false, ErrTimeout
+		}
+		return false, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	return false, fmt.Errorf("%w: stream ended without a done frame", ErrBadResponse)
 }
 
 // WarmUp fires a throwaway search so the ML process's lazily-loaded models

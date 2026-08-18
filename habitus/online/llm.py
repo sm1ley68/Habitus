@@ -1,4 +1,5 @@
 # habitus/online/llm.py — LLM-доступ: Protocol + OpenRouter (Qwen, фолбэки) + Fake
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 from habitus.config import settings
@@ -22,6 +23,13 @@ class LLMClient(Protocol):
 class AsyncLLMClient(Protocol):
     async def complete(self, messages: list[dict], tools: list[dict] | None = None,
                        temperature: float = 0.0) -> LLMResponse: ...
+
+
+class AsyncStreamLLMClient(Protocol):
+    """Потоковая генерация: чанки текста по мере готовности."""
+
+    def stream(self, messages: list[dict],
+               temperature: float = 0.0) -> AsyncIterator[str]: ...
 
 
 class OpenRouterLLM:
@@ -89,6 +97,52 @@ class AsyncOpenRouterLLM:
                 args = message.tool_calls[0].function.arguments
             return LLMResponse(content=message.content, tool_arguments=args)
         raise LLMUnavailable(f"все модели цепочки недоступны: {last_err}")
+
+    async def stream(self, messages: list[dict],
+                     temperature: float = 0.0) -> AsyncIterator[str]:
+        """Чанки текста по мере генерации.
+
+        Фолбэк-цепочка работает только на этапе установления потока: как только
+        первый чанк ушёл вызывающему, перезапуск на другой модели склеил бы два
+        разных ответа в один текст, поэтому обрыв середины потока — ошибка
+        вызывающего, а не повод переключить модель.
+        """
+        last_err: Exception | None = None
+        for model in [settings.llm_model, *settings.llm_fallbacks]:
+            try:
+                stream = await self._client.chat.completions.create(
+                    model=model, messages=messages, temperature=temperature,
+                    stream=True)
+            except Exception as exc:        # таймаут/5xx/лимиты → следующая модель
+                last_err = exc
+                continue
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                content = chunk.choices[0].delta.content
+                if content:
+                    yield content
+            return
+        raise LLMUnavailable(f"все модели цепочки недоступны: {last_err}")
+
+
+class FakeStreamLLM:
+    """Скриптованные чанки для детерминированных тестов стриминга (без сети).
+
+    Элемент-исключение поднимается на своём месте в очереди — так тест задаёт
+    обрыв потока до первого токена или в середине."""
+
+    def __init__(self, chunks: list):
+        self.chunks = list(chunks)
+        self.calls: list[dict] = []
+
+    async def stream(self, messages: list[dict],
+                     temperature: float = 0.0) -> AsyncIterator[str]:
+        self.calls.append({"messages": list(messages), "temperature": temperature})
+        for chunk in self.chunks:
+            if isinstance(chunk, Exception):
+                raise chunk
+            yield chunk
 
 
 class FakeLLM:

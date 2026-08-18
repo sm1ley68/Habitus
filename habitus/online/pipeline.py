@@ -4,7 +4,8 @@ import logging
 from habitus.config import settings
 from habitus.online import trace
 from habitus.online.cache import embed_cache, explain_cache, parse_cache
-from habitus.online.explain import explain
+from habitus.online.explain import cache_key as explain_cache_key
+from habitus.online.explain import explain as build_explanation
 from habitus.online.geo import IsochroneProvider
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, parse_query
@@ -27,7 +28,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
                provider: IsochroneProvider | None = None,
                model=None, reranker=None,
                min_results: int | None = None,
-               city: str = "msk") -> SearchResponse:
+               city: str = "msk", explain: bool = True) -> SearchResponse:
     degraded: list[str] = []
 
     # 1. NLU (кэш по хэшу текста; отказ → весь запрос в семантику)
@@ -95,16 +96,21 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
 
     results = [to_result_item(c) for c in top]
 
-    # 5. объяснение (кэш по запросу+выдаче; отказ → шаблон)
-    exp_key = query + "|" + ",".join(r.external_id for r in results)
-    explanation = explain_cache.get(exp_key)
-    if explanation is None:
-        with trace.span("explain"):
-            explanation, llm_ok = explain(query, results, relaxed, llm)
-        if llm_ok:
-            explain_cache.put(exp_key, explanation)
-        else:
-            degraded.append("llm")
+    # 5. объяснение (кэш по запросу+выдаче; отказ → шаблон).
+    #    explain=False — шлюз забирает текст отдельным потоковым вызовом
+    #    /explain/stream и показывает его по мере генерации; держать выдачу
+    #    объектов ещё 6–17 с ради того же текста незачем.
+    explanation = ""
+    if explain:
+        exp_key = explain_cache_key(query, results)
+        explanation = explain_cache.get(exp_key)
+        if explanation is None:
+            with trace.span("explain"):
+                explanation, llm_ok = build_explanation(query, results, relaxed, llm)
+            if llm_ok:
+                explain_cache.put(exp_key, explanation)
+            else:
+                degraded.append("llm")
 
     freshness = max((c.updated_at for c in top), default=None)
     data_freshness = (f"данные актуальны на {freshness:%Y-%m-%d %H:%M}"

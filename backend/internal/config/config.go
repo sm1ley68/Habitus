@@ -10,31 +10,39 @@ import (
 
 type Settings struct {
 	DBDSN               string
+	DBMaxConns          int
 	MigrationsPath      string
 	HTTPPort            string
 	MLServiceURL        string
 	MLSearchTimeoutS    int
+	MLExplainTimeoutS   int
 	MLWarmupTimeoutS    int
 	MLDossierTimeoutS   int
 	MLObjectAskTimeoutS int
 	SessionCookieSecure bool
+	SessionSweepMinutes int
 	CORSAllowedOrigin   string
 	StaticDir           string
+	BodyLimitBytes      int
 }
 
 func Load() Settings {
 	return Settings{
 		DBDSN:               getenv("DB_DSN", "postgresql://habitus:habitus@localhost:5544/habitus"),
+		DBMaxConns:          getenvInt("DB_MAX_CONNS", 20),
 		MigrationsPath:      getenv("MIGRATIONS_PATH", "migrations"),
 		HTTPPort:            getenv("HTTP_PORT", "8080"),
 		MLServiceURL:        getenv("ML_SERVICE_URL", "http://localhost:8000"),
 		MLSearchTimeoutS:    getenvInt("ML_SEARCH_TIMEOUT_S", 60),
+		MLExplainTimeoutS:   getenvInt("ML_EXPLAIN_TIMEOUT_S", 60),
 		MLWarmupTimeoutS:    getenvInt("ML_WARMUP_TIMEOUT_S", 600),
 		MLDossierTimeoutS:   getenvInt("ML_DOSSIER_TIMEOUT_S", 30),
 		MLObjectAskTimeoutS: getenvInt("ML_OBJECT_ASK_TIMEOUT_S", 45),
 		SessionCookieSecure: getenvBool("SESSION_COOKIE_SECURE", false),
+		SessionSweepMinutes: getenvInt("SESSION_SWEEP_MINUTES", 360),
 		CORSAllowedOrigin:   getenv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 		StaticDir:           getenv("STATIC_DIR", "static"),
+		BodyLimitBytes:      getenvInt("BODY_LIMIT_BYTES", 1<<20),
 	}
 }
 

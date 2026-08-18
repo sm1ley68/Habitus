@@ -42,3 +42,14 @@ func (r *SessionRepo) Delete(ctx context.Context, tokenHash string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash)
 	return err
 }
+
+// DeleteExpired вычищает протухшие сессии и возвращает число удалённых строк.
+// GetUserID их и так не отдаёт (фильтр по expires_at), но без чистки таблица
+// растёт вечно — за месяц TTL там оседают все логины, что были.
+func (r *SessionRepo) DeleteExpired(ctx context.Context) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at <= now()`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
