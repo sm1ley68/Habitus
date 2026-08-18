@@ -7,6 +7,7 @@ from habitus.embed.encode import SPARSE_DIM, to_sparsevec_literal
 from habitus.online.cache import embed_cache, explain_cache, parse_cache
 from habitus.online.llm import FakeLLM, LLMResponse
 from habitus.online.pipeline import run_search
+from habitus.online.schema import ParsedQuery
 
 DIM = 1024
 
@@ -234,3 +235,41 @@ def test_timings_has_retrieval_stage(conn):
     assert "retrieval" in resp.timings
     assert resp.timings["retrieval"] >= 0.0
     assert "parse" not in resp.timings   # llm=None → parse-стадия не выполнялась
+
+
+def test_old_call_without_prev_parsed_is_unaffected(conn):
+    # Страхует приёмочный пункт брифа: старый вызов без prev_parsed работает
+    # ровно как раньше — intent по умолчанию "new_search", деградаций нет.
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker())
+    assert resp.intent == "new_search"
+    assert resp.degraded == []
+    assert resp.parsed.rooms == [2]
+
+
+def test_run_search_with_prev_parsed_refine_searches_by_merged_query(conn):
+    prev = ParsedQuery(price_max=20_000_000, rooms=[2], semantic_text="тихо")
+    turn_resp = LLMResponse(content=None, tool_arguments=json.dumps(
+        {"intent": "refine", "query": {"price_max": 12_000_000}},
+        ensure_ascii=False))
+    llm = FakeLLM([turn_resp, _explain_resp()])
+    resp = run_search("подешевле", conn, llm=llm, model=FakeModel(),
+                      reranker=FakeReranker(), prev_parsed=prev)
+    assert resp.intent == "refine"
+    # price_max — из реплики, rooms/semantic_text унаследованы из prev
+    assert resp.parsed.price_max == 12_000_000
+    assert resp.parsed.rooms == [2]
+    assert resp.parsed.semantic_text == "тихо"
+    assert "nlu" not in resp.degraded
+    assert resp.results        # фикстура (price=10 млн) проходит по слитому фильтру
+
+
+def test_no_llm_with_prev_parsed_degrades_to_new_search(conn):
+    prev = ParsedQuery(price_max=20_000_000, rooms=[2])
+    resp = run_search("подешевле", conn, llm=None, model=FakeModel(),
+                      reranker=FakeReranker(), prev_parsed=prev)
+    assert resp.intent == "new_search"
+    assert "nlu" in resp.degraded
+    assert resp.parsed.semantic_text == "подешевле"   # весь текст в семантику,
+                                                       # prev не подмешан

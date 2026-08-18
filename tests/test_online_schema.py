@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from habitus.online.schema import (GeoConstraint, HouseholdLegIntent,
-                                   LineStringGeometry, ParsedQuery,
+                                   LineStringGeometry, ParsedQuery, ParsedTurn,
                                    PointConstraint, ResultItem, SearchRequest,
                                    SearchResponse)
 
@@ -92,3 +92,33 @@ def test_linestring_coordinates_are_lng_lat():
     assert geometry.coordinates[0] == (37.6, 55.7)
     with pytest.raises(ValidationError):
         LineStringGeometry(coordinates=[(55.7, 200), (37.7, 55.8)])
+
+
+def test_parsed_turn_defaults():
+    turn = ParsedTurn()
+    assert turn.intent == "new_search"
+    assert turn.query == ParsedQuery()
+    assert turn.cleared_fields == []
+
+
+def test_parsed_turn_drops_unknown_cleared_field_names():
+    # неизвестное имя поля от LLM не роняет разбор — молча отбрасывается
+    turn = ParsedTurn(intent="refine", cleared_fields=["noise_max", "bogus_field"])
+    assert turn.cleared_fields == ["noise_max"]
+
+
+def test_search_request_accepts_prev_parsed():
+    req = SearchRequest(query="подешевле",
+                        prev_parsed=ParsedQuery(price_max=20_000_000))
+    assert req.prev_parsed.price_max == 20_000_000
+
+
+def test_search_request_prev_parsed_defaults_to_none():
+    req = SearchRequest(query="тихо")
+    assert req.prev_parsed is None
+
+
+def test_search_response_intent_defaults_to_new_search():
+    resp = SearchResponse(results=[], explanation="", parsed=ParsedQuery(),
+                          data_freshness="нет данных")
+    assert resp.intent == "new_search"

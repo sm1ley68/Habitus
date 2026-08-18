@@ -54,7 +54,8 @@ def search(req: SearchRequest) -> SearchResponse:
         provider = ORSProvider()
     with get_conn() as conn:
         return run_search(req.query, conn, llm=llm, point=req.point,
-                          provider=provider, city=req.city, explain=req.explain)
+                          provider=provider, city=req.city, explain=req.explain,
+                          prev_parsed=req.prev_parsed)
 
 
 def _sse(event: str, data: dict) -> str:

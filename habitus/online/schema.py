@@ -74,6 +74,25 @@ class ParsedQuery(BaseModel):
     household: list[HouseholdMemberIntent] = []
 
 
+# Намерение реплики в многоходовом чате: новый поиск / правка прошлого разбора /
+# вопрос про уже показанную выдачу без нового поиска.
+TurnIntent = Literal["new_search", "refine", "followup"]
+
+
+class ParsedTurn(BaseModel):
+    """Разбор одной реплики чата с учётом (или без) предыдущего ParsedQuery."""
+    intent: TurnIntent = "new_search"
+    query: ParsedQuery = ParsedQuery()
+    cleared_fields: list[str] = []   # какие ограничения пользователь снял
+
+    @field_validator("cleared_fields")
+    @classmethod
+    def drop_unknown_field_names(cls, value: list[str]) -> list[str]:
+        # LLM иногда путает имена полей — молча отбрасываем то, чего нет в
+        # ParsedQuery, вместо того чтобы ронять весь разбор реплики.
+        return [name for name in value if name in ParsedQuery.model_fields]
+
+
 class ResultItem(BaseModel):
     external_id: str
     price: int | None
@@ -90,6 +109,7 @@ class SearchResponse(BaseModel):
     relaxed: list[str] = []      # какие ограничения ослаблены relaxation-петлёй
     data_freshness: str          # «данные актуальны на …» (max updated_at)
     degraded: list[str] = []     # какие слои отвалились: "nlu"/"vector"/"reranker"/"llm"
+    intent: TurnIntent = "new_search"   # намерение реплики (multi-turn чат)
     area_label: str | None = None    # человекочитаемая зона: «центр (ЦАО)», «Хамовники»
     area_geojson: dict | None = None  # FeatureCollection границы зоны для карты
     # мс по стадиям (parse/encode/resolve_area/retrieval/rerank/explain), из
@@ -113,6 +133,9 @@ class SearchRequest(BaseModel):
     # False — объяснение забирается отдельно через /explain/stream (так делает
     # шлюз). Умолчание True сохраняет прежний однократный ответ для CLI и eval.
     explain: bool = True
+    # Разбор предыдущего шага диалога (из chat_searches на стороне шлюза).
+    # None — независимый запрос, поведение как раньше.
+    prev_parsed: ParsedQuery | None = None
 
 
 class ExplainRequest(BaseModel):

@@ -8,12 +8,12 @@ from habitus.online.explain import cache_key as explain_cache_key
 from habitus.online.explain import explain as build_explanation
 from habitus.online.geo import IsochroneProvider
 from habitus.online.llm import LLMClient, LLMUnavailable
-from habitus.online.nlu import ParseError, parse_query
+from habitus.online.nlu import ParseError, merge_parsed, parse_turn
 from habitus.online.orchestrator import retrieve_with_relaxation
 from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
 from habitus.online.retrieval import Candidate, encode_query
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
-                                   SearchResponse)
+                                   SearchResponse, TurnIntent)
 
 log = logging.getLogger("habitus.online.pipeline")
 
@@ -29,11 +29,18 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
                provider: IsochroneProvider | None = None,
                model=None, reranker=None,
                min_results: int | None = None,
-               city: str = "msk", explain: bool = True) -> SearchResponse:
+               city: str = "msk", explain: bool = True,
+               prev_parsed: ParsedQuery | None = None) -> SearchResponse:
     degraded: list[str] = []
 
-    # 1. NLU (кэш по хэшу текста; отказ → весь запрос в семантику)
-    pq: ParsedQuery | None = parse_cache.get(query)
+    # 1. NLU: parse_turn классифицирует намерение реплики и (при prev_parsed)
+    #    разбирает её относительно предыдущего шага диалога; merge_parsed
+    #    накладывает результат на prev_parsed. Кэш по хэшу текста работает
+    #    только для первого шага диалога (prev_parsed=None) — ответ на ту же
+    #    реплику с другим prev_parsed был бы другим, кэшировать его по одному
+    #    только тексту нельзя.
+    intent: TurnIntent = "new_search"
+    pq: ParsedQuery | None = parse_cache.get(query) if prev_parsed is None else None
     if pq is None:
         if llm is None:
             pq = ParsedQuery(semantic_text=query)
@@ -41,8 +48,11 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
         else:
             try:
                 with trace.span("parse"):
-                    pq = parse_query(query, llm)
-                parse_cache.put(query, pq)
+                    turn = parse_turn(query, llm, prev_parsed)
+                pq = merge_parsed(prev_parsed or ParsedQuery(), turn)
+                intent = turn.intent
+                if prev_parsed is None:
+                    parse_cache.put(query, pq)
             except (ParseError, LLMUnavailable):
                 pq = ParsedQuery(semantic_text=query)
                 degraded.append("nlu")
@@ -132,4 +142,4 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     return SearchResponse(results=results, explanation=explanation, parsed=pq,
                           relaxed=relaxed, data_freshness=data_freshness,
                           degraded=degraded, area_label=area_label,
-                          area_geojson=area_geo)
+                          area_geojson=area_geo, intent=intent)

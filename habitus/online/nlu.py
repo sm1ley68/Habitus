@@ -1,7 +1,8 @@
-# habitus/online/nlu.py — Linguistic Agent: свободный текст → ParsedQuery
-from pydantic import ValidationError
+# habitus/online/nlu.py — Linguistic Agent: свободный текст → ParsedQuery /
+# ParsedTurn (намерение реплики + разбор с учётом предыдущего шага диалога)
+from pydantic import BaseModel, ValidationError
 from habitus.online.llm import LLMClient
-from habitus.online.schema import ParsedQuery
+from habitus.online.schema import ParsedQuery, ParsedTurn
 
 
 class ParseError(RuntimeError):
@@ -68,23 +69,130 @@ PARSE_TOOL = {
     },
 }
 
+# Блок системного промпта, добавляемый только когда есть предыдущий разбор
+# (многоходовый чат). {prev_json} — ParsedQuery предыдущего шага диалога.
+TURN_PROMPT_SUFFIX = """
 
-def parse_query(text: str, llm: LLMClient, max_retries: int = 3) -> ParsedQuery:
-    """Вызов LLM с tool-схемой; невалидный ответ → текст ошибки обратно модели."""
-    messages = [{"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": text}]
+Это не первая реплика диалога. Вот структурированный разбор ПРЕДЫДУЩЕГО запроса \
+пользователя (JSON ParsedQuery):
+{prev_json}
+
+Классифицируй текущую реплику полем intent и вызови submit_parsed_turn:
+- "new_search" — человек ищет другое: сменились комнаты/район/бюджет так, что \
+это уже другой запрос, либо явно попросили начать заново («давай заново», \
+«забудь, ищем другое»). В query — полный новый разбор реплики (как обычно), \
+cleared_fields не нужен.
+- "refine" — человек правит предыдущий запрос: «подешевле», «только с метро \
+ближе», «убери шумные», «и с парком рядом». В query кладутся ТОЛЬКО поля, \
+которые реплика меняет или добавляет (остальные оставь дефолтными — они не \
+трогаются). Ограничения, которые пользователь явно снимает («без бюджета», \
+«неважно про метро», «убери фильтр по шуму») — не в query, а в cleared_fields \
+списком имён полей ParsedQuery (например ["price_max"], ["noise_max"]).
+- "followup" — реплика не меняет параметры поиска, это вопрос про уже \
+показанную выдачу («а какой у первого этаж», «расскажи про второй вариант»). \
+Новый поиск не нужен: query оставь пустым (все поля дефолтные), \
+cleared_fields — пустой список.
+"""
+
+TURN_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "submit_parsed_turn",
+        "description": "Намерение реплики чата + разбор относительно "
+                       "предыдущего запроса",
+        "parameters": ParsedTurn.model_json_schema(),
+    },
+}
+
+
+def _complete_with_retries(messages: list[dict], tool: dict,
+                           model_cls: type[BaseModel], llm: LLMClient,
+                           max_retries: int) -> BaseModel:
+    """Общий цикл parse_query/parse_turn: вызов LLM с tool-схемой,
+    невалидный ответ — текст ошибки обратно модели."""
     last_err = ""
     for _ in range(max_retries):
-        resp = llm.complete(messages, tools=[PARSE_TOOL], temperature=0.0)
+        resp = llm.complete(messages, tools=[tool], temperature=0.0)
         raw = resp.tool_arguments or resp.content or ""
         try:
-            return ParsedQuery.model_validate_json(raw)
+            return model_cls.model_validate_json(raw)
         except ValidationError as e:
             last_err = str(e)
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content":
                              f"Ответ не прошёл валидацию схемы: {last_err}\n"
                              f"Верни исправленный JSON строго по схеме "
-                             f"submit_parsed_query."})
-    raise ParseError(f"NLU: нет валидного ParsedQuery за {max_retries} попыток: "
-                     f"{last_err}")
+                             f"{tool['function']['name']}."})
+    raise ParseError(f"NLU: нет валидного {model_cls.__name__} за {max_retries} "
+                     f"попыток: {last_err}")
+
+
+def parse_query(text: str, llm: LLMClient, max_retries: int = 3) -> ParsedQuery:
+    """Вызов LLM с tool-схемой; невалидный ответ → текст ошибки обратно модели.
+
+    Используется eval-раннером и там, где предыдущего шага диалога нет —
+    для многоходового чата см. parse_turn."""
+    messages = [{"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": text}]
+    return _complete_with_retries(messages, PARSE_TOOL, ParsedQuery, llm,
+                                  max_retries)
+
+
+def parse_turn(text: str, llm: LLMClient, prev: ParsedQuery | None,
+               max_retries: int = 3) -> ParsedTurn:
+    """Разбор реплики чата с классификацией намерения.
+
+    prev is None — предыдущего разбора в диалоге ещё нет, классифицировать
+    нечего: intent всегда "new_search", а query получается тем же промптом и
+    той же tool-схемой, что и в parse_query (поведение эквивалентно ей).
+    prev задан — в промпт добавляется его JSON и правила new_search/refine/
+    followup (см. TURN_PROMPT_SUFFIX), модель зовёт submit_parsed_turn.
+    """
+    if prev is None:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": text}]
+        pq = _complete_with_retries(messages, PARSE_TOOL, ParsedQuery, llm,
+                                    max_retries)
+        return ParsedTurn(intent="new_search", query=pq, cleared_fields=[])
+
+    system_prompt = SYSTEM_PROMPT + TURN_PROMPT_SUFFIX.format(
+        prev_json=prev.model_dump_json())
+    messages = [{"role": "system", "content": system_prompt},
+                {"role": "user", "content": text}]
+    return _complete_with_retries(messages, TURN_TOOL, ParsedTurn, llm,
+                                  max_retries)
+
+
+def merge_parsed(prev: ParsedQuery, turn: ParsedTurn) -> ParsedQuery:
+    """Слияние предыдущего разбора с разбором текущей реплики.
+
+    Правила (см. бриф задачи):
+    - intent == "new_search" → turn.query целиком, prev не участвует.
+    - иначе — prev как база; поверх накладываются поля turn.query, чьё
+      значение не дефолтное (не None и не пустые список/строка); поля из
+      turn.cleared_fields сбрасываются в дефолт ParsedQuery; semantic_text —
+      непустой новый заменяет старый, пустой сохраняет старый; lang всегда
+      берётся из turn.query.
+    """
+    if turn.intent == "new_search":
+        return turn.query
+
+    defaults = ParsedQuery().model_dump()
+    merged = prev.model_dump()
+    turn_fields = turn.query.model_dump()
+
+    for name, value in turn_fields.items():
+        if name in ("semantic_text", "lang"):
+            continue      # у этих полей своё правило — обрабатываются ниже
+        if value != defaults[name]:
+            merged[name] = value
+
+    if turn_fields["semantic_text"]:
+        merged["semantic_text"] = turn_fields["semantic_text"]
+
+    merged["lang"] = turn_fields["lang"]
+
+    for field_name in turn.cleared_fields:
+        merged[field_name] = defaults[field_name]
+
+    return ParsedQuery.model_validate(merged)
