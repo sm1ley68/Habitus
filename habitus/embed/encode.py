@@ -16,13 +16,17 @@ SPARSE_DIM = 250002
 # «prune the sparse vector»).
 SPARSE_MAX_NNZ = 1000
 
-# Общий лок инференса. HuggingFace fast-токенизаторы (BGE-M3 и реранкер)
-# НЕ потокобезопасны: два конкурентных запроса, перенастраивающих усечение
-# токенизатора, роняют "RuntimeError: Already borrowed". FastAPI гоняет sync-
-# эндпоинты в пуле потоков, поэтому сериализуем доступ к моделям — конкурентные
-# поиски встают в очередь, а не падают. На CPU/MPS это и так узкое место
-# (параллелить нечем), под серийным использованием (eval, прогрев) лок бесплатен.
-INFERENCE_LOCK = threading.Lock()
+# Раздельные локи инференса. HuggingFace fast-токенизаторы НЕ потокобезопасны:
+# два конкурентных запроса, перенастраивающих усечение одного и того же
+# токенизатора, роняют "RuntimeError: Already borrowed". Но у эмбеддера
+# (BGE-M3) и реранкера — РАЗНЫЕ токенизаторы разных моделей, и общий лок на
+# оба сериализовал больше, чем нужно: кодирование запроса второго пользователя
+# ждало реранк первого, хотя друг другу они не мешают. EMBED_LOCK держит
+# encode_texts здесь, RERANK_LOCK — rerank() в habitus/online/rerank.py.
+EMBED_LOCK = threading.Lock()
+RERANK_LOCK = threading.Lock()
+# Публичное имя сохранено алиасом: на него ссылаются существующие импорты.
+INFERENCE_LOCK = EMBED_LOCK
 
 _model = None
 
@@ -59,7 +63,7 @@ def encode_texts(texts: list[str], model=None) -> list[dict]:
     m = model or get_model()
     # Умеренный batch_size: дефолтные 256 текстов BGE-M3 на MPS перегружают память
     # (реальные объявления — проза до ~3 тыс. символов, не короткий структурный doc_text).
-    with INFERENCE_LOCK:
+    with EMBED_LOCK:
         out = m.encode(texts, batch_size=settings.embed_batch_size,
                        return_dense=True, return_sparse=True,
                        return_colbert_vecs=False)

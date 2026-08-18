@@ -10,7 +10,7 @@ from habitus.online.geo import IsochroneProvider
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, parse_query
 from habitus.online.orchestrator import retrieve_with_relaxation
-from habitus.online.rerank import proximity_rerank, rerank
+from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
 from habitus.online.retrieval import Candidate, encode_query
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
                                    SearchResponse)
@@ -23,6 +23,7 @@ def to_result_item(c: Candidate) -> ResultItem:
                       rooms=c.rooms, address_facts=c.facts, score=c.score)
 
 
+@trace.with_timings
 def run_search(query: str, conn, *, llm: LLMClient | None = None,
                point: PointConstraint | None = None,
                provider: IsochroneProvider | None = None,
@@ -82,16 +83,20 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
             model=model, query_vec=query_vec, area_match=area_match,
             min_results=min_results, city=city)
 
-    # 4. rerank (отказ → порядок RRF), затем proximity-бленд точной близости
-    #    поверх скоров: реранк по всему пулу, бленд, срез top-N (кросс-энкодер
-    #    слеп к точным минутам walk_min_* — их добавляет proximity-стадия).
+    # 4. пул сужен до rerank_pool_n ДО кросс-энкодера (реранк линеен по числу
+    #    пар и составляет львиную долю латентности — settings.rerank_pool_n),
+    #    затем proximity-бленд точной близости поверх скоров, срез top-N
+    #    (кросс-энкодер слеп к точным минутам walk_min_* — их добавляет
+    #    proximity-стадия). Отказ реранкера деградирует именно суженный пул,
+    #    а не весь cands — дальше по пайплайну идёт то же множество кандидатов.
+    pool = prefilter_pool(pq, cands)
     try:
-        with trace.span("rerank", n=len(cands)):
-            ranked = rerank(query, cands, top_n=len(cands), reranker=reranker)
+        with trace.span("rerank", n=len(pool)):
+            ranked = rerank(query, pool, top_n=len(pool), reranker=reranker)
     except Exception as exc:
         log.warning("деградация слоя reranker: %s", exc, exc_info=True)
         degraded.append("reranker")
-        ranked = cands
+        ranked = pool
     top = proximity_rerank(pq, ranked, top_n=settings.rerank_top_n)
 
     results = [to_result_item(c) for c in top]

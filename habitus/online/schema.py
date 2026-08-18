@@ -92,6 +92,10 @@ class SearchResponse(BaseModel):
     degraded: list[str] = []     # какие слои отвалились: "nlu"/"vector"/"reranker"/"llm"
     area_label: str | None = None    # человекочитаемая зона: «центр (ЦАО)», «Хамовники»
     area_geojson: dict | None = None  # FeatureCollection границы зоны для карты
+    # мс по стадиям (parse/encode/resolve_area/retrieval/rerank/explain), из
+    # trace.collector(); стадия, которая не выполнилась в этом запросе, в
+    # словарь не попадает — нулей вместо отсутствующего замера не выдумываем
+    timings: dict[str, float] = {}
 
 
 class PointConstraint(BaseModel):

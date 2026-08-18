@@ -9,7 +9,7 @@ from habitus.eval.metrics import (ndcg_at_k, parse_accuracy, recall_at_k,
                                    reciprocal_rank)
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, parse_query
-from habitus.online.rerank import proximity_rerank, rerank
+from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
 from habitus.online.retrieval import hybrid_search
 from habitus.online.schema import ParsedQuery
 
@@ -69,8 +69,10 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         _score(retr["rrf+prox"],
                proximity_rerank(pq, rrf_cands, weight=proximity_weight),
                relevant, rel_map)
-        # реранк всего пула (скоры кросс-энкодера по всем кандидатам, потом срез)
-        reranked_full = rerank(item["query"], rrf_cands, top_n=len(rrf_cands),
+        # тот же срез пула, что и в pipeline.run_search (prefilter_pool) — иначе
+        # метрика меряет реранк по другому множеству кандидатов, чем отгружается
+        pool = prefilter_pool(pq, rrf_cands)
+        reranked_full = rerank(item["query"], pool, top_n=len(pool),
                                reranker=reranker)
         _score(retr["rrf+rerank"], reranked_full[: settings.rerank_top_n],
                relevant, rel_map)

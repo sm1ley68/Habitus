@@ -1,8 +1,9 @@
 # habitus/online/rerank.py — bge-reranker-v2-m3, ленивая загрузка (как get_model в embed)
+import math
 from dataclasses import replace
 
 from habitus.config import settings
-from habitus.embed.encode import INFERENCE_LOCK
+from habitus.embed.encode import RERANK_LOCK
 from habitus.online.retrieval import Candidate
 from habitus.online.schema import ParsedQuery
 
@@ -31,7 +32,7 @@ def rerank(query: str, candidates: list[Candidate], top_n: int | None = None,
         return []
     n = top_n or settings.rerank_top_n
     r = reranker or get_reranker()
-    with INFERENCE_LOCK:
+    with RERANK_LOCK:
         scores = r.compute_score([[query, c.doc_text] for c in candidates],
                                  normalize=True,
                                  max_length=settings.rerank_max_length)
@@ -57,6 +58,40 @@ def _proximity_raw(pq: ParsedQuery, c: Candidate) -> float | None:
     if not vals or any(v is None for v in vals):
         return None
     return float(sum(vals))
+
+
+def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
+                   pool_n: int | None = None) -> list[Candidate]:
+    """Сузить кандидатов до пула, который увидит кросс-энкодер (settings.rerank_pool_n).
+
+    Без гео-оси в запросе близость мерить нечем — берём голову RRF-порядка как есть.
+    С гео-осью пул — объединение двух голов по ceil(pool_n/2): голова RRF (не
+    прогадать с семантикой/лексикой) + голова по возрастанию composite-близости
+    walk_min_* (не прогадать со структурно близкими, которые RRF мог утопить в
+    хвосте). Кандидаты без данных по хотя бы одной запрошенной оси в
+    proximity-голову не попадают — вставлять их туда через фиктивный «худший»
+    скор значит гадать, а не мерить.
+    """
+    n = settings.rerank_pool_n if pool_n is None else pool_n
+    if len(candidates) <= n:
+        return candidates
+    if not pq.geo:
+        return candidates[:n]
+
+    head_n = math.ceil(n / 2)
+    rrf_head = candidates[:head_n]
+    prox_ranked = sorted(
+        ((c, r) for c in candidates if (r := _proximity_raw(pq, c)) is not None),
+        key=lambda cr: (cr[1], cr[0].external_id))
+    prox_head = [c for c, _ in prox_ranked[:head_n]]
+
+    seen = {c.external_id for c in rrf_head}
+    pool = list(rrf_head)
+    for c in prox_head:
+        if c.external_id not in seen:
+            seen.add(c.external_id)
+            pool.append(c)
+    return pool[:n]
 
 
 def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,

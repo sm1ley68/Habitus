@@ -48,6 +48,18 @@ class BrokenReranker:
         raise RuntimeError("reranker упал")
 
 
+class CountingReranker:
+    """Не скорит осмысленно — только запоминает размер пришедшего в rerank() пула."""
+    def __init__(self):
+        self.n_pairs: int | None = None
+
+    def compute_score(self, pairs, normalize=True, max_length=None):
+        self.n_pairs = len(pairs)
+        if len(pairs) == 1:
+            return 0.5                 # FlagReranker для одной пары — скаляр
+        return [0.5] * len(pairs)
+
+
 def _parse_resp():
     return LLMResponse(content=None, tool_arguments=json.dumps(
         {"rooms": [2], "semantic_text": "тихо"}, ensure_ascii=False))
@@ -186,3 +198,20 @@ def test_explain_enabled_by_default(conn):
                       reranker=FakeReranker())
 
     assert resp.explanation == "Тихая двушка, школа рядом."
+
+
+def test_rerank_pool_capped_to_rerank_pool_n(conn, monkeypatch):
+    # fixture кладёт 2 объекта (A, B); pool_n=1 обязан урезать вход rerank()
+    # до 1 пары, хотя кандидатов в retrieval-выдаче больше.
+    monkeypatch.setattr(settings, "rerank_pool_n", 1)
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    cr = CountingReranker()
+    run_search("тихая двушка", conn, llm=llm, model=FakeModel(), reranker=cr)
+    assert cr.n_pairs == 1
+
+
+def test_timings_has_retrieval_stage(conn):
+    resp = run_search("тихая двушка", conn, llm=None,
+                      model=FakeModel(), reranker=FakeReranker())
+    assert "retrieval" in resp.timings
+    assert resp.timings["retrieval"] >= 0.0
