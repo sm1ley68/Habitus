@@ -210,8 +210,27 @@ def test_rerank_pool_capped_to_rerank_pool_n(conn, monkeypatch):
     assert cr.n_pairs == 1
 
 
+def test_rerank_pool_capped_to_rerank_pool_n_with_geo(conn, monkeypatch):
+    # Та же проверка на гео-ветке prefilter_pool — это ровно та ветка, где
+    # code review нашёл систематический недобор пула (см. rerank.py). geo-клауза
+    # в build_where фильтрует по walk_min_metro <= N — фикстура его не проставляет
+    # (NULL), поэтому явно задаём, иначе retrieval вернёт 0 кандидатов и rerank
+    # не позовётся вовсе.
+    with conn.cursor() as cur:
+        cur.execute("UPDATE listings SET walk_min_metro = 5;")
+    conn.commit()
+    monkeypatch.setattr(settings, "rerank_pool_n", 1)
+    llm = FakeLLM([LLMResponse(content=None, tool_arguments=json.dumps(
+        {"rooms": [2], "semantic_text": "тихо",
+         "geo": [{"kind": "metro", "walk_minutes": 15}]})), _explain_resp()])
+    cr = CountingReranker()
+    run_search("тихая двушка у метро", conn, llm=llm, model=FakeModel(), reranker=cr)
+    assert cr.n_pairs == 1
+
+
 def test_timings_has_retrieval_stage(conn):
     resp = run_search("тихая двушка", conn, llm=None,
                       model=FakeModel(), reranker=FakeReranker())
     assert "retrieval" in resp.timings
     assert resp.timings["retrieval"] >= 0.0
+    assert "parse" not in resp.timings   # llm=None → parse-стадия не выполнялась

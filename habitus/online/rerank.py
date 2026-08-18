@@ -70,7 +70,13 @@ def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
     walk_min_* (не прогадать со структурно близкими, которые RRF мог утопить в
     хвосте). Кандидаты без данных по хотя бы одной запрошенной оси в
     proximity-голову не попадают — вставлять их туда через фиктивный «худший»
-    скор значит гадать, а не мерить.
+    скор значит гадать, а не мерить. Если объединение голов не дотягивает до
+    pool_n (головы сильно пересекаются — например, proximity-порядок совпал с
+    RRF-порядком, что и есть частый случай: гео-ось уже отфильтровала retrieval
+    по walk_min, и близость коррелирует с RRF), пул добирается хвостом из
+    остатка candidates в исходном RRF-порядке — иначе кросс-энкодер получает
+    меньше пар, чем обещает settings.rerank_pool_n, ровно на тех запросах, ради
+    которых вторая голова и вводилась.
     """
     n = settings.rerank_pool_n if pool_n is None else pool_n
     if len(candidates) <= n:
@@ -91,6 +97,13 @@ def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
         if c.external_id not in seen:
             seen.add(c.external_id)
             pool.append(c)
+    if len(pool) < n:
+        for c in candidates:
+            if len(pool) >= n:
+                break
+            if c.external_id not in seen:
+                seen.add(c.external_id)
+                pool.append(c)
     return pool[:n]
 
 

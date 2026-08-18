@@ -81,10 +81,38 @@ def test_prefilter_pool_short_input_returned_as_is():
     assert out is cands
 
 
-def test_prefilter_pool_deterministic():
-    pq = _geo_pq()
-    cands = [_cand(str(i), f"doc{i}", facts={"walk_min_metro": i % 7})
-             for i in range(30)]
-    out1 = prefilter_pool(pq, cands, pool_n=10)
-    out2 = prefilter_pool(pq, cands, pool_n=10)
-    assert [c.external_id for c in out1] == [c.external_id for c in out2]
+def test_prefilter_pool_tie_break_by_external_id_not_input_order():
+    # Тай-брейк по external_id должен решать порядок сам по себе, а не
+    # "чей случайно вход был отсортирован" — иначе прогон детерминирован
+    # только потому, что вход не менялся между вызовами, а не потому, что
+    # есть явный тай-брейк.
+    head = [_cand(f"H{i}", f"headdoc{i}") for i in range(3)]     # без близости
+    # у всех одинаковый _proximity_raw (тай), поданы НЕ по алфавиту id —
+    # без тай-брейка sorted() сохранил бы именно этот (неалфавитный) порядок
+    tied_ids = ["Tg", "Te", "Ta", "Tf", "Tc", "Tb", "Td"]
+    tied = [_cand(tid, f"doc-{tid}", facts={"walk_min_metro": 5}) for tid in tied_ids]
+    out = prefilter_pool(_geo_pq(), head + tied, pool_n=6)
+    ids = [c.external_id for c in out]
+    assert ids[:3] == ["H0", "H1", "H2"]      # RRF-голова
+    assert ids[3:] == ["Ta", "Tb", "Tc"]      # proximity-голова: тай-брейк по id
+
+
+def test_prefilter_pool_geo_reaches_pool_n_when_prox_order_matches_rrf():
+    # Ревьюер code review: если proximity-порядок совпадает с RRF-порядком
+    # (частый случай — гео-ось уже отфильтровала retrieval по walk_min),
+    # пересечение голов схлопывается почти полностью; без добора хвостом пул
+    # получался вдвое меньше pool_n (20 вместо 40 на этом самом кейсе).
+    cands = [_cand(str(i), f"doc{i}", facts={"walk_min_metro": i})
+             for i in range(100)]
+    out = prefilter_pool(_geo_pq(), cands, pool_n=40)
+    assert len(out) == 40
+
+
+def test_prefilter_pool_geo_reaches_pool_n_with_sparse_proximity_data():
+    # Второй замер ревьюера: данные по близости есть лишь у 5 из 100 —
+    # без добора пул получался 25 вместо 40.
+    cands = [_cand(str(i), f"doc{i}") for i in range(100)]
+    for i in (60, 70, 80, 90, 95):
+        cands[i] = _cand(str(i), f"doc{i}", facts={"walk_min_metro": 1})
+    out = prefilter_pool(_geo_pq(), cands, pool_n=40)
+    assert len(out) == 40
