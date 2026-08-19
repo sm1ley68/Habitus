@@ -27,12 +27,39 @@ func (r *ChatSearchRepo) InsertSearch(ctx context.Context, cs domain.ChatSearch)
 	}
 	var id uuid.UUID
 	err = r.pool.QueryRow(ctx, `
-		INSERT INTO chat_searches(chat_id, message_id, raw_query, parsed_query, relaxed, data_freshness, degraded)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO chat_searches(chat_id, message_id, raw_query, parsed_query, relaxed, data_freshness, degraded, intent)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id`,
-		cs.ChatID, cs.MessageID, cs.RawQuery, parsedJSON, cs.Relaxed, cs.DataFreshness, cs.Degraded,
+		cs.ChatID, cs.MessageID, cs.RawQuery, parsedJSON, cs.Relaxed, cs.DataFreshness, cs.Degraded, cs.Intent,
 	).Scan(&id)
 	return id, err
+}
+
+// LastParsedQuery отдаёт parsed_query последнего поиска чата — контекст
+// prev_parsed для multi-turn запроса к ML (Task 4). Поисков в чате ещё не
+// было — это обычное состояние нового чата, а не ошибка: возвращаем (nil, nil).
+func (r *ChatSearchRepo) LastParsedQuery(ctx context.Context, chatID uuid.UUID) (map[string]any, error) {
+	var parsedJSON []byte
+	err := r.pool.QueryRow(ctx, `
+		SELECT parsed_query FROM chat_searches
+		WHERE chat_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1`, chatID,
+	).Scan(&parsedJSON)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(parsedJSON) == 0 {
+		return nil, nil
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(parsedJSON, &parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
 }
 
 func (r *ChatSearchRepo) UpsertResult(ctx context.Context, res domain.ChatSearchResult) error {

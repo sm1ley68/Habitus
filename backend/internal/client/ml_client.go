@@ -75,6 +75,10 @@ type SearchResponse struct {
 	Degraded      []string     `json:"degraded"`
 	AreaLabel     string       `json:"area_label"`
 	AreaGeojson   any          `json:"area_geojson"`
+	// Intent — намерение реплики многоходового чата (Task 3 ML: TurnIntent).
+	// Пустая строка равнозначна отсутствию поля в ответе — до значения по
+	// умолчанию его сама ML не заполняет.
+	Intent string `json:"intent"`
 }
 
 type PointConstraint struct {
@@ -92,6 +96,10 @@ type SearchRequest struct {
 	// забирается отдельно через ExplainStream. Без omitempty: false здесь
 	// значимое значение, а не «поле не задано».
 	Explain bool `json:"explain"`
+	// PrevParsed — разбор предыдущего шага диалога (chat_searches.parsed_query
+	// на стороне шлюза), контекст для multi-turn чата (Task 3/4). nil для
+	// первого поиска в чате — omitempty делает поле неотличимым от null для ML.
+	PrevParsed map[string]any `json:"prev_parsed,omitempty"`
 }
 
 type DossierRequest struct {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"habitus-backend/internal/client"
 	"habitus-backend/internal/domain"
@@ -144,6 +147,100 @@ func TestWithDegradationAppendsOnceAndKeepsOrder(t *testing.T) {
 	}
 	if again := withDegradation(got, "llm"); len(again) != 2 {
 		t.Fatalf("withDegradation = %v; повторный слой не должен дублироваться", again)
+	}
+}
+
+// --- prev_parsed (Task 4, многоходовый чат) -----------------------------
+
+// fakeChatSearchStore — подставная реализация chatSearchStore: без реальной
+// БД проверяем, как сервис реагирует на разные ответы хранилища.
+type fakeChatSearchStore struct {
+	lastParsed map[string]any
+	lastErr    error
+}
+
+func (f fakeChatSearchStore) InsertSearch(context.Context, domain.ChatSearch) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
+func (f fakeChatSearchStore) UpsertResult(context.Context, domain.ChatSearchResult) error {
+	return nil
+}
+func (f fakeChatSearchStore) LastParsedQuery(context.Context, uuid.UUID) (map[string]any, error) {
+	return f.lastParsed, f.lastErr
+}
+
+func TestBuildSearchRequestIncludesPrevParsedFromStore(t *testing.T) {
+	prev := map[string]any{"semantic_text": "тихо"}
+	svc := &SearchStreamService{searches: fakeChatSearchStore{lastParsed: prev}}
+
+	got := svc.buildSearchRequest(context.Background(), domain.Chat{ID: uuid.New()}, "а подешевле", nil)
+
+	if got.PrevParsed == nil || got.PrevParsed["semantic_text"] != "тихо" {
+		t.Fatalf("PrevParsed = %#v; want %#v", got.PrevParsed, prev)
+	}
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if !strings.Contains(string(b), `"prev_parsed"`) {
+		t.Fatalf("тело запроса не содержит prev_parsed: %s", b)
+	}
+}
+
+func TestBuildSearchRequestOmitsPrevParsedOnFirstSearch(t *testing.T) {
+	// Поисков в чате ещё не было — хранилище отдаёт «нет данных» без ошибки.
+	svc := &SearchStreamService{searches: fakeChatSearchStore{}}
+
+	got := svc.buildSearchRequest(context.Background(), domain.Chat{ID: uuid.New()}, "квартира", nil)
+
+	if got.PrevParsed != nil {
+		t.Fatalf("PrevParsed = %#v; want nil на первом поиске в чате", got.PrevParsed)
+	}
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if strings.Contains(string(b), `"prev_parsed"`) {
+		t.Fatalf("тело запроса содержит prev_parsed на первом поиске: %s", b)
+	}
+}
+
+func TestBuildSearchRequestSurvivesStoreError(t *testing.T) {
+	// Ошибка чтения прошлого разбора не фатальна: поиск идёт без контекста
+	// предыдущего шага, а не падает.
+	svc := &SearchStreamService{searches: fakeChatSearchStore{lastErr: errors.New("бд моргнула")}}
+
+	got := svc.buildSearchRequest(context.Background(), domain.Chat{ID: uuid.New(), City: "msk"}, "квартира", nil)
+
+	if got.PrevParsed != nil {
+		t.Fatalf("PrevParsed = %#v; want nil при ошибке чтения", got.PrevParsed)
+	}
+	if got.Query != "квартира" || got.City != "msk" {
+		t.Fatalf("запрос не должен пострадать от ошибки чтения контекста: %#v", got)
+	}
+}
+
+// --- intent (Task 4) -----------------------------------------------------
+
+func TestBuildFinalResultCarriesIntentFromResponse(t *testing.T) {
+	svc := &SearchStreamService{}
+	resp := &client.SearchResponse{Intent: "refine"}
+
+	final, _, _ := svc.buildFinalResult(context.Background(), resp, nil)
+
+	if final.Intent != "refine" {
+		t.Fatalf("Intent = %q; want %q", final.Intent, "refine")
+	}
+	b, err := json.Marshal(final)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got["intent"] != "refine" {
+		t.Fatalf("intent в final_result = %#v; want %q", got["intent"], "refine")
 	}
 }
 

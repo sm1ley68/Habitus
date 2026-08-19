@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 
 	"habitus-backend/internal/client"
 	"habitus-backend/internal/domain"
@@ -46,6 +47,9 @@ type FinalResultEvent struct {
 	Objects               []FinalResultObject `json:"objects"`
 	DataFreshness         string              `json:"data_freshness"`
 	AreaLabel             string              `json:"area_label"`
+	// Intent — намерение реплики (Task 4, multi-turn чат). Аддитивное поле:
+	// фронт, который его не ждёт, может просто игнорировать.
+	Intent string `json:"intent"`
 }
 
 // pickSuggestedAreas: реальная граница зоны (из ML) заменяет convex-hull результатов.
@@ -56,10 +60,20 @@ func pickSuggestedAreas(hull, zone any) any {
 	return hull
 }
 
+// chatSearchStore — часть ChatSearchRepo, нужная сервису: сохранить поиск,
+// обновить снапшот результата и прочитать разбор последнего поиска чата
+// (prev_parsed для multi-turn запроса к ML, Task 4). Обособленный интерфейс —
+// чтобы подменить хранилище в тестах без реальной БД.
+type chatSearchStore interface {
+	InsertSearch(ctx context.Context, cs domain.ChatSearch) (uuid.UUID, error)
+	UpsertResult(ctx context.Context, res domain.ChatSearchResult) error
+	LastParsedQuery(ctx context.Context, chatID uuid.UUID) (map[string]any, error)
+}
+
 type SearchStreamService struct {
 	chats          *repository.ChatRepo
 	messages       *repository.MessageRepo
-	searches       *repository.ChatSearchRepo
+	searches       chatSearchStore
 	listings       *repository.ListingRepo
 	ml             *client.MLClient
 	mlTimeout      time.Duration
@@ -72,7 +86,7 @@ type SearchStreamService struct {
 func NewSearchStreamService(
 	chats *repository.ChatRepo,
 	messages *repository.MessageRepo,
-	searches *repository.ChatSearchRepo,
+	searches chatSearchStore,
 	listings *repository.ListingRepo,
 	ml *client.MLClient,
 	mlTimeout time.Duration,
@@ -134,12 +148,14 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 		isFirstMessage = n == 1
 	}
 
+	req := s.buildSearchRequest(ctx, chat, text, point)
+
 	mlCtx, cancelML := context.WithTimeout(ctx, s.mlTimeout)
 	defer cancelML()
 
 	resultCh := make(chan mlOutcome, 1)
 	go func() {
-		resp, err := s.ml.Search(mlCtx, searchRequestFor(chat, text, point))
+		resp, err := s.ml.Search(mlCtx, req)
 		resultCh <- mlOutcome{resp: resp, err: err}
 	}()
 
@@ -275,6 +291,24 @@ func searchRequestFor(chat domain.Chat, text string,
 	return client.SearchRequest{
 		Query: text, City: chat.City, Point: point, Explain: false,
 	}
+}
+
+// buildSearchRequest дополняет searchRequestFor разбором предыдущего шага
+// диалога (prev_parsed, Task 4) — читает последний поиск чата перед вызовом
+// ML. Ошибка чтения не фатальна: логируем и идём без контекста предыдущего
+// шага — деградация до поведения одиночного запроса, а не 500.
+func (s *SearchStreamService) buildSearchRequest(ctx context.Context, chat domain.Chat,
+	text string, point *client.PointConstraint) client.SearchRequest {
+	req := searchRequestFor(chat, text, point)
+
+	prevParsed, err := s.searches.LastParsedQuery(ctx, chat.ID)
+	if err != nil {
+		log.Error().Err(err).Str("chat_id", chat.ID.String()).
+			Msg("не удалось прочитать предыдущий разбор чата — ищем без контекста предыдущего шага")
+		return req
+	}
+	req.PrevParsed = prevParsed
+	return req
 }
 
 // explanationOutcome — итог потокового объяснения: собранный текст (для истории
@@ -438,6 +472,7 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 		Objects:               objects,
 		DataFreshness:         resp.DataFreshness,
 		AreaLabel:             resp.AreaLabel,
+		Intent:                resp.Intent,
 	}, objectIDs, scores
 }
 
@@ -446,6 +481,7 @@ func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uui
 		ChatID: chatID, MessageID: &userMsgID, RawQuery: rawQuery,
 		ParsedQuery: parsedQueryToMap(resp.Parsed), Relaxed: resp.Relaxed,
 		DataFreshness: resp.DataFreshness, Degraded: resp.Degraded,
+		Intent: intentPtr(resp.Intent),
 	})
 	if err != nil {
 		return
@@ -470,6 +506,15 @@ func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uui
 	meta := map[string]any{"suggested_object_ids": objectIDs}
 	_, _ = s.messages.Insert(ctx, chatID, "assistant", resp.Explanation, meta)
 	_ = s.chats.Touch(ctx, chatID)
+}
+
+// intentPtr — пустая строка от ML равнозначна отсутствию intent в ответе:
+// колонка chat_searches.intent обязана остаться NULL, а не получить "".
+func intentPtr(intent string) *string {
+	if intent == "" {
+		return nil
+	}
+	return &intent
 }
 
 func parsedQueryToMap(pq client.ParsedQuery) map[string]any {

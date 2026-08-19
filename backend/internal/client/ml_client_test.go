@@ -57,6 +57,61 @@ func TestSearchSendsPoint(t *testing.T) {
 	}
 }
 
+func TestSearchOmitsPrevParsedWhenAbsent(t *testing.T) {
+	// Первый поиск в чате: PrevParsed не задан — omitempty должен убрать поле
+	// из тела запроса целиком, а не отправить null.
+	var raw map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"results":[],"explanation":"","parsed":{},"data_freshness":""}`)
+	}))
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	if _, err := c.Search(context.Background(), SearchRequest{Query: "тихо"}); err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if _, ok := raw["prev_parsed"]; ok {
+		t.Fatalf("prev_parsed присутствует в теле = %v; want поле отсутствует", raw["prev_parsed"])
+	}
+}
+
+func TestSearchSendsPrevParsedWhenPresent(t *testing.T) {
+	// Многоходовый чат: разбор предыдущего шага должен доехать до ML целиком.
+	requests := make(chan SearchRequest, 1)
+	server := testMLServer(t, requests)
+	defer server.Close()
+
+	want := map[string]any{"rooms": []any{2.0}, "semantic_text": "тихо"}
+	c := NewMLClient(server.URL, time.Second)
+	if _, err := c.Search(context.Background(),
+		SearchRequest{Query: "а без первого этажа", PrevParsed: want}); err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	got := (<-requests).PrevParsed
+	if got["semantic_text"] != "тихо" {
+		t.Fatalf("PrevParsed = %#v; want %#v", got, want)
+	}
+}
+
+func TestSearchDecodesIntentFromResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"results":[],"explanation":"","parsed":{},"data_freshness":"","intent":"refine"}`)
+	}))
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	resp, err := c.Search(context.Background(), SearchRequest{Query: "а подешевле"})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if resp.Intent != "refine" {
+		t.Fatalf("Intent = %q; want %q", resp.Intent, "refine")
+	}
+}
+
 func TestDossierAndObjectAskUseInternalContracts(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

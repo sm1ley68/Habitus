@@ -48,7 +48,10 @@ type ChatSearch struct {
 	Relaxed       []string
 	DataFreshness string
 	Degraded      []string
-	CreatedAt     time.Time
+	// Intent — намерение реплики (Task 4, multi-turn чат). nil, когда ответ ML
+	// не содержал intent — колонка остаётся NULL, а не молчаливым умолчанием.
+	Intent    *string
+	CreatedAt time.Time
 }
 
 // ChatSearchResult is the latest-snapshot-per-object row that GET /objects/{id}
