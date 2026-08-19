@@ -253,6 +253,7 @@ func TestExplainStreamSendsQueryResultsAndRelaxations(t *testing.T) {
 		Query:   "тихая двушка",
 		Results: []ResultItem{{ExternalID: "A", Score: 0.9}},
 		Relaxed: []string{"бюджет +15%"},
+		Notes:   []string{"ориентация окон известна у 1.9% объявлений"},
 	}, func(string) bool { return true })
 	if err != nil {
 		t.Fatalf("ExplainStream() error = %v", err)
@@ -262,6 +263,28 @@ func TestExplainStreamSendsQueryResultsAndRelaxations(t *testing.T) {
 	if got.Query != "тихая двушка" || len(got.Results) != 1 ||
 		got.Results[0].ExternalID != "A" || len(got.Relaxed) != 1 {
 		t.Fatalf("request = %#v; факты выдачи должны доехать до ML целиком", got)
+	}
+	// без notes объяснение не узнает о честном покрытии данных
+	if len(got.Notes) != 1 || !strings.Contains(got.Notes[0], "1.9%") {
+		t.Fatalf("Notes = %#v; примечания должны доехать до ML", got.Notes)
+	}
+}
+
+func TestSearchDecodesNotesFromResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"results":[],"explanation":"","parsed":{},`+
+			`"data_freshness":"","notes":["ориентация окон известна у 1.9% объявлений"]}`)
+	}))
+	defer server.Close()
+
+	c := NewMLClient(server.URL, time.Second)
+	resp, err := c.Search(context.Background(), SearchRequest{Query: "окна на юго-запад"})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(resp.Notes) != 1 {
+		t.Fatalf("Notes = %#v; want одну заметку", resp.Notes)
 	}
 }
 

@@ -67,14 +67,18 @@ type ResultItem struct {
 }
 
 type SearchResponse struct {
-	Results       []ResultItem `json:"results"`
-	Explanation   string       `json:"explanation"`
-	Parsed        ParsedQuery  `json:"parsed"`
-	Relaxed       []string     `json:"relaxed"`
-	DataFreshness string       `json:"data_freshness"`
-	Degraded      []string     `json:"degraded"`
-	AreaLabel     string       `json:"area_label"`
-	AreaGeojson   any          `json:"area_geojson"`
+	Results     []ResultItem `json:"results"`
+	Explanation string       `json:"explanation"`
+	Parsed      ParsedQuery  `json:"parsed"`
+	Relaxed     []string     `json:"relaxed"`
+	// Notes — честные примечания ML о покрытии данных (например: ориентация
+	// окон известна у ~2% объявлений, поэтому учтена как предпочтение, а не
+	// как фильтр). Нужны объяснению, иначе оно о них не узнает.
+	Notes         []string `json:"notes"`
+	DataFreshness string   `json:"data_freshness"`
+	Degraded      []string `json:"degraded"`
+	AreaLabel     string   `json:"area_label"`
+	AreaGeojson   any      `json:"area_geojson"`
 	// Intent — намерение реплики многоходового чата (Task 3 ML: TurnIntent).
 	// Пустая строка равнозначна отсутствию поля в ответе — до значения по
 	// умолчанию его сама ML не заполняет.
@@ -136,6 +140,7 @@ type ExplainRequest struct {
 	Query   string       `json:"query"`
 	Results []ResultItem `json:"results"`
 	Relaxed []string     `json:"relaxed"`
+	Notes   []string     `json:"notes,omitempty"`
 }
 
 type MLClient struct {

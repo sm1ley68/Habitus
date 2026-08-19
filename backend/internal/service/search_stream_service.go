@@ -334,6 +334,7 @@ func (s *SearchStreamService) streamExplanation(ctx context.Context, query strin
 	alive := true
 	llmOK, err := s.ml.ExplainStream(explainCtx, client.ExplainRequest{
 		Query: query, Results: resp.Results, Relaxed: resp.Relaxed,
+		Notes: resp.Notes,
 	}, func(token string) bool {
 		if !s.emit(w, "text_token", TextTokenEvent{Token: token}) {
 			alive = false
