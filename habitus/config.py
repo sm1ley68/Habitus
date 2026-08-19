@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     # поэтому выбор — компромисс: 0.6 отдаёт явно запрошенной близости умеренное
     # большинство, семантика сохраняет 0.4. Сетка: scratchpad sweep 2026-07-17.
     proximity_weight: float = 0.6
+    # Вес совпадения ориентации окон в финальном бленде. Не фильтр: данные об
+    # ориентации есть у ~2% объявлений (извлекаются из прозы описания, см.
+    # habitus/clean/windows.py), поэтому жёсткое условие отсекало базу целиком
+    # и подменялось relaxation-ом на каждом запросе.
+    orientation_weight: float = 0.15
     min_results: int = 5              # порог relaxation-петли
     relaxation_max_iters: int = 3
     langfuse_enabled: bool = False

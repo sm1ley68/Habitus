@@ -60,6 +60,19 @@ def _proximity_raw(pq: ParsedQuery, c: Candidate) -> float | None:
     return float(sum(vals))
 
 
+def _orientation_bonus(pq: ParsedQuery, candidates: list[Candidate]) -> list[float]:
+    """Бонус settings.orientation_weight за совпадение ориентации окон — сигнал в
+    финальном бленде, не фильтр (данные есть у ~2% объявлений). Срабатывает
+    только когда pq.window_orientation непуст. Отсутствие данных об ориентации
+    у кандидата — не штраф и не бонус, а 0: неизвестно, не «плохая ориентация»."""
+    if not pq.window_orientation:
+        return [0.0] * len(candidates)
+    requested = set(pq.window_orientation)
+    bonus = settings.orientation_weight
+    return [bonus if requested & set(c.facts.get("window_orientation") or ())
+            else 0.0 for c in candidates]
+
+
 def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
                    pool_n: int | None = None) -> list[Candidate]:
     """Сузить кандидатов до пула, который увидит кросс-энкодер (settings.rerank_pool_n).
@@ -119,15 +132,30 @@ def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,
     weight — доля близости (`settings.proximity_weight`). Это бленд, а не сортировка
     по оси: семантика сохраняет вес, поэтому метрика меряет реальное улучшение
     ранжирования, а не тавтологию «отсортировали ровно по тому, чем метили golden».
+
+    Поверх этого бленда, независимо от гео-оси, добавляется бонус
+    `settings.orientation_weight` за совпадение ориентации окон
+    (`_orientation_bonus`) — тоже сигнал, не фильтр: window_orientation не режет
+    выборку в build_where, потому что данные есть у ~2% объявлений.
     """
     if not candidates:
         return []
     n = top_n or settings.rerank_top_n
     w = settings.proximity_weight if weight is None else weight
-    # нет оси близости в запросе или нулевой вес → близость не при чём:
-    # сохраняем входной порядок (RRF / реранкер / свежесть), только срез top-N
+    orient_bonus = _orientation_bonus(pq, candidates)
+
+    # нет оси близости в запросе или нулевой вес → близость не при чём. Если
+    # вдобавок нет и запроса на ориентацию — сохраняем входной порядок
+    # (RRF / реранкер / свежесть), только срез top-N; иначе поверх семантики
+    # подмешивается только бонус ориентации.
     if not pq.geo or w <= 0.0:
-        return candidates[:n]
+        if not pq.window_orientation:
+            return candidates[:n]
+        score_norm = _minmax([c.score for c in candidates])
+        blended = [s + o for s, o in zip(score_norm, orient_bonus)]
+        order = sorted(zip(candidates, blended),
+                       key=lambda cb: (-cb[1], cb[0].external_id))
+        return [replace(c, score=float(b)) for c, b in order[:n]]
 
     raws = [_proximity_raw(pq, c) for c in candidates]
     known = [r for r in raws if r is not None]
@@ -141,7 +169,8 @@ def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,
         prox_norm = [0.0] * len(candidates)     # ни по кому нет данных → сигнала нет
     score_norm = _minmax([c.score for c in candidates])
 
-    blended = [w * p + (1.0 - w) * s for p, s in zip(prox_norm, score_norm)]
+    blended = [w * p + (1.0 - w) * s + o
+              for p, s, o in zip(prox_norm, score_norm, orient_bonus)]
     order = sorted(zip(candidates, blended),
                    key=lambda cb: (-cb[1], cb[0].external_id))
     return [replace(c, score=float(b)) for c, b in order[:n]]

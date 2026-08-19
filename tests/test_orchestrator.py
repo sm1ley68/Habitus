@@ -11,12 +11,15 @@ def _cand(eid: str) -> Candidate:
                      updated_at=datetime(2026, 7, 1, tzinfo=timezone.utc))
 
 
-def test_relax_order_geo_price_orientation_noise():
+def test_relax_order_geo_price_noise():
+    # ориентация окон больше не фильтр (см. build_where) — relax её не трогает,
+    # window_orientation остаётся как был на всех шагах ослабления
     pq = ParsedQuery(geo=[GeoConstraint(kind="metro", walk_minutes=10)],
                      price_max=10_000_000, window_orientation=["SW"],
                      noise_max="low")
     pq, n1 = relax(pq)
     assert pq.geo[0].walk_minutes == 15 and "metro" in n1
+    assert pq.window_orientation == ["SW"]
 
     # гео на капе → следующий приоритет: бюджет
     pq = pq.model_copy(update={"geo": [GeoConstraint(kind="metro",
@@ -24,15 +27,19 @@ def test_relax_order_geo_price_orientation_noise():
     pq, n2 = relax(pq)
     assert pq.price_max == 11_500_000 and "+15%" in n2
 
-    # бюджет убрали → снимается ориентация окон
+    # бюджет убрали → следующий приоритет: шум (ориентацию relax больше не снимает)
     pq = pq.model_copy(update={"price_max": None})
     pq, n3 = relax(pq)
-    assert pq.window_orientation == [] and "окон" in n3
+    assert pq.noise_max is None and "шум" in n3
+    assert pq.window_orientation == ["SW"]
 
-    pq, n4 = relax(pq)
-    assert pq.noise_max is None and "шум" in n4
+    assert relax(pq) is None            # ослаблять больше нечего (ориентация — не фильтр)
 
-    assert relax(pq) is None            # ослаблять больше нечего
+
+def test_relax_never_returns_orientation_step():
+    # единственное ограничение — ориентация окон: ослаблять нечего, фильтра нет
+    pq = ParsedQuery(window_orientation=["SW", "S"])
+    assert relax(pq) is None
 
 
 def test_relax_geo_capped_at_30():

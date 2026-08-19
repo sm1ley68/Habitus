@@ -107,6 +107,10 @@ class SearchResponse(BaseModel):
     explanation: str             # только поверх фактов из БД
     parsed: ParsedQuery          # что поняли (прозрачность/дебаг)
     relaxed: list[str] = []      # какие ограничения ослаблены relaxation-петлёй
+    # честные примечания о низком покрытии поля, учтённого как мягкий сигнал, а
+    # не фильтр (например, window_orientation); реально посчитаны по БД,
+    # выдуманных процентов не бывает — не удалось посчитать, заметки нет
+    notes: list[str] = []
     data_freshness: str          # «данные актуальны на …» (max updated_at)
     degraded: list[str] = []     # какие слои отвалились: "nlu"/"vector"/"reranker"/"llm"
     intent: TurnIntent = "new_search"   # намерение реплики (multi-turn чат)

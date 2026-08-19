@@ -1,5 +1,5 @@
-from habitus.online.dossier import (ListingEvidence, _family_data,
-                                    _solar_samples)
+from habitus.online.dossier import (ListingEvidence, _climate_data,
+                                    _family_data, _solar_samples)
 from habitus.online.schema import DossierRequest, ParsedQuery
 
 
@@ -58,3 +58,55 @@ def test_solar_samples_are_bounded_and_seasonal():
     winter = _solar_samples(55.75, 355, 180, [])
     assert summer and winter and len(summer) > len(winter)
     assert all(0 <= hour < 24 for hour in summer)
+
+
+# insolation_rough заполнена у нуля объявлений (offline-колонка так и не
+# вычисляется) и никогда не читается _climate_data — реальный источник блока
+# «Вид и климат» это геометрия (ориентация + препятствия + облачность из NASA
+# POWER), не эта колонка. Гейт блока — window_orientation: без него честная
+# деградация должна случиться до любого обращения к БД.
+def test_climate_data_degrades_without_orientation_data():
+    req = DossierRequest(object_id="E1", parsed_query=ParsedQuery())
+    listing = ListingEvidence(37.6, 55.7, 7, 12, {
+        "window_orientation": None, "insolation_rough": None,
+        "noise_level": None, "bar_density_500m": None,
+    })
+    # conn=None: _orientation возвращает None раньше первого обращения к БД —
+    # деградация не должна требовать соединения вовсе
+    assert _climate_data(None, req, listing, climate_provider=None) is None
+
+
+class _FakeCursor:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, *args, **kwargs):
+        pass
+
+    def fetchone(self):
+        return (None,)          # средний уровень шума в радиусе не посчитан
+
+
+class _FakeConn:
+    def cursor(self, *args, **kwargs):
+        return _FakeCursor()
+
+
+class _FakeClimateProvider:
+    def for_point(self, lon, lat):
+        return 0.3               # облачность есть — блокирует именно шум
+
+
+def test_climate_data_degrades_without_noise_evidence_no_synthetic_numbers():
+    # ориентация есть и совпала с запросом, но подтверждённого шума в радиусе
+    # нет — блок обязан деградировать до None, а не подставить 0 дБ
+    req = DossierRequest(object_id="E1",
+                         parsed_query=ParsedQuery(window_orientation=["SW"]))
+    listing = ListingEvidence(37.6, 55.7, 7, 12, {
+        "window_orientation": ["SW"], "insolation_rough": None,
+    })
+    result = _climate_data(_FakeConn(), req, listing, _FakeClimateProvider())
+    assert result is None

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from habitus.online.rerank import prefilter_pool, rerank
+from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
 from habitus.online.retrieval import Candidate
 from habitus.online.schema import ParsedQuery
 
@@ -116,3 +116,23 @@ def test_prefilter_pool_geo_reaches_pool_n_with_sparse_proximity_data():
         cands[i] = _cand(str(i), f"doc{i}", facts={"walk_min_metro": 1})
     out = prefilter_pool(_geo_pq(), cands, pool_n=40)
     assert len(out) == 40
+
+
+def test_proximity_rerank_orientation_match_lifts_equal_candidate():
+    # ориентация — не фильтр, а бонус в финальном бленде (settings.orientation_
+    # weight): при прочих равных совпадение поднимает кандидата выше
+    pq = ParsedQuery(window_orientation=["SW"])
+    cands = [_cand("A", "doc a", facts={"window_orientation": ["N"]}),
+             _cand("B", "doc b", facts={"window_orientation": ["SW"]})]
+    out = proximity_rerank(pq, cands)
+    assert [c.external_id for c in out] == ["B", "A"]
+
+
+def test_proximity_rerank_missing_orientation_not_ranked_below_mismatch():
+    # отсутствие данных об ориентации — не штраф (0), как и несовпадение (тоже
+    # 0) — кандидат без данных не должен провалиться ниже несовпавшего
+    pq = ParsedQuery(window_orientation=["SW"])
+    cands = [_cand("A", "doc a", facts={"window_orientation": ["N"]}),
+             _cand("B", "doc b")]                          # данных нет вовсе
+    out = proximity_rerank(pq, cands)
+    assert [c.external_id for c in out] == ["A", "B"]       # оба 0 → тай-брейк по id

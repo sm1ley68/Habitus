@@ -23,9 +23,6 @@ def relax(pq: ParsedQuery) -> tuple[ParsedQuery, str] | None:
         new_price = int(pq.price_max * PRICE_RELAX)
         return (pq.model_copy(update={"price_max": new_price}),
                 f"бюджет: {pq.price_max}→{new_price} (+15%)")
-    if pq.window_orientation:
-        return (pq.model_copy(update={"window_orientation": []}),
-                "снят фильтр ориентации окон")
     if pq.noise_max is not None:
         return (pq.model_copy(update={"noise_max": None}),
                 "снят фильтр уровня шума")
@@ -43,8 +40,9 @@ def retrieve_with_relaxation(
         search_fn=hybrid_search) -> tuple[list[Candidate], list[str], ParsedQuery]:
     """Маршрутизация: кастомная точка (из запроса API) + готовая область
     (`AreaMatch`, резолвится заранее в pipeline) → гео-предикаты, затем
-    retrieval. Мало результатов → сперва штатный relax (гео/цена/ориентация/
-    шум), затем — если область была задана — авто-расширение по AreaMatch.widen."""
+    retrieval. Мало результатов → сперва штатный relax (гео/цена/шум; ориентация
+    окон — не фильтр, ослаблять нечего), затем — если область была задана —
+    авто-расширение по AreaMatch.widen."""
     min_r = min_results if min_results is not None else settings.min_results
     iters = max_iters if max_iters is not None else settings.relaxation_max_iters
 

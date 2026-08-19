@@ -41,10 +41,11 @@ def test_build_where_full():
     assert "area >= %s" in sql and "area <= %s" in sql
     assert "walk_min_school <= %s" in sql and "walk_min_metro <= %s" in sql
     assert "noise_level = ANY(%s)" in sql
-    assert "window_orientation && %s" in sql
     assert "bar_density_500m = 0" in sql
-    # порядок параметров = порядку клауз
-    assert params == [1, 2, [1, 2], 30.0, 60.0, 10, 7, ["low", "medium"], ["SW", "W"]]
+    # ориентация окон — не фильтр (данные есть у ~2% объявлений, см.
+    # settings.orientation_weight): не должна ни попасть в WHERE, ни отъесть параметр
+    assert "window_orientation" not in sql
+    assert params == [1, 2, [1, 2], 30.0, 60.0, 10, 7, ["low", "medium"]]
 
 
 def test_build_where_noise_high_means_no_filter():

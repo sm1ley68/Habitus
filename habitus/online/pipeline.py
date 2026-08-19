@@ -11,7 +11,7 @@ from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, merge_parsed, parse_turn
 from habitus.online.orchestrator import retrieve_with_relaxation
 from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
-from habitus.online.retrieval import Candidate, encode_query
+from habitus.online.retrieval import Candidate, encode_query, orientation_coverage
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
                                    SearchResponse, TurnIntent)
 
@@ -32,6 +32,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
                city: str = "msk", explain: bool = True,
                prev_parsed: ParsedQuery | None = None) -> SearchResponse:
     degraded: list[str] = []
+    notes: list[str] = []
 
     # 1. NLU: parse_turn классифицирует намерение реплики и (при prev_parsed)
     #    разбирает её относительно предыдущего шага диалога; merge_parsed
@@ -58,6 +59,22 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
             except (ParseError, LLMUnavailable):
                 pq = ParsedQuery(semantic_text=query)
                 degraded.append("nlu")
+
+    # 1.5 честное покрытие ориентации окон: не фильтр (см. build_where), а мягкий
+    #     сигнал в proximity_rerank — пользователь должен знать реальный % данных,
+    #     а не решить, что ограничение применено буквально. Не удалось посчитать
+    #     (сбой БД) → заметки просто нет, выдуманного процента быть не должно.
+    if pq.window_orientation:
+        try:
+            with_data, total = orientation_coverage(conn, city)
+            if total > 0:
+                pct = 100 * with_data / total
+                notes.append(
+                    f"данные об ориентации окон есть у {with_data} из {total} "
+                    f"объявлений ({pct:.1f}%) — учли как предпочтение, а не как фильтр")
+        except Exception as exc:
+            log.warning("подсчёт покрытия ориентации окон не удался: %s",
+                       exc, exc_info=True)
 
     # 2. кодирование запроса (кэш; отказ → filter-only retrieval)
     query_vec = None
@@ -123,7 +140,8 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
         explanation = explain_cache.get(exp_key)
         if explanation is None:
             with trace.span("explain"):
-                explanation, llm_ok = build_explanation(query, results, relaxed, llm)
+                explanation, llm_ok = build_explanation(query, results, relaxed,
+                                                        llm, notes=notes)
             if llm_ok:
                 explain_cache.put(exp_key, explanation)
             else:
@@ -142,6 +160,6 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
             log.warning("сбор геометрии зоны не удался: %s", exc, exc_info=True)
 
     return SearchResponse(results=results, explanation=explanation, parsed=pq,
-                          relaxed=relaxed, data_freshness=data_freshness,
+                          relaxed=relaxed, notes=notes, data_freshness=data_freshness,
                           degraded=degraded, area_label=area_label,
                           area_geojson=area_geo, intent=intent)

@@ -62,8 +62,9 @@ def build_where(pq: ParsedQuery, extra_sql: str | None = None,
     if pq.noise_max is not None and pq.noise_max != "high":
         allowed = NOISE_ORDER[: NOISE_ORDER.index(pq.noise_max) + 1]
         clauses.append("noise_level = ANY(%s)"); params.append(allowed)
-    if pq.window_orientation:
-        clauses.append("window_orientation && %s"); params.append(list(pq.window_orientation))
+    # window_orientation НЕ фильтр: заполнен у ~2% объявлений (см.
+    # settings.orientation_weight), жёсткая клауза отсекала бы базу целиком.
+    # Ориентация учитывается как мягкий сигнал в proximity_rerank.
     if "bars" in pq.stop_factors:
         clauses.append("bar_density_500m = 0")
     if extra_sql:
@@ -115,6 +116,19 @@ def _fetch_candidates(conn: psycopg.Connection, ext_ids: list[str],
             facts={c: r[c] for c in FACT_COLUMNS},
             score=scores.get(eid, 0.0), updated_at=r["updated_at"]))
     return out
+
+
+def orientation_coverage(conn: psycopg.Connection, city: str | None) -> tuple[int, int]:
+    """(сколько активных объявлений города с непустым window_orientation, всего
+    активных). Тот же срез, что видит retrieval (build_where(city=...)), — чтобы
+    честная цифра покрытия в notes соответствовала реальной базе запроса."""
+    where, params = build_where(ParsedQuery(), city=city)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT count(*) FILTER (WHERE window_orientation IS NOT NULL), "
+            f"count(*) FROM listings WHERE {where};", params)
+        with_data, total = cur.fetchone()
+    return int(with_data), int(total)
 
 
 def filter_only_search(conn: psycopg.Connection, pq: ParsedQuery,

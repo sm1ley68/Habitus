@@ -19,6 +19,19 @@ def test_facts_block_serializes_facts_and_relaxations():
     assert "ОСЛАБЛЕНО: бюджет" in block
 
 
+def test_facts_block_carries_notes():
+    # notes — честное покрытие низкозаполненного поля (пример: ориентация окон),
+    # передаётся в блок ФАКТОВ так же, как ОСЛАБЛЕНО, и только оттуда
+    note = "данные об ориентации окон есть у 64 из 3291 объявлений (1.9%) — учли как предпочтение, а не как фильтр"
+    block = facts_block([_item()], [], notes=[note])
+    assert f"ПРИМЕЧАНИЕ: {note}" in block
+
+
+def test_facts_block_without_notes_has_no_note_line():
+    block = facts_block([_item()], [])
+    assert "ПРИМЕЧАНИЕ" not in block
+
+
 def test_explain_sends_only_facts_to_llm():
     fake = FakeLLM([LLMResponse(content="Тихий вариант, школа в 8 минутах.",
                                 tool_arguments=None)])
@@ -29,6 +42,16 @@ def test_explain_sends_only_facts_to_llm():
     assert "ТОЛЬКО" in sys_msg and "Запрещено" in sys_msg   # анти-галлюцинация
     assert "ФАКТЫ" in user_msg and '"walk_min_school": 8.0' in user_msg
     assert fake.calls[0]["temperature"] == 0.0
+
+
+def test_explain_forwards_notes_to_llm():
+    fake = FakeLLM([LLMResponse(content="Учли ориентацию как предпочтение.",
+                                tool_arguments=None)])
+    text, ok = explain("окна на юго-запад", [_item()], [], fake,
+                       notes=["данные об ориентации окон есть у 64 из 3291 (1.9%)"])
+    assert ok
+    user_msg = fake.calls[0]["messages"][-1]["content"]
+    assert "ПРИМЕЧАНИЕ: данные об ориентации окон есть у 64 из 3291" in user_msg
 
 
 def test_explain_no_llm_falls_back_to_template():
@@ -65,3 +88,7 @@ def test_prompt_allows_address_but_still_forbids_invented_geography():
     assert "address" in GROUNDED_SYSTEM
     assert "metro_station" in GROUNDED_SYSTEM
     assert "названия школ" in GROUNDED_SYSTEM   # запрет на названия школ остаётся
+
+
+def test_prompt_mentions_notes_instruction():
+    assert "ПРИМЕЧАНИЕ" in GROUNDED_SYSTEM

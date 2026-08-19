@@ -12,16 +12,20 @@ GROUNDED_SYSTEM = """Ты — ассистент по недвижимости. 
 metro_station. Запрещено называть названия школ, ЖК, застройщиков и любую \
 географию, которой нет в ФАКТАХ. Если каких-то данных нет — просто не упоминай их.
 Если в ФАКТАХ есть строка «ОСЛАБЛЕНО», честно скажи, какие условия пришлось ослабить.
+Если в ФАКТАХ есть строка «ПРИМЕЧАНИЕ», честно упомяни её.
 Отвечай на языке запроса пользователя, кратко: 3-6 предложений."""
 
 
-def facts_block(results: list[ResultItem], relaxed: list[str]) -> str:
-    """Факты для промпта: по JSON-строке на объект + строка ослаблений."""
+def facts_block(results: list[ResultItem], relaxed: list[str],
+                notes: list[str] | None = None) -> str:
+    """Факты для промпта: по JSON-строке на объект + строки ослаблений/примечаний."""
     lines = [json.dumps({"id": r.external_id, "price": r.price, "area": r.area,
                          "rooms": r.rooms, **r.address_facts}, ensure_ascii=False)
              for r in results]
     if relaxed:
         lines.append("ОСЛАБЛЕНО: " + "; ".join(relaxed))
+    if notes:
+        lines.append("ПРИМЕЧАНИЕ: " + "; ".join(notes))
     return "\n".join(lines)
 
 
@@ -59,14 +63,14 @@ def cache_key(query: str, results: list[ResultItem]) -> str:
     return query + "|" + ",".join(r.external_id for r in results)
 
 
-def build_messages(query: str, results: list[ResultItem],
-                   relaxed: list[str]) -> list[dict]:
+def build_messages(query: str, results: list[ResultItem], relaxed: list[str],
+                   notes: list[str] | None = None) -> list[dict]:
     """Промпт объяснения. Один и тот же для синхронного и потокового пути."""
     return [
         {"role": "system", "content": GROUNDED_SYSTEM},
         {"role": "user", "content":
          f"Запрос пользователя: {query}\n\nФАКТЫ:\n"
-         f"{facts_block(results, relaxed)}\n\nОбъясни подбор."},
+         f"{facts_block(results, relaxed, notes)}\n\nОбъясни подбор."},
     ]
 
 
@@ -103,11 +107,11 @@ async def explain_stream(query: str, results: list[ResultItem],
 
 
 def explain(query: str, results: list[ResultItem], relaxed: list[str],
-            llm: LLMClient | None) -> tuple[str, bool]:
+            llm: LLMClient | None, notes: list[str] | None = None) -> tuple[str, bool]:
     """(текст, llm_ok). Любая ошибка LLM → шаблон, llm_ok=False."""
     if llm is None:
         return template_explanation(results, relaxed), False
-    messages = build_messages(query, results, relaxed)
+    messages = build_messages(query, results, relaxed, notes)
     try:
         resp = llm.complete(messages, temperature=0.0)
         if resp.content:
