@@ -48,8 +48,10 @@ type FinalResultEvent struct {
 	DataFreshness         string              `json:"data_freshness"`
 	AreaLabel             string              `json:"area_label"`
 	// Intent — намерение реплики (Task 4, multi-turn чат). Аддитивное поле:
-	// фронт, который его не ждёт, может просто игнорировать.
-	Intent string `json:"intent"`
+	// фронт, который его не ждёт, может просто игнорировать. omitempty — та же
+	// честная семантика, что у колонки intent: ML не прислала намерение —
+	// поля нет, а не пустая строка вместо него.
+	Intent string `json:"intent,omitempty"`
 }
 
 // pickSuggestedAreas: реальная граница зоны (из ML) заменяет convex-hull результатов.

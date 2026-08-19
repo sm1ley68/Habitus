@@ -223,6 +223,9 @@ func TestBuildSearchRequestSurvivesStoreError(t *testing.T) {
 // --- intent (Task 4) -----------------------------------------------------
 
 func TestBuildFinalResultCarriesIntentFromResponse(t *testing.T) {
+	// svc без listings допустим только потому, что resp.Results пуст:
+	// buildFinalResult не дойдёт до обращения к репозиторию. Тесту с непустыми
+	// Results понадобится настоящий (или подставной) listings.
 	svc := &SearchStreamService{}
 	resp := &client.SearchResponse{Intent: "refine"}
 
@@ -241,6 +244,26 @@ func TestBuildFinalResultCarriesIntentFromResponse(t *testing.T) {
 	}
 	if got["intent"] != "refine" {
 		t.Fatalf("intent в final_result = %#v; want %q", got["intent"], "refine")
+	}
+}
+
+func TestBuildFinalResultOmitsIntentWhenMLSentNone(t *testing.T) {
+	// Отсутствие намерения не подменяется пустой строкой — поля просто нет.
+	svc := &SearchStreamService{}
+
+	final, _, _ := svc.buildFinalResult(context.Background(),
+		&client.SearchResponse{}, nil)
+
+	b, err := json.Marshal(final)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if _, ok := got["intent"]; ok {
+		t.Fatalf("intent присутствует в final_result = %#v; want поле отсутствует", got["intent"])
 	}
 }
 

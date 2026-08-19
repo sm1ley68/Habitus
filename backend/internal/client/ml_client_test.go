@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -60,9 +61,13 @@ func TestSearchSendsPoint(t *testing.T) {
 func TestSearchOmitsPrevParsedWhenAbsent(t *testing.T) {
 	// Первый поиск в чате: PrevParsed не задан — omitempty должен убрать поле
 	// из тела запроса целиком, а не отправить null.
-	var raw map[string]any
+	// Тело читаем через канал, а не через общую переменную: сокет не даёт
+	// happens-before между горутиной обработчика и горутиной теста.
+	bodies := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&raw)
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies <- body
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{"results":[],"explanation":"","parsed":{},"data_freshness":""}`)
 	}))
@@ -72,6 +77,7 @@ func TestSearchOmitsPrevParsedWhenAbsent(t *testing.T) {
 	if _, err := c.Search(context.Background(), SearchRequest{Query: "тихо"}); err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
+	raw := <-bodies
 	if _, ok := raw["prev_parsed"]; ok {
 		t.Fatalf("prev_parsed присутствует в теле = %v; want поле отсутствует", raw["prev_parsed"])
 	}
@@ -90,7 +96,7 @@ func TestSearchSendsPrevParsedWhenPresent(t *testing.T) {
 		t.Fatalf("Search() error = %v", err)
 	}
 	got := (<-requests).PrevParsed
-	if got["semantic_text"] != "тихо" {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("PrevParsed = %#v; want %#v", got, want)
 	}
 }

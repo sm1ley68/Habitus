@@ -124,10 +124,10 @@ func (r *ChatSearchRepo) GetSearch(ctx context.Context, id uuid.UUID) (domain.Ch
 	var parsedJSON []byte
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, chat_id, message_id, raw_query, parsed_query, relaxed,
-		       data_freshness, degraded, created_at
+		       data_freshness, degraded, intent, created_at
 		FROM chat_searches WHERE id=$1`, id,
 	).Scan(&cs.ID, &cs.ChatID, &cs.MessageID, &cs.RawQuery, &parsedJSON,
-		&cs.Relaxed, &cs.DataFreshness, &cs.Degraded, &cs.CreatedAt)
+		&cs.Relaxed, &cs.DataFreshness, &cs.Degraded, &cs.Intent, &cs.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ChatSearch{}, ErrNotFound
 	}
