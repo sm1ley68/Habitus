@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
+import pytest
+from habitus.config import settings
 from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
 from habitus.online.retrieval import Candidate
-from habitus.online.schema import ParsedQuery
+from habitus.online.schema import GeoConstraint, ParsedQuery
 
 
 def _cand(eid: str, doc: str, facts: dict | None = None) -> Candidate:
@@ -130,9 +132,46 @@ def test_proximity_rerank_orientation_match_lifts_equal_candidate():
 
 def test_proximity_rerank_missing_orientation_not_ranked_below_mismatch():
     # отсутствие данных об ориентации — не штраф (0), как и несовпадение (тоже
-    # 0) — кандидат без данных не должен провалиться ниже несовпавшего
+    # 0) — кандидат без данных не должен провалиться ниже несовпавшего.
+    # Кандидат без данных идёт ПЕРВЫМ во входе: при штрафе за отсутствие данных
+    # он бы уехал вниз и порядок сломался, а тай-брейк по входному индексу
+    # такой ошибки не замаскирует.
     pq = ParsedQuery(window_orientation=["SW"])
-    cands = [_cand("A", "doc a", facts={"window_orientation": ["N"]}),
-             _cand("B", "doc b")]                          # данных нет вовсе
+    cands = [_cand("A", "doc a"),                          # данных нет вовсе
+             _cand("B", "doc b", facts={"window_orientation": ["N"]})]
     out = proximity_rerank(pq, cands)
-    assert [c.external_id for c in out] == ["A", "B"]       # оба 0 → тай-брейк по id
+    assert [c.external_id for c in out] == ["A", "B"]
+    assert out[0].score == out[1].score      # оба ровно 0 — ни штрафа, ни бонуса
+
+
+def test_proximity_rerank_orientation_case_insensitive():
+    # NLU и clean/windows.py сегодня дают верхний регистр, но сравнение не
+    # должно зависеть от этого совпадения
+    pq = ParsedQuery(window_orientation=["sw"])
+    cands = [_cand("A", "doc a", facts={"window_orientation": ["N"]}),
+             _cand("B", "doc b", facts={"window_orientation": ["Sw"]})]
+    out = proximity_rerank(pq, cands)
+    assert [c.external_id for c in out] == ["B", "A"]
+
+
+def test_proximity_rerank_orientation_bonus_applies_on_geo_branch():
+    # бонус живёт в обеих ветках бленда: с гео-осью он тоже слагаемое, а не
+    # только в ветке «гео нет»
+    pq = ParsedQuery(window_orientation=["SW"],
+                     geo=[GeoConstraint(kind="metro", walk_minutes=10)])
+    cands = [_cand("A", "doc a", facts={"walk_min_metro": 5,
+                                        "window_orientation": ["N"]}),
+             _cand("B", "doc b", facts={"walk_min_metro": 5,
+                                        "window_orientation": ["SW"]})]
+    out = proximity_rerank(pq, cands)
+    assert [c.external_id for c in out] == ["B", "A"]
+    assert out[0].score - out[1].score == pytest.approx(settings.orientation_weight)
+
+
+def test_proximity_rerank_keeps_input_order_on_ties_with_orientation():
+    # деградированный путь filter_only_search: все score равны, порядок задан
+    # свежестью — бонус ориентации не должен подменять его алфавитом id
+    pq = ParsedQuery(window_orientation=["SW"])
+    cands = [_cand("Z", "doc z"), _cand("A", "doc a")]
+    out = proximity_rerank(pq, cands)
+    assert [c.external_id for c in out] == ["Z", "A"]

@@ -295,3 +295,55 @@ def test_no_llm_with_prev_parsed_degrades_to_new_search(conn):
     assert "nlu" in resp.degraded
     assert resp.parsed.semantic_text == "подешевле"   # весь текст в семантику,
                                                        # prev не подмешан
+
+
+# --- честное покрытие ориентации окон (Task 5) ------------------------------
+
+def _orient_parse_resp():
+    return LLMResponse(content=None, tool_arguments=json.dumps(
+        {"window_orientation": ["SW"], "semantic_text": "тихо"},
+        ensure_ascii=False))
+
+
+def _run_orientation_search(conn, monkeypatch, coverage):
+    """Прогон запроса с ориентацией; coverage подменяет подсчёт покрытия —
+    либо парой (with_data, total), либо исключением."""
+    def fake_coverage(_conn, _city):
+        if isinstance(coverage, Exception):
+            raise coverage
+        return coverage
+    monkeypatch.setattr("habitus.online.pipeline.orientation_coverage",
+                        fake_coverage)
+    llm = FakeLLM([_orient_parse_resp(), _explain_resp()])
+    return run_search("окна на юго-запад", conn, llm=llm, model=FakeModel(),
+                      reranker=FakeReranker())
+
+
+def test_orientation_note_reports_measured_coverage(conn, monkeypatch):
+    resp = _run_orientation_search(conn, monkeypatch, (64, 3291))
+    assert len(resp.notes) == 1
+    note = resp.notes[0]
+    assert "64" in note and "3291" in note and "1.9%" in note
+    assert "предпочтение" in note
+
+
+def test_orientation_note_absent_when_nothing_to_count(conn, monkeypatch):
+    # total=0 — процент не из чего считать; выдуманного «0%» быть не должно
+    resp = _run_orientation_search(conn, monkeypatch, (0, 0))
+    assert resp.notes == []
+
+
+def test_orientation_note_absent_when_count_fails(conn, monkeypatch):
+    # сбой подсчёта не роняет поиск и не сочиняет цифру
+    resp = _run_orientation_search(conn, monkeypatch,
+                                   RuntimeError("БД недоступна"))
+    assert resp.notes == []
+    assert resp.results or resp.results == []      # поиск отработал, без 500
+
+
+def test_no_orientation_in_query_no_note(conn):
+    # заметка про покрытие появляется только когда пользователь про окна спросил
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", conn, llm=llm, model=FakeModel(),
+                      reranker=FakeReranker())
+    assert resp.notes == []

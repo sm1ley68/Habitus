@@ -84,7 +84,8 @@ async def explain_stream_endpoint(req: ExplainRequest) -> StreamingResponse:
             llm = AsyncOpenRouterLLM()
 
         parts: list[str] = []
-        async for event in explain_stream(req.query, req.results, req.relaxed, llm):
+        async for event in explain_stream(req.query, req.results, req.relaxed,
+                                          llm, notes=req.notes):
             if "token" in event:
                 parts.append(event["token"])
                 yield _sse("token", {"token": event["token"]})

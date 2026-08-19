@@ -67,9 +67,12 @@ def _orientation_bonus(pq: ParsedQuery, candidates: list[Candidate]) -> list[flo
     у кандидата — не штраф и не бонус, а 0: неизвестно, не «плохая ориентация»."""
     if not pq.window_orientation:
         return [0.0] * len(candidates)
-    requested = set(pq.window_orientation)
+    # верхний регистр с обеих сторон: то же сравнение в dossier.py приводит
+    # значения из БД к .upper(), и расходиться этим двум местам незачем
+    requested = {d.upper() for d in pq.window_orientation}
     bonus = settings.orientation_weight
-    return [bonus if requested & set(c.facts.get("window_orientation") or ())
+    return [bonus if requested & {d.upper() for d in
+                                  (c.facts.get("window_orientation") or ())}
             else 0.0 for c in candidates]
 
 
@@ -153,9 +156,12 @@ def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,
             return candidates[:n]
         score_norm = _minmax([c.score for c in candidates])
         blended = [s + o for s, o in zip(score_norm, orient_bonus)]
-        order = sorted(zip(candidates, blended),
-                       key=lambda cb: (-cb[1], cb[0].external_id))
-        return [replace(c, score=float(b)) for c, b in order[:n]]
+        # тай-брейк по входному индексу, а не по external_id: на деградированном
+        # пути (filter_only_search — все score равны, порядок по updated_at)
+        # алфавит подменил бы свежесть выдачи
+        order = sorted(enumerate(zip(candidates, blended)),
+                       key=lambda icb: (-icb[1][1], icb[0]))
+        return [replace(c, score=float(b)) for _, (c, b) in order[:n]]
 
     raws = [_proximity_raw(pq, c) for c in candidates]
     known = [r for r in raws if r is not None]

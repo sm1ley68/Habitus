@@ -125,7 +125,10 @@ def orientation_coverage(conn: psycopg.Connection, city: str | None) -> tuple[in
     where, params = build_where(ParsedQuery(), city=city)
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT count(*) FILTER (WHERE window_orientation IS NOT NULL), "
+            # cardinality > 0, а не IS NOT NULL: пустой массив — то же «данных
+            # нет», что и NULL (так же считает habitus/clean/windows.py), и
+            # бонуса в _orientation_bonus он никогда не получит.
+            f"SELECT count(*) FILTER (WHERE cardinality(window_orientation) > 0), "
             f"count(*) FROM listings WHERE {where};", params)
         with_data, total = cur.fetchone()
     return int(with_data), int(total)

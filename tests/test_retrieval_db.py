@@ -3,7 +3,8 @@ import pytest
 from habitus.config import settings
 from habitus.db.init_db import init_db
 from habitus.embed.encode import SPARSE_DIM, to_sparsevec_literal
-from habitus.online.retrieval import filter_only_search, hybrid_search
+from habitus.online.retrieval import (filter_only_search, hybrid_search,
+                                      orientation_coverage)
 from habitus.online.schema import GeoConstraint, ParsedQuery
 
 DIM = 1024
@@ -111,3 +112,58 @@ def test_facts_carry_address_and_station(conn):
     a = next(c for c in cands if c.external_id == "A")
     assert a.facts["address"] == "Москва, Хамовники, Комсомольский проспект"
     assert a.facts["metro_station"] == "Парк культуры"
+
+
+@pytest.fixture
+def coverage_conn():
+    """Свой срез под замер покрытия: ориентация есть не у всех, плюс строки,
+    которые в срез попадать не должны (неактивная и другой город)."""
+    rows = [
+        ("CA", True, "msk", ["SW"]),
+        ("CB", True, "msk", ["N", "E"]),
+        ("CC", True, "msk", None),        # данных нет
+        ("CD", True, "msk", []),          # пустой массив — тоже «данных нет»
+        ("CE", False, "msk", ["SW"]),     # неактивна — вне среза
+        ("CF", True, "spb", ["SW"]),      # другой город — вне среза
+    ]
+    with psycopg.connect(settings.db_dsn) as c:
+        init_db(c)
+        with c.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            for eid, active, city, orient in rows:
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active, city,
+                           price, rooms, area, window_orientation, doc_text)
+                       VALUES (%s,'test',%s,%s,10000000,2,50,%s,%s);""",
+                    (eid, active, city, orient, f"объект {eid}"))
+        c.commit()
+        yield c
+
+
+def test_orientation_coverage_counts_only_rows_with_data(coverage_conn):
+    # Порядок значений в кортеже важен: перевёрнутый дал бы «4 из 2».
+    with_data, total = orientation_coverage(coverage_conn, "msk")
+    assert (with_data, total) == (2, 4)
+
+
+def test_orientation_coverage_treats_empty_array_as_no_data(coverage_conn):
+    # Пустой массив — то же «данных нет», что NULL (так же считает clean/windows.py):
+    # бонуса в proximity_rerank такая строка не получит, значит и в честную
+    # цифру покрытия попадать не должна.
+    with coverage_conn.cursor() as cur:
+        cur.execute("UPDATE listings SET window_orientation='{}' "
+                    "WHERE external_id IN ('CA','CB');")
+    coverage_conn.commit()
+    with_data, _ = orientation_coverage(coverage_conn, "msk")
+    assert with_data == 0
+
+
+def test_orientation_coverage_empty_city_slice_reports_zero_total(coverage_conn):
+    # Города без объявлений: total=0 — пайплайн на этом обязан не сочинять
+    # процент, а вообще не добавлять заметку.
+    with_data, total = orientation_coverage(coverage_conn, "spb")
+    assert with_data == 1 and total == 1
+    with coverage_conn.cursor() as cur:
+        cur.execute("DELETE FROM listings WHERE city='spb';")
+    coverage_conn.commit()
+    assert orientation_coverage(coverage_conn, "spb") == (0, 0)

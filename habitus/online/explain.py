@@ -76,7 +76,8 @@ def build_messages(query: str, results: list[ResultItem], relaxed: list[str],
 
 async def explain_stream(query: str, results: list[ResultItem],
                          relaxed: list[str],
-                         llm: AsyncStreamLLMClient | None) -> AsyncIterator[dict]:
+                         llm: AsyncStreamLLMClient | None,
+                         notes: list[str] | None = None) -> AsyncIterator[dict]:
     """Поток объяснения: {"token": …} … затем {"done": True, "llm_ok": bool}.
 
     Обрыв ДО первого токена ничем не отличается от отсутствия LLM — отдаём
@@ -87,8 +88,9 @@ async def explain_stream(query: str, results: list[ResultItem],
     delivered = False
     if llm is not None:
         try:
-            async for chunk in llm.stream(build_messages(query, results, relaxed),
-                                          temperature=0.0):
+            async for chunk in llm.stream(
+                    build_messages(query, results, relaxed, notes),
+                    temperature=0.0):
                 if not chunk:
                     continue
                 delivered = True

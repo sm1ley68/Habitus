@@ -79,3 +79,15 @@ def test_stream_relaxations_reach_the_prompt():
     collect(explain_stream("q", [_item()], ["бюджет: 10000000→11500000 (+15%)"], fake))
 
     assert "ОСЛАБЛЕНО: бюджет" in fake.calls[0]["messages"][-1]["content"]
+
+
+def test_stream_notes_reach_the_prompt():
+    # Штатный продовый путь объяснения — потоковый, и честное примечание про
+    # покрытие данных должно доезжать до модели именно здесь, а не только в
+    # синхронном explain.
+    fake = FakeStreamLLM(["ок"])
+    note = ("данные об ориентации окон есть у 64 из 3291 объявлений (1.9%) — "
+            "учли как предпочтение, а не как фильтр")
+    collect(explain_stream("q", [_item()], [], fake, notes=[note]))
+
+    assert "ПРИМЕЧАНИЕ: " + note in fake.calls[0]["messages"][-1]["content"]

@@ -147,6 +147,9 @@ class ExplainRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     results: list[ResultItem] = []
     relaxed: list[str] = []
+    # честные примечания из того же /search (например реальное покрытие данных
+    # об ориентации окон) — без них потоковое объяснение не знает о них вовсе
+    notes: list[str] = []
 
 
 class LineStringGeometry(BaseModel):
