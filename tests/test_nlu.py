@@ -1,8 +1,8 @@
 import json
 import pytest
 from habitus.online.llm import FakeLLM, LLMResponse
-from habitus.online.nlu import (PARSE_TOOL, ParseError, merge_parsed,
-                                parse_query, parse_turn)
+from habitus.online.nlu import (PARSE_TOOL, SYSTEM_PROMPT, ParseError,
+                                merge_parsed, parse_query, parse_turn)
 from habitus.online.schema import ParsedQuery, ParsedTurn
 
 
@@ -90,6 +90,8 @@ def test_parse_turn_without_prev_equivalent_to_parse_query():
     # не submit_parsed_turn: классифицировать intent без prev нечего)
     call = fake.calls[0]
     assert call["tools"][0]["function"]["name"] == "submit_parsed_query"
+    # ровно SYSTEM_PROMPT: правила multi-turn в эту ветку подмешиваться не должны
+    assert call["messages"][0]["content"] == SYSTEM_PROMPT
 
 
 def test_parse_turn_with_prev_uses_turn_tool_and_prev_in_prompt():
@@ -152,8 +154,48 @@ def test_merge_parsed_nonempty_semantic_text_replaces_prev():
     assert merged.semantic_text == "с видом"
 
 
-def test_merge_parsed_lang_always_from_turn():
+def test_merge_parsed_explicit_lang_replaces_prev():
     prev = ParsedQuery(lang="ru")
     turn = ParsedTurn(intent="refine", query=ParsedQuery(lang="en"))
     merged = merge_parsed(prev, turn)
     assert merged.lang == "en"
+
+
+def test_merge_parsed_absent_lang_keeps_prev():
+    # Промпт правки велит присылать только изменившиеся поля, поэтому
+    # отсутствие lang в реплике не должно откатывать сессию на дефолтный "ru".
+    prev = ParsedQuery(lang="en", price_max=20_000_000)
+    turn = ParsedTurn.model_validate({"intent": "refine",
+                                      "query": {"price_max": 15_000_000}})
+    merged = merge_parsed(prev, turn)
+    assert merged.lang == "en"
+
+
+def test_merge_parsed_empty_list_does_not_clear_prev_rooms():
+    # Пустой список от LLM — не «сбросить фильтр»: для сброса есть cleared_fields.
+    prev = ParsedQuery(rooms=[2], window_orientation=["SW"], stop_factors=["bars"])
+    turn = ParsedTurn(intent="refine",
+                      query=ParsedQuery(rooms=[], window_orientation=[],
+                                        stop_factors=[]))
+    merged = merge_parsed(prev, turn)
+    assert merged.rooms == [2]
+    assert merged.window_orientation == ["SW"]
+    assert merged.stop_factors == ["bars"]
+
+
+def test_merge_parsed_cleared_field_still_resets_list_field():
+    # Обратная сторона предыдущего теста: явный сброс списка обязан работать.
+    prev = ParsedQuery(rooms=[2])
+    turn = ParsedTurn(intent="refine", cleared_fields=["rooms"])
+    merged = merge_parsed(prev, turn)
+    assert merged.rooms is None
+
+
+def test_merge_parsed_followup_keeps_prev_unchanged():
+    # На эту ветку опирается шлюз: followup — вопрос про уже показанную выдачу,
+    # параметры поиска меняться не должны.
+    prev = ParsedQuery(price_max=20_000_000, rooms=[2], noise_max="low",
+                       semantic_text="тихий двор", lang="en")
+    turn = ParsedTurn(intent="followup")
+    merged = merge_parsed(prev, turn)
+    assert merged == prev

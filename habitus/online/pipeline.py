@@ -49,7 +49,9 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
             try:
                 with trace.span("parse"):
                     turn = parse_turn(query, llm, prev_parsed)
-                pq = merge_parsed(prev_parsed or ParsedQuery(), turn)
+                pq = merge_parsed(
+                    prev_parsed if prev_parsed is not None else ParsedQuery(),
+                    turn)
                 intent = turn.intent
                 if prev_parsed is None:
                     parse_cache.put(query, pq)

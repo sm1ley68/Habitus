@@ -1,8 +1,11 @@
 # habitus/online/nlu.py — Linguistic Agent: свободный текст → ParsedQuery /
 # ParsedTurn (намерение реплики + разбор с учётом предыдущего шага диалога)
+from typing import TypeVar
 from pydantic import BaseModel, ValidationError
 from habitus.online.llm import LLMClient
 from habitus.online.schema import ParsedQuery, ParsedTurn
+
+M = TypeVar("M", bound=BaseModel)
 
 
 class ParseError(RuntimeError):
@@ -106,8 +109,8 @@ TURN_TOOL = {
 
 
 def _complete_with_retries(messages: list[dict], tool: dict,
-                           model_cls: type[BaseModel], llm: LLMClient,
-                           max_retries: int) -> BaseModel:
+                           model_cls: type[M], llm: LLMClient,
+                           max_retries: int) -> M:
     """Общий цикл parse_query/parse_turn: вызов LLM с tool-схемой,
     невалидный ответ — текст ошибки обратно модели."""
     last_err = ""
@@ -168,11 +171,11 @@ def merge_parsed(prev: ParsedQuery, turn: ParsedTurn) -> ParsedQuery:
 
     Правила (см. бриф задачи):
     - intent == "new_search" → turn.query целиком, prev не участвует.
-    - иначе — prev как база; поверх накладываются поля turn.query, чьё
-      значение не дефолтное (не None и не пустые список/строка); поля из
+    - иначе — prev как база; поверх накладываются поля turn.query с
+      содержательным значением (не None и не пустые список/строка); поля из
       turn.cleared_fields сбрасываются в дефолт ParsedQuery; semantic_text —
-      непустой новый заменяет старый, пустой сохраняет старый; lang всегда
-      берётся из turn.query.
+      непустой новый заменяет старый, пустой сохраняет старый; lang заменяется
+      только если реплика прислала его явно.
     """
     if turn.intent == "new_search":
         return turn.query
@@ -184,13 +187,19 @@ def merge_parsed(prev: ParsedQuery, turn: ParsedTurn) -> ParsedQuery:
     for name, value in turn_fields.items():
         if name in ("semantic_text", "lang"):
             continue      # у этих полей своё правило — обрабатываются ниже
-        if value != defaults[name]:
-            merged[name] = value
+        # Пустое значение — это не «сбросить ограничение»: для сброса есть
+        # cleared_fields. Иначе `{"rooms": []}` от LLM молча снял бы фильтр.
+        if value is None or value == [] or value == "":
+            continue
+        merged[name] = value
 
     if turn_fields["semantic_text"]:
         merged["semantic_text"] = turn_fields["semantic_text"]
 
-    merged["lang"] = turn_fields["lang"]
+    # Промпт правки велит присылать только изменившиеся поля, поэтому дефолтный
+    # "ru" в разборе реплики означает «языка не было», а не «переключись на ru».
+    if "lang" in turn.query.model_fields_set:
+        merged["lang"] = turn_fields["lang"]
 
     for field_name in turn.cleared_fields:
         merged[field_name] = defaults[field_name]

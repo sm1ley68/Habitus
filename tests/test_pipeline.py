@@ -265,6 +265,28 @@ def test_run_search_with_prev_parsed_refine_searches_by_merged_query(conn):
     assert resp.results        # фикстура (price=10 млн) проходит по слитому фильтру
 
 
+def test_prev_parsed_bypasses_parse_cache(conn):
+    # Кэш разбора ключуется одним текстом реплики, поэтому при multi-turn он
+    # обязан быть выключен: одна и та же реплика с разным prev даёт разный
+    # разбор, а закэшированный ответ подменил бы его чужим.
+    prev_a = ParsedQuery(price_max=20_000_000, rooms=[2])
+    prev_b = ParsedQuery(price_max=20_000_000, rooms=[3])
+    turn_resp = LLMResponse(content=None, tool_arguments=json.dumps(
+        {"intent": "refine", "query": {"price_max": 12_000_000}},
+        ensure_ascii=False))
+
+    llm_a = FakeLLM([turn_resp, _explain_resp()])
+    resp_a = run_search("подешевле", conn, llm=llm_a, model=FakeModel(),
+                        reranker=FakeReranker(), prev_parsed=prev_a)
+    llm_b = FakeLLM([turn_resp, _explain_resp()])
+    resp_b = run_search("подешевле", conn, llm=llm_b, model=FakeModel(),
+                        reranker=FakeReranker(), prev_parsed=prev_b)
+
+    assert resp_a.parsed.rooms == [2]
+    assert resp_b.parsed.rooms == [3]     # не подменён кэшем от первого вызова
+    assert parse_cache.get("подешевле") is None   # и в кэш ничего не легло
+
+
 def test_no_llm_with_prev_parsed_degrades_to_new_search(conn):
     prev = ParsedQuery(price_max=20_000_000, rooms=[2])
     resp = run_search("подешевле", conn, llm=None, model=FakeModel(),
