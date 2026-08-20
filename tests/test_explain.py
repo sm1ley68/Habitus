@@ -1,6 +1,6 @@
 from habitus.config import settings
-from habitus.online.explain import (GROUNDED_SYSTEM, explain, facts_block,
-                                    template_explanation)
+from habitus.online.explain import (GROUNDED_SYSTEM, cache_key, explain,
+                                    facts_block, template_explanation)
 from habitus.online.llm import FakeLLM, LLMResponse
 from habitus.online.schema import ResultItem
 
@@ -104,3 +104,20 @@ def test_prompt_allows_address_but_still_forbids_invented_geography():
 
 def test_prompt_mentions_notes_instruction():
     assert "ПРИМЕЧАНИЕ" in GROUNDED_SYSTEM
+
+
+def test_cache_key_ignores_tail_beyond_page():
+    # Объяснение считается по первым rerank_top_n объектам, значит и ключ кэша
+    # обязан: одинаковая первая страница с разным хвостом — тот же текст, и
+    # промахиваться мимо кэша не за что.
+    head = [_item(f"A{i}") for i in range(settings.rerank_top_n)]
+    tail_a = head + [_item("X1"), _item("X2")]
+    tail_b = head + [_item("Y1")]
+    assert cache_key("q", tail_a) == cache_key("q", tail_b) == cache_key("q", head)
+
+
+def test_cache_key_distinguishes_different_pages():
+    # Обратная сторона: разная первая страница — разный ключ.
+    a = [_item(f"A{i}") for i in range(settings.rerank_top_n)]
+    b = [_item(f"B{i}") for i in range(settings.rerank_top_n)]
+    assert cache_key("q", a) != cache_key("q", b)

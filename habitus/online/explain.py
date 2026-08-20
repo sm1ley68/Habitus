@@ -68,8 +68,14 @@ def template_explanation(results: list[ResultItem], relaxed: list[str]) -> str:
 
 def cache_key(query: str, results: list[ResultItem]) -> str:
     """Ключ кэша объяснений — общий для /search и /explain/stream, чтобы текст,
-    посчитанный одним путём, доставался второму без повторного вызова LLM."""
-    return query + "|" + ",".join(r.external_id for r in results)
+    посчитанный одним путём, доставался второму без повторного вызова LLM.
+
+    Ключ считается по тем же первым rerank_top_n объектам, что реально уезжают
+    в промпт (build_messages): выдача теперь до result_max_n объектов, и хвост
+    за первой страницей на текст не влияет — учитывать его в ключе значит
+    промахиваться мимо кэша при идентичном ответе."""
+    head = results[: settings.rerank_top_n]
+    return query + "|" + ",".join(r.external_id for r in head)
 
 
 def build_messages(query: str, results: list[ResultItem], relaxed: list[str],
