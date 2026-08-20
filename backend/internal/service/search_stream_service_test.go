@@ -349,3 +349,29 @@ func TestSearchRequestSkipsSynchronousExplanation(t *testing.T) {
 		t.Fatalf("request = %#v", got)
 	}
 }
+
+func TestHistoryObjectIDsKeepsOnlyFirstPage(t *testing.T) {
+	// В chat_search_results уходит весь пул, но история чата обязана
+	// восстанавливать тот же первый экран, что видел пользователь в потоке.
+	all := makeFinalResultObjects(23)
+	ids := make([]string, len(all))
+	for i, o := range all {
+		ids[i] = o.ID
+	}
+
+	got := historyObjectIDs(ids)
+
+	if len(got) != resultPageSize {
+		t.Fatalf("len = %d; want %d", len(got), resultPageSize)
+	}
+	if got[0] != ids[0] || got[len(got)-1] != ids[resultPageSize-1] {
+		t.Fatalf("meta должна быть точным префиксом выдачи: %v", got)
+	}
+}
+
+func TestHistoryObjectIDsKeepsShortListIntact(t *testing.T) {
+	ids := []string{"A", "B", "C"}
+	if got := historyObjectIDs(ids); len(got) != 3 {
+		t.Fatalf("len = %d; want 3 — короткий список режется зря", len(got))
+	}
+}

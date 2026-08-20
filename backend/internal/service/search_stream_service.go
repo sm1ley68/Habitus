@@ -511,6 +511,17 @@ func paginateFinalResult(all []FinalResultObject) (shown []FinalResultObject, to
 	return all[:resultPageSize], total, true
 }
 
+// historyObjectIDs — что кладём в meta ассистентского сообщения. Только первая
+// страница: восстановленное из истории сообщение обязано показывать тот же
+// первый экран, что пользователь видел в потоке, а не весь сохранённый пул
+// (Task 7). Остальное поднимает «показать ещё» из chat_search_results.
+func historyObjectIDs(objectIDs []string) []string {
+	if len(objectIDs) > resultPageSize {
+		return objectIDs[:resultPageSize]
+	}
+	return objectIDs
+}
+
 func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uuid.UUID, rawQuery string, resp *client.SearchResponse, objectIDs []string, matchScores map[string]int) {
 	searchID, err := s.searches.InsertSearch(ctx, domain.ChatSearch{
 		ChatID: chatID, MessageID: &userMsgID, RawQuery: rawQuery,
@@ -538,7 +549,7 @@ func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uui
 		})
 	}
 
-	meta := map[string]any{"suggested_object_ids": objectIDs}
+	meta := map[string]any{"suggested_object_ids": historyObjectIDs(objectIDs)}
 	_, _ = s.messages.Insert(ctx, chatID, "assistant", resp.Explanation, meta)
 	_ = s.chats.Touch(ctx, chatID)
 }
