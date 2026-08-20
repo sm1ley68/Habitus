@@ -29,8 +29,10 @@ type RateLimiter struct {
 	requests map[uuid.UUID][]time.Time
 }
 
-// NewRateLimiter — limit <= 0 трактуется как «ничего не пропускать»: кривая
-// переменная окружения не должна молча снимать лимит.
+// NewRateLimiter — limit <= 0 трактуется как «ничего не пропускать»: сам по
+// себе лимитер не должен молча превращаться в заглушку. Проводка в app.go при
+// этом подставляет дефолт вместо неположительного значения из конфига, так что
+// из HTTP эта ветка недостижима — она страхует прямое конструирование.
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 	return &RateLimiter{
 		limit: limit, window: window, now: time.Now,
@@ -58,7 +60,7 @@ func (r *RateLimiter) Allow(userID uuid.UUID) (allowed bool, retryAfter time.Dur
 	}
 
 	if r.limit <= 0 || len(kept) >= r.limit {
-		r.requests[userID] = kept
+		r.setWindow(userID, kept)
 		if len(kept) == 0 {
 			return false, r.window
 		}
@@ -68,8 +70,28 @@ func (r *RateLimiter) Allow(userID uuid.UUID) (allowed bool, retryAfter time.Dur
 	}
 
 	kept = append(kept, now)
-	r.requests[userID] = kept
+	r.setWindow(userID, kept)
 	return true, 0
+}
+
+// setWindow сохраняет окно пользователя, удаляя запись целиком, когда окно
+// опустело: иначе карта монотонно растёт по числу когда-либо заходивших
+// пользователей и за месяцы аптайма превращается в медленную течь памяти.
+// Вызывается под уже взятым r.mu.
+func (r *RateLimiter) setWindow(userID uuid.UUID, window []time.Time) {
+	if len(window) == 0 {
+		delete(r.requests, userID)
+		return
+	}
+	r.requests[userID] = window
+}
+
+// Track — сколько пользователей сейчас в карте. Нужен тестам, чтобы проверить,
+// что окна вычищаются, а не копятся.
+func (r *RateLimiter) Track() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.requests)
 }
 
 // RateLimitLLM — middleware для LLM-ручек (POST .../messages/stream и

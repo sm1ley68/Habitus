@@ -21,11 +21,18 @@ import (
 func HTTPRequestsMiddleware(m *Metrics) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		err := c.Next()
-		if err == nil {
+		if err == nil && !selfObserving(c.Route().Path) {
 			m.IncHTTPRequest(c.Route().Path, strconv.Itoa(c.Response().StatusCode()))
 		}
 		return err
 	}
+}
+
+// selfObserving — служебные роуты не считаем: скрейп раз в 15 секунд и пробы
+// живости иначе навсегда доминируют в habitus_http_requests_total и прячут
+// реальный трафик API.
+func selfObserving(route string) bool {
+	return route == "/metrics" || route == "/health"
 }
 
 // MetricsHandler отдаёт GET /metrics — без авторизации, как /health (см.

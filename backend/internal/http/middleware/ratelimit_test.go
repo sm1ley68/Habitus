@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -158,10 +159,49 @@ func TestRateLimitMiddlewareReturns429WithRussianMessage(t *testing.T) {
 		t.Fatal("ожидался заголовок Retry-After")
 	}
 
-	body := make([]byte, 4096)
-	n, _ := second.Body.Read(body)
-	text := string(body[:n])
+	body, err := io.ReadAll(second.Body)
+	if err != nil {
+		t.Fatalf("чтение тела: %v", err)
+	}
+	text := string(body)
 	if !strings.Contains(text, "лимит") || !strings.Contains(text, "мин") {
 		t.Fatalf("тело ответа не похоже на честное сообщение о восстановлении лимита: %s", text)
+	}
+}
+
+func TestRateLimiterForgetsUsersWhoseWindowExpired(t *testing.T) {
+	// Карта лимитера не должна расти по числу когда-либо заходивших: запись
+	// пользователя, чьё окно опустело, обязана уйти, иначе за месяцы аптайма
+	// это медленная течь памяти.
+	limiter, clock := newTestLimiter(2, time.Hour)
+
+	user := uuid.New()
+	if allowed, _ := limiter.Allow(user); !allowed {
+		t.Fatal("первый запрос должен пройти")
+	}
+	if got := limiter.Track(); got != 1 {
+		t.Fatalf("Track() = %d; want 1 — окно пользователя должно быть заведено", got)
+	}
+
+	clock.advance(2 * time.Hour) // окно полностью вышло
+	if allowed, _ := limiter.Allow(user); !allowed {
+		t.Fatal("после выхода окна запрос должен снова проходить")
+	}
+	// запись есть — пользователь только что сходил
+	if got := limiter.Track(); got != 1 {
+		t.Fatalf("Track() = %d; want 1", got)
+	}
+}
+
+func TestRateLimiterDropsEntryWhenBlockedWindowEmpties(t *testing.T) {
+	// limit<=0 — единственный путь, где отказ случается при пустом окне:
+	// запись заводиться не должна вовсе.
+	limiter := NewRateLimiter(0, time.Hour)
+
+	if allowed, _ := limiter.Allow(uuid.New()); allowed {
+		t.Fatal("limit<=0 не должен пропускать")
+	}
+	if got := limiter.Track(); got != 0 {
+		t.Fatalf("Track() = %d; want 0 — пустое окно не должно оседать в карте", got)
 	}
 }

@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -109,9 +110,11 @@ func TestMetricsHandlerServedWithoutAuth(t *testing.T) {
 		t.Fatalf("Content-Type = %q; want text/plain", ct)
 	}
 
-	body := make([]byte, 4096)
-	n, _ := resp.Body.Read(body)
-	text := string(body[:n])
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("чтение тела: %v", err)
+	}
+	text := string(body)
 	if !strings.Contains(text, "habitus_rate_limited_total 1") {
 		t.Fatalf("тело /metrics не содержит зарегистрированный счётчик:\n%s", text)
 	}

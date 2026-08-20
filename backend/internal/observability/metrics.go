@@ -142,13 +142,15 @@ func formatFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
-// quoteLabel — минимальное экранирование значения метки Prometheus (кавычки и
-// обратный слэш). Значения меток в этом проекте — паттерны роутов, kind/layer/
-// stage/status, экзотических символов не бывает, но экранирование дешёвое и
-// делает формат корректным при любом вводе.
+// quoteLabel — экранирование значения метки Prometheus: обратный слэш,
+// кавычка и перевод строки, как требует text exposition. Перевод строки не
+// теоретический: layer и stage приходят из JSON-ответа ML (свободные
+// list[str]/dict[str, float]), а одна сырая \n в метке ломает разбор всего
+// ответа /metrics, а не одной серии.
 func quoteLabel(v string) string {
 	v = strings.ReplaceAll(v, `\`, `\\`)
 	v = strings.ReplaceAll(v, `"`, `\"`)
+	v = strings.ReplaceAll(v, "\n", `\n`)
 	return `"` + v + `"`
 }
 
