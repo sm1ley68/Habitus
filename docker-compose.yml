@@ -51,8 +51,13 @@ services:
         condition: service_healthy
       ml-model-cache:
         condition: service_completed_successfully
-    ports:
-      - "8000:8000"
+    # Порт 8000 наружу не пробрасывается (Task 8): ml-service — внутренний
+    # сервис, доступ к нему в обход Go-шлюза означал бы прямой доступ к
+    # БД-запросам и к оплаченному ключу OpenRouter без авторизации и без
+    # рейт-лимита. Внутри сети compose шлюз ходит к нему по имени сервиса
+    # (ML_SERVICE_URL=http://ml-service:8000), и это не требует publish.
+    # Для локальной отладки проброс можно добавить в
+    # docker-compose.override.yml (он gitignored и в репозиторий не попадает).
     healthcheck:
       # Model files are downloaded by ml-model-cache. The Go backend performs
       # one synchronous /search before opening its HTTP listener so this

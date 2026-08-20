@@ -16,6 +16,7 @@ import (
 	"habitus-backend/internal/apperr"
 	"habitus-backend/internal/client"
 	"habitus-backend/internal/domain"
+	"habitus-backend/internal/observability"
 	"habitus-backend/internal/repository"
 )
 
@@ -491,11 +492,13 @@ func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID,
 	}
 	mlCtx, cancel := context.WithTimeout(ctx, s.mlTimeout)
 	defer cancel()
+	callStart := time.Now()
 	response, err := s.ml.Dossier(mlCtx, client.DossierRequest{
 		ObjectID: objectID, City: city, RawQuery: search.RawQuery,
 		ParsedQuery: search.ParsedQuery, Relaxed: nonNilStrings(search.Relaxed),
 		Degraded: nonNilStrings(search.Degraded),
 	})
+	observability.Default.ObserveMLCall("dossier", time.Since(callStart).Seconds())
 	if err != nil || response.SchemaVersion != DossierSchemaVersion {
 		return DossierPayload{}, false
 	}

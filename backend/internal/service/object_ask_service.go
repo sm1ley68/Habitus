@@ -11,6 +11,7 @@ import (
 
 	"habitus-backend/internal/client"
 	"habitus-backend/internal/http/sse"
+	"habitus-backend/internal/observability"
 	"habitus-backend/internal/repository"
 )
 
@@ -87,9 +88,11 @@ func (s *ObjectAskService) Run(ctx context.Context, chatID uuid.UUID, objectID,
 	defer cancel()
 	outcomeCh := make(chan objectAskOutcome, 1)
 	go func() {
+		callStart := time.Now()
 		response, askErr := s.ml.AskObject(mlCtx, client.ObjectAskRequest{
 			Question: question, Passport: passportMap, SearchContext: searchContext,
 		})
+		observability.Default.ObserveMLCall("object_ask", time.Since(callStart).Seconds())
 		outcomeCh <- objectAskOutcome{response: response, err: askErr}
 	}()
 

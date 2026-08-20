@@ -83,6 +83,11 @@ type SearchResponse struct {
 	// Пустая строка равнозначна отсутствию поля в ответе — до значения по
 	// умолчанию его сама ML не заполняет.
 	Intent string `json:"intent"`
+	// Timings — мс по стадиям пайплайна (Task 1 ML: parse/encode/resolve_area/
+	// retrieval/rerank/explain), см. habitus/online/trace.py. Стадия, которая
+	// не выполнилась в этом запросе, в словаре отсутствует — нулей вместо
+	// отсутствующего замера здесь так же не бывает, как и на стороне ML.
+	Timings map[string]float64 `json:"timings"`
 }
 
 type PointConstraint struct {

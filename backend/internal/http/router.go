@@ -7,6 +7,7 @@ import (
 
 	"habitus-backend/internal/http/handlers"
 	"habitus-backend/internal/http/middleware"
+	"habitus-backend/internal/observability"
 	"habitus-backend/internal/service"
 )
 
@@ -20,8 +21,12 @@ type Handlers struct {
 	Results   *handlers.ResultsHandler
 }
 
-func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService) {
+// rateLimitLLM применяется только к двум ручкам, которые реально жгут бюджет
+// LLM (messages/stream, ask/stream) — остальной API рейт-лимит не трогает
+// (прямое требование брифа Task 8).
+func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, rateLimitLLM fiber.Handler) {
 	app.Get("/health", handlers.Health)
+	app.Get("/metrics", observability.MetricsHandler(observability.Default))
 
 	api := app.Group("/api/v1")
 
@@ -38,11 +43,11 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService) {
 	api.Patch("/chats/:chat_id", authMw, h.Chat.Rename)
 	api.Delete("/chats/:chat_id", authMw, h.Chat.Delete)
 	api.Get("/chats/:chat_id/messages", authMw, h.Chat.Messages)
-	api.Post("/chats/:chat_id/messages/stream", authMw, h.Stream.PostMessagesStream)
+	api.Post("/chats/:chat_id/messages/stream", authMw, rateLimitLLM, h.Stream.PostMessagesStream)
 	api.Get("/chats/:chat_id/results", authMw, h.Results.List)
 
 	api.Get("/objects/:object_id", authMw, h.Object.Get)
-	api.Post("/objects/:object_id/ask/stream", authMw, h.ObjectAsk.PostStream)
+	api.Post("/objects/:object_id/ask/stream", authMw, rateLimitLLM, h.ObjectAsk.PostStream)
 
 	api.Get("/geo/layers", authMw, h.Geo.Layers)
 	api.Get("/geo/listings", authMw, h.Geo.Listings)

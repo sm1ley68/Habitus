@@ -28,6 +28,9 @@ type Settings struct {
 	// старше этого числа часов кэш считается протухшим и досье перезапрашивается
 	// у ML, как при отсутствии кэша.
 	DossierTTLHours int
+	// RateLimitLLMPerHour — Task 8: сколько раз за скользящий час один
+	// пользователь может дёрнуть LLM-ручки (messages/stream, ask/stream).
+	RateLimitLLMPerHour int
 }
 
 func Load() Settings {
@@ -48,6 +51,7 @@ func Load() Settings {
 		StaticDir:           getenv("STATIC_DIR", "static"),
 		BodyLimitBytes:      getenvInt("BODY_LIMIT_BYTES", 1<<20),
 		DossierTTLHours:     getenvInt("DOSSIER_TTL_HOURS", 24),
+		RateLimitLLMPerHour: getenvInt("RATE_LIMIT_LLM_PER_HOUR", 30),
 	}
 }
 

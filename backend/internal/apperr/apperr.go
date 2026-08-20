@@ -43,3 +43,7 @@ func ObjectStreamInProgress() *Error {
 func Internal(message string) *Error {
 	return New(http.StatusInternalServerError, "internal_error", message)
 }
+
+func RateLimited(message string) *Error {
+	return New(http.StatusTooManyRequests, "rate_limited", message)
+}

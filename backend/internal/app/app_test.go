@@ -69,3 +69,26 @@ func TestHealthIsServedWithoutAuth(t *testing.T) {
 		t.Fatalf("status = %d; want 200", resp.StatusCode)
 	}
 }
+
+// GET /metrics — как /health, без авторизации (Task 8).
+func TestMetricsIsServedWithoutAuth(t *testing.T) {
+	resp, err := testApp(1 << 20).app.Test(httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if err != nil {
+		t.Fatalf("Test() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; want 200", resp.StatusCode)
+	}
+}
+
+// Появление /metrics и рейт-лимита не ослабило остальной API: защищённый
+// роут по-прежнему требует сессию.
+func TestProtectedRouteStillRequiresAuth(t *testing.T) {
+	resp, err := testApp(1 << 20).app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/me", nil))
+	if err != nil {
+		t.Fatalf("Test() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d; want 401", resp.StatusCode)
+	}
+}

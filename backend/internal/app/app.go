@@ -13,6 +13,7 @@ import (
 	httpapi "habitus-backend/internal/http"
 	"habitus-backend/internal/http/handlers"
 	"habitus-backend/internal/http/middleware"
+	"habitus-backend/internal/observability"
 	"habitus-backend/internal/service"
 )
 
@@ -30,9 +31,10 @@ type Services struct {
 // ответа), поэтому WriteTimeout здесь намеренно НЕ задан: он оборвал бы
 // живой поиск на середине потока. Бюджет ответа держит контекст стрима.
 const (
-	readTimeout  = 15 * time.Second
-	idleTimeout  = 75 * time.Second
-	bodyLimitDef = 1 << 20
+	readTimeout         = 15 * time.Second
+	idleTimeout         = 75 * time.Second
+	bodyLimitDef        = 1 << 20
+	rateLimitPerHourDef = 30
 )
 
 func New(cfg config.Settings, svc Services) *fiber.App {
@@ -55,8 +57,21 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		AllowHeaders:     "Content-Type",
 		AllowMethods:     "GET,POST,PATCH,DELETE,OPTIONS",
 	}))
+	// habitus_http_requests_total (Task 8): считает завершившиеся без ошибки
+	// ответы; ошибочные (429/404/500/…) считает middleware.ErrorHandler — там
+	// известен итоговый статус, см. комментарий в observability/http_metrics.go.
+	app.Use(observability.HTTPRequestsMiddleware(observability.Default))
 
 	app.Static("/static", cfg.StaticDir)
+
+	// RateLimitLLMPerHour <= 0 — конфиг не задан (например, тест собирает
+	// config.Settings{} напрямую, минуя config.Load()) — тот же приём
+	// fallback'а, что у bodyLimit выше.
+	rateLimitPerHour := cfg.RateLimitLLMPerHour
+	if rateLimitPerHour <= 0 {
+		rateLimitPerHour = rateLimitPerHourDef
+	}
+	rateLimiter := middleware.NewRateLimiter(rateLimitPerHour, time.Hour)
 
 	httpapi.RegisterRoutes(app, httpapi.Handlers{
 		Auth:      handlers.NewAuthHandler(svc.Auth, cfg.SessionCookieSecure),
@@ -66,7 +81,7 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		ObjectAsk: handlers.NewObjectAskHandler(svc.Object, svc.ObjectAsk),
 		Geo:       handlers.NewGeoHandler(svc.GeoLayers),
 		Results:   handlers.NewResultsHandler(svc.Results),
-	}, svc.Auth)
+	}, svc.Auth, middleware.RateLimitLLM(rateLimiter))
 
 	return app
 }

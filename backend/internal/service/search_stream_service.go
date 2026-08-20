@@ -19,6 +19,7 @@ import (
 	"habitus-backend/internal/client"
 	"habitus-backend/internal/domain"
 	"habitus-backend/internal/http/sse"
+	"habitus-backend/internal/observability"
 	"habitus-backend/internal/repository"
 )
 
@@ -169,7 +170,9 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 
 	resultCh := make(chan mlOutcome, 1)
 	go func() {
+		callStart := time.Now()
 		resp, err := s.ml.Search(mlCtx, req)
+		observability.Default.ObserveMLCall("search", time.Since(callStart).Seconds())
 		resultCh <- mlOutcome{resp: resp, err: err}
 	}()
 
@@ -224,6 +227,19 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 		return
 	}
 	resp := outcome.resp
+
+	// habitus_ml_stage_seconds / habitus_ml_degraded_total (Task 8): считаем
+	// ровно то, что реально прислала ML в этом ответе — timings отдаёт мс
+	// только по выполнившимся стадиям (Task 1), degraded здесь читаем ДО
+	// того, как ниже к нему может добавиться "llm" за счёт отдельного отказа
+	// уже на стороне backend'а (см. withDegradation) — это не то, что вернула
+	// ML, публиковать как её деградацию нельзя.
+	for stage, ms := range resp.Timings {
+		observability.Default.ObserveMLStage(stage, ms/1000)
+	}
+	for _, layer := range resp.Degraded {
+		observability.Default.IncMLDegraded(layer)
+	}
 
 	if len(resp.Relaxed) > 0 {
 		if !s.emit(w, "agent_status", AgentStatusEvent{
@@ -344,6 +360,7 @@ func (s *SearchStreamService) streamExplanation(ctx context.Context, query strin
 
 	var text strings.Builder
 	alive := true
+	callStart := time.Now()
 	llmOK, err := s.ml.ExplainStream(explainCtx, client.ExplainRequest{
 		Query: query, Results: resp.Results, Relaxed: resp.Relaxed,
 		Notes: resp.Notes,
@@ -355,6 +372,7 @@ func (s *SearchStreamService) streamExplanation(ctx context.Context, query strin
 		text.WriteString(token)
 		return true
 	})
+	observability.Default.ObserveMLCall("explain", time.Since(callStart).Seconds())
 	if err != nil {
 		llmOK = false
 	}
