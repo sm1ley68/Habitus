@@ -63,12 +63,13 @@ func main() {
 		time.Duration(cfg.SessionSweepMinutes)*time.Minute)
 	chatService := service.NewChatService(chatRepo, messageRepo)
 	dossierTimeout := time.Duration(cfg.MLDossierTimeoutS) * time.Second
-	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo, mlClient, dossierTimeout)
+	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo, mlClient, dossierTimeout, cfg.DossierTTLHours)
 	objectAskTimeout := time.Duration(cfg.MLObjectAskTimeoutS) * time.Second
 	objectAskService := service.NewObjectAskService(chatSearchRepo, mlClient, objectAskTimeout)
 	geoLayersService := service.NewGeoLayersService(poiRepo, evidenceRepo, listingRepo)
 	explainTimeout := time.Duration(cfg.MLExplainTimeoutS) * time.Second
 	streamService := service.NewSearchStreamService(chatRepo, messageRepo, chatSearchRepo, listingRepo, mlClient, mlTimeout, explainTimeout)
+	resultsService := service.NewResultsService(chatService, chatSearchRepo, listingRepo)
 
 	fiberApp := app.New(cfg, app.Services{
 		Auth:      authService,
@@ -77,6 +78,7 @@ func main() {
 		Object:    objectService,
 		ObjectAsk: objectAskService,
 		GeoLayers: geoLayersService,
+		Results:   resultsService,
 	})
 
 	go func() {

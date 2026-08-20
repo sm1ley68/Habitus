@@ -6,6 +6,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -68,6 +69,24 @@ func (r *ListingRepo) GetByExternalID(ctx context.Context, id string) (domain.Li
 		return domain.Listing{}, errors.New("listing not found")
 	}
 	return l, nil
+}
+
+// GetUpdatedAt читает listings.updated_at одного объекта — нужен только чтобы
+// понять, протухло ли закэшированное досье (object_service.go, Task 7),
+// поэтому не тянет остальные колонки, как GetByExternalIDs. Объекта в
+// listings нет — (nil, nil): сравнивать не с чем, свежесть решает только TTL.
+func (r *ListingRepo) GetUpdatedAt(ctx context.Context, externalID string) (*time.Time, error) {
+	var updatedAt time.Time
+	err := r.pool.QueryRow(ctx,
+		`SELECT updated_at FROM listings WHERE external_id = $1`, externalID,
+	).Scan(&updatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &updatedAt, nil
 }
 
 // ListInBBox — объявления с координатами внутри вьюпорта, чтобы карта могла

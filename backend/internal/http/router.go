@@ -17,6 +17,7 @@ type Handlers struct {
 	Object    *handlers.ObjectHandler
 	ObjectAsk *handlers.ObjectAskHandler
 	Geo       *handlers.GeoHandler
+	Results   *handlers.ResultsHandler
 }
 
 func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService) {
@@ -38,6 +39,7 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService) {
 	api.Delete("/chats/:chat_id", authMw, h.Chat.Delete)
 	api.Get("/chats/:chat_id/messages", authMw, h.Chat.Messages)
 	api.Post("/chats/:chat_id/messages/stream", authMw, h.Stream.PostMessagesStream)
+	api.Get("/chats/:chat_id/results", authMw, h.Results.List)
 
 	api.Get("/objects/:object_id", authMw, h.Object.Get)
 	api.Post("/objects/:object_id/ask/stream", authMw, h.ObjectAsk.PostStream)

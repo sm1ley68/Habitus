@@ -45,3 +45,14 @@ func TestBodyLimitDefault(t *testing.T) {
 		t.Fatalf("BodyLimitBytes = %d; want %d", got, 1<<20)
 	}
 }
+
+func TestDossierTTLHoursDefaultAndOverride(t *testing.T) {
+	if got := Load().DossierTTLHours; got != 24 {
+		t.Fatalf("DossierTTLHours = %d; want 24", got)
+	}
+
+	t.Setenv("DOSSIER_TTL_HOURS", "6")
+	if got := Load().DossierTTLHours; got != 6 {
+		t.Fatalf("DossierTTLHours = %d; want 6", got)
+	}
+}

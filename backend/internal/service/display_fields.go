@@ -147,3 +147,37 @@ func BuildFinalResultObject(item client.ResultItem, rank int, degraded []string,
 		Tags:        BuildTags(item.AddressFacts),
 	}, true
 }
+
+// BuildStoredResultObject собирает карточку объекта из УЖЕ сохранённой строки
+// chat_search_results — «показать ещё» (Task 7). В отличие от
+// BuildFinalResultObject, процент совпадения не пересчитывается через
+// RescaleScore: берётся res.MatchScore, посчитанный и показанный при исходном
+// поиске, — на странице пагинации нет исходного ранга, а число обязано
+// совпасть с тем, что пользователь уже видел в первой странице.
+func BuildStoredResultObject(res domain.ChatSearchResult, listings map[string]domain.Listing) (FinalResultObject, bool) {
+	l, ok := listings[res.ExternalID]
+	if !ok || l.Lon == nil || l.Lat == nil {
+		return FinalResultObject{}, false
+	}
+	address := ""
+	if l.Address != nil {
+		address = *l.Address
+	}
+	cover := PlaceholderCoverImage
+	if len(l.Photos) > 0 && l.Photos[0] != "" {
+		cover = l.Photos[0]
+	}
+	return FinalResultObject{
+		ID:          res.ExternalID,
+		Name:        SynthName(l.Rooms, l.Area),
+		Address:     address,
+		CoverImage:  cover,
+		MatchScore:  res.MatchScore,
+		Coordinates: []float64{*l.Lon, *l.Lat},
+		PriceFrom:   l.Price,
+		Rooms:       l.Rooms,
+		AreaSqm:     l.Area,
+		Floor:       FormatFloor(l.Level, l.Levels),
+		Tags:        BuildTags(res.AddressFacts),
+	}, true
+}

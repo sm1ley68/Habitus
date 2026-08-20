@@ -119,6 +119,65 @@ func (r *ChatSearchRepo) GetResult(ctx context.Context, chatID uuid.UUID, extern
 	return res, nil
 }
 
+// ListResults отдаёт сохранённые объекты ПОСЛЕДНЕГО поиска чата постранично,
+// отсортированные по score DESC, external_id — «показать ещё» (Task 7): весь
+// набор из ответа ML уже лежит в chat_search_results, второй поход в ML не
+// нужен. Поисков в чате ещё не было — пустой список и total=0, не ошибка.
+func (r *ChatSearchRepo) ListResults(ctx context.Context, chatID uuid.UUID, limit, offset int) ([]domain.ChatSearchResult, int, error) {
+	var searchID uuid.UUID
+	err := r.pool.QueryRow(ctx, `
+		SELECT id FROM chat_searches
+		WHERE chat_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1`, chatID,
+	).Scan(&searchID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, 0, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var total int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT count(*) FROM chat_search_results
+		WHERE chat_id = $1 AND search_id = $2`, chatID, searchID,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT chat_id, external_id, search_id, price, area, rooms, address_facts,
+		       score, match_score, explanation, updated_at
+		FROM chat_search_results
+		WHERE chat_id = $1 AND search_id = $2
+		ORDER BY score DESC, external_id
+		LIMIT $3 OFFSET $4`, chatID, searchID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var out []domain.ChatSearchResult
+	for rows.Next() {
+		var res domain.ChatSearchResult
+		var factsJSON []byte
+		if err := rows.Scan(&res.ChatID, &res.ExternalID, &res.SearchID, &res.Price,
+			&res.Area, &res.Rooms, &factsJSON, &res.Score, &res.MatchScore,
+			&res.Explanation, &res.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		if len(factsJSON) > 0 {
+			_ = json.Unmarshal(factsJSON, &res.AddressFacts)
+		}
+		out = append(out, res)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
 func (r *ChatSearchRepo) GetSearch(ctx context.Context, id uuid.UUID) (domain.ChatSearch, error) {
 	var cs domain.ChatSearch
 	var parsedJSON []byte

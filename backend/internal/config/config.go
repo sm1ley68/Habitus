@@ -24,6 +24,10 @@ type Settings struct {
 	CORSAllowedOrigin   string
 	StaticDir           string
 	BodyLimitBytes      int
+	// DossierTTLHours — срок жизни кэша chat_search_results.dossier (Task 7):
+	// старше этого числа часов кэш считается протухшим и досье перезапрашивается
+	// у ML, как при отсутствии кэша.
+	DossierTTLHours int
 }
 
 func Load() Settings {
@@ -43,6 +47,7 @@ func Load() Settings {
 		CORSAllowedOrigin:   getenv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 		StaticDir:           getenv("STATIC_DIR", "static"),
 		BodyLimitBytes:      getenvInt("BODY_LIMIT_BYTES", 1<<20),
+		DossierTTLHours:     getenvInt("DOSSIER_TTL_HOURS", 24),
 	}
 }
 

@@ -256,6 +256,9 @@ type ObjectService struct {
 	listings  *repository.ListingRepo
 	ml        *client.MLClient
 	mlTimeout time.Duration
+	// ttlHours — срок жизни кэша chat_search_results.dossier (Task 7, config
+	// DossierTTLHours). Кэш старше этого числа часов считается протухшим.
+	ttlHours int
 
 	mu       sync.Mutex
 	inFlight map[string]*dossierCall
@@ -267,9 +270,10 @@ type dossierCall struct {
 }
 
 func NewObjectService(chats *ChatService, results *repository.ChatSearchRepo,
-	listings *repository.ListingRepo, ml *client.MLClient, mlTimeout time.Duration) *ObjectService {
+	listings *repository.ListingRepo, ml *client.MLClient, mlTimeout time.Duration,
+	ttlHours int) *ObjectService {
 	return &ObjectService{chats: chats, results: results, listings: listings,
-		ml: ml, mlTimeout: mlTimeout, inFlight: make(map[string]*dossierCall)}
+		ml: ml, mlTimeout: mlTimeout, ttlHours: ttlHours, inFlight: make(map[string]*dossierCall)}
 }
 
 func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUID, objectID string) (ObjectPassport, error) {
@@ -429,10 +433,36 @@ func decodeDossier(raw map[string]any) (DossierPayload, bool) {
 	return dossier, true
 }
 
+// dossierFresh — кэш досье годен, пока не истёк TTL И объект не обновлялся в
+// listings после того, как досье было посчитано (Task 7). Любое из двух
+// условий — повод перезапросить ML, а не молча отдать прошлогодний кэш:
+// данные объекта обновляются циклом сбора независимо от того, когда в чате
+// последний раз открывали его паспорт.
+func dossierFresh(dossierUpdatedAt, listingUpdatedAt *time.Time, ttlHours int, now time.Time) bool {
+	if dossierUpdatedAt == nil {
+		return false
+	}
+	if now.Sub(*dossierUpdatedAt) > time.Duration(ttlHours)*time.Hour {
+		return false
+	}
+	if listingUpdatedAt != nil && listingUpdatedAt.After(*dossierUpdatedAt) {
+		return false
+	}
+	return true
+}
+
 func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID, city string,
 	res domain.ChatSearchResult) (DossierPayload, bool) {
 	if res.DossierVersion == DossierSchemaVersion && res.Dossier != nil {
-		return decodeDossier(res.Dossier)
+		listingUpdatedAt, err := s.listings.GetUpdatedAt(ctx, objectID)
+		if err != nil {
+			// Не удалось сверить свежесть с listings — не считаем это поводом
+			// бить в ML: решаем по одному TTL, деградация мягкая.
+			listingUpdatedAt = nil
+		}
+		if dossierFresh(res.DossierUpdatedAt, listingUpdatedAt, s.ttlHours, time.Now()) {
+			return decodeDossier(res.Dossier)
+		}
 	}
 	key := chatID.String() + "\x00" + objectID
 	s.mu.Lock()

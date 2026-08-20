@@ -22,6 +22,12 @@ import (
 	"habitus-backend/internal/repository"
 )
 
+// resultPageSize — сколько объектов уходит в первую страницу final_result.
+// ML может отдать до result_max_n (Task 6, сейчас 30), но карточками первого
+// экрана показываем только первые resultPageSize — остальное из уже
+// сохранённого пула поднимает «показать ещё», GET /chats/{id}/results (Task 7).
+const resultPageSize = 10
+
 type AgentStatusEvent struct {
 	Agent   string `json:"agent"`
 	Status  string `json:"status"`
@@ -52,6 +58,12 @@ type FinalResultEvent struct {
 	// честная семантика, что у колонки intent: ML не прислала намерение —
 	// поля нет, а не пустая строка вместо него.
 	Intent string `json:"intent,omitempty"`
+	// Total/HasMore — Task 7: сколько объектов реально сохранено для этого
+	// поиска (весь пул из ответа ML, не только показанная страница) и есть ли
+	// за пределами Objects ещё что показать. Аддитивные поля — существующие
+	// не трогаем, фронт без «показать ещё» может их игнорировать.
+	Total   int  `json:"total"`
+	HasMore bool `json:"has_more"`
 }
 
 // pickSuggestedAreas: реальная граница зоны (из ML) заменяет convex-hull результатов.
@@ -441,14 +453,17 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 		listings = map[string]domain.Listing{}
 	}
 
-	objects := []FinalResultObject{}
+	// all — весь набор, что ML вернул и что уходит на сохранение в
+	// chat_search_results (Task 7); в событие final_result едет только первая
+	// страница (paginateFinalResult), остальное поднимает «показать ещё».
+	all := []FinalResultObject{}
 	var coords [][2]float64
 	for rank, item := range resp.Results {
 		obj, ok := BuildFinalResultObject(item, rank, resp.Degraded, listings)
 		if !ok {
 			continue
 		}
-		objects = append(objects, obj)
+		all = append(all, obj)
 		coords = append(coords, [2]float64{obj.Coordinates[0], obj.Coordinates[1]})
 	}
 
@@ -460,23 +475,40 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 	suggested := pickSuggestedAreas(BuildSuggestedAreas(coords, customPoint), resp.AreaGeojson)
 
 	// проценты берутся ровно те, что уехали в выдачу, — паспорт обязан показать
-	// то же число, а не пересчитывать его из сырого скора без ранга и degraded
-	scores := make(map[string]int, len(objects))
-	for _, o := range objects {
+	// то же число, а не пересчитывать его из сырого скора без ранга и degraded.
+	// Считаем по ВСЕМУ сохранённому набору: «показать ещё» обязан увидеть тот
+	// же процент, что уже был посчитан на первой странице.
+	scores := make(map[string]int, len(all))
+	for _, o := range all {
 		scores[o.ID] = o.MatchScore
 	}
-	objectIDs := make([]string, len(objects))
-	for i, o := range objects {
+	objectIDs := make([]string, len(all))
+	for i, o := range all {
 		objectIDs[i] = o.ID
 	}
 
+	shown, total, hasMore := paginateFinalResult(all)
+
 	return FinalResultEvent{
 		SuggestedAreasGeoJSON: suggested,
-		Objects:               objects,
+		Objects:               shown,
 		DataFreshness:         resp.DataFreshness,
 		AreaLabel:             resp.AreaLabel,
 		Intent:                resp.Intent,
+		Total:                 total,
+		HasMore:               hasMore,
 	}, objectIDs, scores
+}
+
+// paginateFinalResult режет собранный список объектов до первой страницы
+// (resultPageSize) и считает total/has_more по полному набору — «показать
+// ещё» дальше поднимает остальное через GET /chats/{id}/results (Task 7).
+func paginateFinalResult(all []FinalResultObject) (shown []FinalResultObject, total int, hasMore bool) {
+	total = len(all)
+	if total <= resultPageSize {
+		return all, total, false
+	}
+	return all[:resultPageSize], total, true
 }
 
 func (s *SearchStreamService) persist(ctx context.Context, chatID, userMsgID uuid.UUID, rawQuery string, resp *client.SearchResponse, objectIDs []string, matchScores map[string]int) {

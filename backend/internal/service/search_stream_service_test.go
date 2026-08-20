@@ -267,6 +267,76 @@ func TestBuildFinalResultOmitsIntentWhenMLSentNone(t *testing.T) {
 	}
 }
 
+// --- пагинация final_result / «показать ещё» (Task 7) --------------------
+
+func makeFinalResultObjects(n int) []FinalResultObject {
+	objs := make([]FinalResultObject, n)
+	for i := range objs {
+		objs[i] = FinalResultObject{ID: fmt.Sprintf("obj-%d", i)}
+	}
+	return objs
+}
+
+func TestPaginateFinalResultTruncatesAndSignalsHasMore(t *testing.T) {
+	// ML вернула больше объектов, чем показывает первая страница (Task 6:
+	// result_max_n=30) — событие обязано унести только первые resultPageSize
+	// и честно сказать, что осталось ещё.
+	all := makeFinalResultObjects(23)
+
+	shown, total, hasMore := paginateFinalResult(all)
+
+	if len(shown) != resultPageSize {
+		t.Fatalf("len(shown) = %d; want %d", len(shown), resultPageSize)
+	}
+	if total != 23 {
+		t.Fatalf("total = %d; want 23", total)
+	}
+	if !hasMore {
+		t.Fatal("hasMore = false; want true — сохранено больше, чем показано")
+	}
+	if shown[0].ID != all[0].ID || shown[len(shown)-1].ID != all[resultPageSize-1].ID {
+		t.Fatalf("shown должен быть точным префиксом all: %#v", shown)
+	}
+}
+
+func TestPaginateFinalResultNoTruncationWhenFits(t *testing.T) {
+	all := makeFinalResultObjects(7)
+
+	shown, total, hasMore := paginateFinalResult(all)
+
+	if len(shown) != 7 {
+		t.Fatalf("len(shown) = %d; want 7 (весь набор помещается на одну страницу)", len(shown))
+	}
+	if total != 7 {
+		t.Fatalf("total = %d; want 7", total)
+	}
+	if hasMore {
+		t.Fatal("hasMore = true; want false — больше нечего показывать")
+	}
+}
+
+func TestBuildFinalResultEventCarriesTotalAndHasMoreThroughJSON(t *testing.T) {
+	// final_result — не только Go-структура: контракт живёт в JSON-теле SSE,
+	// проверяем, что total/has_more реально уезжают наружу под нужными ключами.
+	svc := &SearchStreamService{}
+	final, _, _ := svc.buildFinalResult(context.Background(), &client.SearchResponse{}, nil)
+
+	b, err := json.Marshal(final)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if _, ok := got["total"]; !ok {
+		t.Fatalf("total отсутствует в final_result: %s", b)
+	}
+	if _, ok := got["has_more"]; !ok {
+		t.Fatalf("has_more отсутствует в final_result: %s", b)
+	}
+}
+
 func TestSearchRequestSkipsSynchronousExplanation(t *testing.T) {
 	// Пара к ExplainStream: /search обязан вернуть объекты, не дожидаясь
 	// второго вызова LLM — текст придёт потоком следом.
