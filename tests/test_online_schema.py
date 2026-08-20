@@ -122,3 +122,13 @@ def test_search_response_intent_defaults_to_new_search():
     resp = SearchResponse(results=[], explanation="", parsed=ParsedQuery(),
                           data_freshness="нет данных")
     assert resp.intent == "new_search"
+
+
+def test_search_request_top_n_bounds():
+    # запас выдачи ограничен схемой: 0 и 51 не должны доезжать до пайплайна
+    assert SearchRequest(query="q", top_n=1).top_n == 1
+    assert SearchRequest(query="q", top_n=50).top_n == 50
+    assert SearchRequest(query="q").top_n is None      # дефолт — result_max_n
+    for bad in (0, -1, 51):
+        with pytest.raises(ValidationError):
+            SearchRequest(query="q", top_n=bad)

@@ -41,6 +41,8 @@ def template_explanation(results: list[ResultItem], relaxed: list[str]) -> str:
     if not results:
         return ("По заданным условиям ничего не найдено. "
                 "Попробуйте ослабить фильтры.")
+    # счётчик по всему набору (до result_max_n), а не по первой странице:
+    # пользователю важно, сколько всего нашлось, а не сколько показано сразу
     parts = [f"Найдено объектов: {len(results)}."]
     top, f = results[0], results[0].address_facts
     bits = []

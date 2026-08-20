@@ -109,7 +109,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
 
     # 3. retrieval + relaxation
     with trace.span("retrieval"):
-        cands, relaxed, final_pq = retrieve_with_relaxation(
+        cands, relaxed, _ = retrieve_with_relaxation(
             conn, search_pq, point=point, provider=provider,
             model=model, query_vec=query_vec, area_match=area_match,
             min_results=min_results, city=city)
@@ -131,7 +131,9 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     # запас для «показать ещё» на стороне шлюза: срез теперь не жёстко
     # rerank_top_n, а top_n запроса или settings.result_max_n (settings.rerank_top_n
     # остаётся размером страницы для explain, но перестаёт быть потолком выдачи).
-    top = proximity_rerank(pq, ranked, top_n=top_n or settings.result_max_n)
+    top = proximity_rerank(
+        pq, ranked,
+        top_n=top_n if top_n is not None else settings.result_max_n)
 
     results = [to_result_item(c) for c in top]
 
@@ -140,12 +142,17 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     #     резолвленной ОБЛАСТИ (area_match, посчитана бесплатно на шаге 2.5);
     #     кастомную точку (point) сюда не тащим — не гонять лишний раз
     #     изохрон-провайдер ради диагностики на редком пути.
+    #     Считаем по ИСХОДНОМУ search_pq, а не по ослабленному final_pq:
+    #     relaxation ослабляет pq и предикат области независимо, а наружу
+    #     отдаёт только pq — пара (final_pq + неослабленный area_match.sql)
+    #     описывала бы поиск, которого не было. Что именно ослабили,
+    #     пользователь видит в relaxed.
     diagnostics: list[dict] = []
     if not results:
         try:
             with trace.span("diagnostics"):
                 diagnostics = constraint_diagnostics(
-                    conn, final_pq,
+                    conn, search_pq,
                     geo_sql=area_match.sql if area_match else None,
                     geo_params=area_match.params if area_match else (),
                     city=city)

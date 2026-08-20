@@ -1,6 +1,7 @@
 # habitus/online/retrieval.py — сердце RAG: WHERE-фильтр + dense + sparse + RRF
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import groupby
 from typing import Sequence
 
 import psycopg
@@ -96,13 +97,12 @@ def constraint_diagnostics(conn: psycopg.Connection, pq: ParsedQuery,
     схлопываются в один шаг. Только COUNT(*), параметры — исключительно через
     плейсхолдеры %s, без склейки строк."""
     groups = _where_groups(pq, geo_sql, geo_params, city)
-    steps: list[tuple[str, list[str], list]] = []
-    for label, clause, cparams in groups:
-        if steps and steps[-1][0] == label:
-            steps[-1][1].append(clause)
-            steps[-1][2].extend(cparams)
-        else:
-            steps.append((label, [clause], list(cparams)))
+    # подряд идущие клаузы с одной меткой (price_min+price_max, area_min+
+    # area_max, несколько гео-минут) — один шаг: пользователю нужна «цена»,
+    # а не два одинаково названных шага
+    steps = [(label, [c for _, c, _ in grp], [p for _, _, ps in grp for p in ps])
+             for label, grp in ((lbl, list(g)) for lbl, g
+                                in groupby(groups, key=lambda g: g[0]))]
 
     out: list[dict] = []
     acc_clauses: list[str] = []

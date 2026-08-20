@@ -353,14 +353,15 @@ def test_no_orientation_in_query_no_note(conn):
 
 @pytest.fixture
 def many_conn():
-    """30 одинаково подходящих объектов — проверить, что срез по top_n реально
-    режет выдачу, а не является потолком, который никогда не достигается."""
+    """35 одинаково подходящих объектов — заведомо больше и result_max_n (30),
+    и границы top_n (50 недостижима, но 30 обязана резать): иначе тесты не
+    отличают «срез сработал» от «вернулось всё, что было»."""
     with psycopg.connect(settings.db_dsn) as c:
         init_db(c)
         with c.cursor() as cur:
             cur.execute("TRUNCATE listings;")
-            for i in range(30):
-                eid = f"M{i}"
+            for i in range(35):
+                eid = f"M{i:02d}"
                 cur.execute(
                     """INSERT INTO listings (external_id, source, is_active, price,
                            rooms, area, noise_level, doc_text,
@@ -398,7 +399,7 @@ def test_top_n_caps_result_count(many_conn):
     llm = FakeLLM([_parse_resp(), _explain_resp()])
     resp = run_search("тихая двушка", many_conn, llm=llm,
                       model=FakeModel(), reranker=FakeReranker(), top_n=25)
-    assert len(resp.results) == 25   # пул (30) больше top_n — срез обязан сработать
+    assert len(resp.results) == 25   # пул (35) больше top_n — срез обязан сработать
 
 
 def test_top_n_boundary_one(many_conn):
@@ -409,15 +410,41 @@ def test_top_n_boundary_one(many_conn):
 
 
 def test_top_n_boundary_fifty_capped_by_pool_size(many_conn):
-    # в пуле только 30 объектов — top_n=50 не может вернуть больше, чем есть
+    # в пуле только 35 объектов — top_n=50 не может вернуть больше, чем есть
     llm = FakeLLM([_parse_resp(), _explain_resp()])
     resp = run_search("тихая двушка", many_conn, llm=llm,
                       model=FakeModel(), reranker=FakeReranker(), top_n=50)
-    assert len(resp.results) == 30
+    assert len(resp.results) == 35
 
 
 def test_default_top_n_uses_result_max_n(many_conn):
     llm = FakeLLM([_parse_resp(), _explain_resp()])
     resp = run_search("тихая двушка", many_conn, llm=llm,
                       model=FakeModel(), reranker=FakeReranker())
+    # пул 35 > result_max_n 30: тест доказывает именно срез по умолчанию
     assert len(resp.results) == settings.result_max_n == 30
+
+
+def test_diagnostics_describe_the_query_user_asked_not_the_relaxed_one(conn):
+    # Самый частый путь пустой выдачи: relaxation отработала, а результатов всё
+    # равно нет. Диагностика обязана описывать то, что спросил пользователь:
+    # relaxation ослабляет pq и предикат области НЕЗАВИСИМО, но наружу отдаёт
+    # только pq — пара «ослабленный pq + неослабленная область» описывала бы
+    # поиск, которого не было. Что ослабили, видно в relaxed.
+    with conn.cursor() as cur:
+        cur.execute("UPDATE listings SET okrug='ЦАО' WHERE external_id='A';")
+        cur.execute("UPDATE listings SET okrug='САО' WHERE external_id='B';")
+    conn.commit()
+    llm = FakeLLM([LLMResponse(content=None, tool_arguments=json.dumps(
+        {"rooms": [9], "noise_max": "low", "area": "центр",
+         "semantic_text": "тихо"}, ensure_ascii=False)), _explain_resp()])
+    resp = run_search("тихая девятикомнатная в центре", conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker())
+
+    assert resp.results == []
+    assert resp.relaxed            # ослабление действительно отработало
+    by_label = {d["constraint"]: d["remaining"] for d in resp.diagnostics}
+    # шум пользователь запрашивал — relaxation его сняла, но из диагностики
+    # условие исчезать не должно
+    assert "шум" in by_label
+    assert by_label["комнаты"] == 0     # девятикомнатных в фикстуре нет
