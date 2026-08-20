@@ -11,7 +11,8 @@ from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, merge_parsed, parse_turn
 from habitus.online.orchestrator import retrieve_with_relaxation
 from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
-from habitus.online.retrieval import Candidate, encode_query, orientation_coverage
+from habitus.online.retrieval import (Candidate, constraint_diagnostics,
+                                      encode_query, orientation_coverage)
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
                                    SearchResponse, TurnIntent)
 
@@ -30,7 +31,8 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
                model=None, reranker=None,
                min_results: int | None = None,
                city: str = "msk", explain: bool = True,
-               prev_parsed: ParsedQuery | None = None) -> SearchResponse:
+               prev_parsed: ParsedQuery | None = None,
+               top_n: int | None = None) -> SearchResponse:
     degraded: list[str] = []
     notes: list[str] = []
 
@@ -107,7 +109,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
 
     # 3. retrieval + relaxation
     with trace.span("retrieval"):
-        cands, relaxed, _ = retrieve_with_relaxation(
+        cands, relaxed, final_pq = retrieve_with_relaxation(
             conn, search_pq, point=point, provider=provider,
             model=model, query_vec=query_vec, area_match=area_match,
             min_results=min_results, city=city)
@@ -126,9 +128,29 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
         log.warning("деградация слоя reranker: %s", exc, exc_info=True)
         degraded.append("reranker")
         ranked = pool
-    top = proximity_rerank(pq, ranked, top_n=settings.rerank_top_n)
+    # запас для «показать ещё» на стороне шлюза: срез теперь не жёстко
+    # rerank_top_n, а top_n запроса или settings.result_max_n (settings.rerank_top_n
+    # остаётся размером страницы для explain, но перестаёт быть потолком выдачи).
+    top = proximity_rerank(pq, ranked, top_n=top_n or settings.result_max_n)
 
     results = [to_result_item(c) for c in top]
+
+    # 4.5 диагностика ограничений — только когда итоговая выдача пуста (лишние
+    #     COUNT'ы на каждый запрос не нужны). Гео-предикат берём из уже
+    #     резолвленной ОБЛАСТИ (area_match, посчитана бесплатно на шаге 2.5);
+    #     кастомную точку (point) сюда не тащим — не гонять лишний раз
+    #     изохрон-провайдер ради диагностики на редком пути.
+    diagnostics: list[dict] = []
+    if not results:
+        try:
+            with trace.span("diagnostics"):
+                diagnostics = constraint_diagnostics(
+                    conn, final_pq,
+                    geo_sql=area_match.sql if area_match else None,
+                    geo_params=area_match.params if area_match else (),
+                    city=city)
+        except Exception as exc:
+            log.warning("диагностика ограничений не удалась: %s", exc, exc_info=True)
 
     # 5. объяснение (кэш по запросу+выдаче; отказ → шаблон).
     #    explain=False — шлюз забирает текст отдельным потоковым вызовом
@@ -162,4 +184,5 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     return SearchResponse(results=results, explanation=explanation, parsed=pq,
                           relaxed=relaxed, notes=notes, data_freshness=data_freshness,
                           degraded=degraded, area_label=area_label,
-                          area_geojson=area_geo, intent=intent)
+                          area_geojson=area_geo, intent=intent,
+                          diagnostics=diagnostics)

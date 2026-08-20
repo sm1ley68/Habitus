@@ -39,37 +39,82 @@ def rrf_merge(rankings: Sequence[Sequence[str]], k: int = 60) -> list[tuple[str,
     return sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
-def build_where(pq: ParsedQuery, extra_sql: str | None = None,
-                extra_params: Sequence = (),
-                city: str | None = None) -> tuple[str, list]:
-    """ParsedQuery → параметризованный WHERE. Порядок клауз фиксирован."""
-    clauses: list[str] = ["is_active = TRUE"]
-    params: list = []
+def _where_groups(pq: ParsedQuery, extra_sql: str | None = None,
+                  extra_params: Sequence = (),
+                  city: str | None = None) -> list[tuple[str, str, list]]:
+    """Клаузы build_where как (человекочитаемая метка, SQL, params), в порядке
+    наложения. Общий источник для build_where и constraint_diagnostics — чтобы
+    диагностика не могла разойтись с реальным фильтром retrieval."""
+    groups: list[tuple[str, str, list]] = [("база", "is_active = TRUE", [])]
     if city:  # самый селективный фильтр — первым
-        clauses.append("city = %s"); params.append(city)
+        groups.append(("база", "city = %s", [city]))
     if pq.price_min is not None:
-        clauses.append("price >= %s"); params.append(pq.price_min)
+        groups.append(("цена", "price >= %s", [pq.price_min]))
     if pq.price_max is not None:
-        clauses.append("price <= %s"); params.append(pq.price_max)
+        groups.append(("цена", "price <= %s", [pq.price_max]))
     if pq.rooms:
-        clauses.append("rooms = ANY(%s)"); params.append(list(pq.rooms))
+        groups.append(("комнаты", "rooms = ANY(%s)", [list(pq.rooms)]))
     if pq.area_min is not None:
-        clauses.append("area >= %s"); params.append(pq.area_min)
+        groups.append(("площадь", "area >= %s", [pq.area_min]))
     if pq.area_max is not None:
-        clauses.append("area <= %s"); params.append(pq.area_max)
+        groups.append(("площадь", "area <= %s", [pq.area_max]))
     for g in pq.geo:  # g.kind — Literal["school","metro","park"] → имя колонки безопасно
-        clauses.append(f"walk_min_{g.kind} <= %s"); params.append(g.walk_minutes)
+        groups.append(("гео-минуты", f"walk_min_{g.kind} <= %s", [g.walk_minutes]))
     if pq.noise_max is not None and pq.noise_max != "high":
         allowed = NOISE_ORDER[: NOISE_ORDER.index(pq.noise_max) + 1]
-        clauses.append("noise_level = ANY(%s)"); params.append(allowed)
+        groups.append(("шум", "noise_level = ANY(%s)", [allowed]))
     # window_orientation НЕ фильтр: заполнен у ~2% объявлений (см.
     # settings.orientation_weight), жёсткая клауза отсекала бы базу целиком.
     # Ориентация учитывается как мягкий сигнал в proximity_rerank.
     if "bars" in pq.stop_factors:
-        clauses.append("bar_density_500m = 0")
+        groups.append(("стоп-факторы", "bar_density_500m = 0", []))
     if extra_sql:
-        clauses.append(extra_sql); params.extend(extra_params)
+        groups.append(("гео-предикат области", extra_sql, list(extra_params)))
+    return groups
+
+
+def build_where(pq: ParsedQuery, extra_sql: str | None = None,
+                extra_params: Sequence = (),
+                city: str | None = None) -> tuple[str, list]:
+    """ParsedQuery → параметризованный WHERE. Порядок клауз фиксирован."""
+    groups = _where_groups(pq, extra_sql, extra_params, city)
+    clauses = [clause for _, clause, _ in groups]
+    params: list = []
+    for _, _, cparams in groups:
+        params.extend(cparams)
     return " AND ".join(clauses), params
+
+
+def constraint_diagnostics(conn: psycopg.Connection, pq: ParsedQuery,
+                           geo_sql: str | None = None,
+                           geo_params: Sequence = (),
+                           city: str | None = None) -> list[dict]:
+    """Сколько объектов остаётся при последовательном наложении клауз
+    build_where — чтобы на пустой выдаче было видно, какое именно условие её
+    обнулило. Группы и их порядок берутся из _where_groups (общий источник с
+    build_where), соседние клаузы с одной меткой (например price_min+price_max)
+    схлопываются в один шаг. Только COUNT(*), параметры — исключительно через
+    плейсхолдеры %s, без склейки строк."""
+    groups = _where_groups(pq, geo_sql, geo_params, city)
+    steps: list[tuple[str, list[str], list]] = []
+    for label, clause, cparams in groups:
+        if steps and steps[-1][0] == label:
+            steps[-1][1].append(clause)
+            steps[-1][2].extend(cparams)
+        else:
+            steps.append((label, [clause], list(cparams)))
+
+    out: list[dict] = []
+    acc_clauses: list[str] = []
+    acc_params: list = []
+    with conn.cursor() as cur:
+        for label, clauses, cparams in steps:
+            acc_clauses.extend(clauses)
+            acc_params.extend(cparams)
+            where = " AND ".join(acc_clauses)
+            cur.execute(f"SELECT count(*) FROM listings WHERE {where};", acc_params)
+            out.append({"constraint": label, "remaining": int(cur.fetchone()[0])})
+    return out
 
 
 def encode_query(text: str, model=None) -> tuple[list[float], dict[int, float]]:

@@ -347,3 +347,77 @@ def test_no_orientation_in_query_no_note(conn):
     resp = run_search("тихая двушка", conn, llm=llm, model=FakeModel(),
                       reranker=FakeReranker())
     assert resp.notes == []
+
+
+# --- диагностика ограничений + запас для пагинации (Task 6) -----------------
+
+@pytest.fixture
+def many_conn():
+    """30 одинаково подходящих объектов — проверить, что срез по top_n реально
+    режет выдачу, а не является потолком, который никогда не достигается."""
+    with psycopg.connect(settings.db_dsn) as c:
+        init_db(c)
+        with c.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            for i in range(30):
+                eid = f"M{i}"
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active, price,
+                           rooms, area, noise_level, doc_text,
+                           embedding, sparse_embedding)
+                       VALUES (%s,'test',TRUE,10000000,2,45,'low',%s,
+                               %s::vector,%s::sparsevec);""",
+                    (eid, f"объект {eid}", _vec(0),
+                     to_sparsevec_literal({10: 1.0}, SPARSE_DIM)))
+        c.commit()
+        yield c
+
+
+def test_diagnostics_empty_when_results_present(conn):
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker())
+    assert resp.results
+    assert resp.diagnostics == []
+
+
+def test_diagnostics_populated_when_results_empty(conn):
+    # price_max ниже любой цены в фикстуре (10 млн) — выдача пуста, диагностика
+    # обязана честно показать, что обнулило именно цена, а не выдумывать причину.
+    llm = FakeLLM([LLMResponse(content=None, tool_arguments=json.dumps(
+        {"price_max": 1, "semantic_text": "тихо"})), _explain_resp()])
+    resp = run_search("тихая двушка", conn, llm=llm, model=FakeModel(),
+                      reranker=FakeReranker(), min_results=0)
+    assert resp.results == []
+    assert resp.diagnostics
+    by_label = {d["constraint"]: d["remaining"] for d in resp.diagnostics}
+    assert by_label["цена"] == 0
+
+
+def test_top_n_caps_result_count(many_conn):
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", many_conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker(), top_n=25)
+    assert len(resp.results) == 25   # пул (30) больше top_n — срез обязан сработать
+
+
+def test_top_n_boundary_one(many_conn):
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", many_conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker(), top_n=1)
+    assert len(resp.results) == 1
+
+
+def test_top_n_boundary_fifty_capped_by_pool_size(many_conn):
+    # в пуле только 30 объектов — top_n=50 не может вернуть больше, чем есть
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", many_conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker(), top_n=50)
+    assert len(resp.results) == 30
+
+
+def test_default_top_n_uses_result_max_n(many_conn):
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", many_conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker())
+    assert len(resp.results) == settings.result_max_n == 30

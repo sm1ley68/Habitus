@@ -2,6 +2,7 @@
 import json
 from collections.abc import AsyncIterator
 
+from habitus.config import settings
 from habitus.online.llm import AsyncStreamLLMClient, LLMClient
 from habitus.online.schema import ResultItem
 
@@ -18,10 +19,16 @@ metro_station. Запрещено называть названия школ, Ж
 
 def facts_block(results: list[ResultItem], relaxed: list[str],
                 notes: list[str] | None = None) -> str:
-    """Факты для промпта: по JSON-строке на объект + строки ослаблений/примечаний."""
+    """Факты для промпта: по JSON-строке на объект + строки ослаблений/примечаний.
+
+    results режется до settings.rerank_top_n: /search теперь отдаёт запас до
+    settings.result_max_n объектов для пагинации шлюза, а объяснение должно
+    оставаться про то, что видит пользователь на первой странице, а не тащить
+    в промпт весь запас.
+    """
     lines = [json.dumps({"id": r.external_id, "price": r.price, "area": r.area,
                          "rooms": r.rooms, **r.address_facts}, ensure_ascii=False)
-             for r in results]
+             for r in results[:settings.rerank_top_n]]
     if relaxed:
         lines.append("ОСЛАБЛЕНО: " + "; ".join(relaxed))
     if notes:

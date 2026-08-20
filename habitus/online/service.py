@@ -55,7 +55,7 @@ def search(req: SearchRequest) -> SearchResponse:
     with get_conn() as conn:
         return run_search(req.query, conn, llm=llm, point=req.point,
                           provider=provider, city=req.city, explain=req.explain,
-                          prev_parsed=req.prev_parsed)
+                          prev_parsed=req.prev_parsed, top_n=req.top_n)
 
 
 def _sse(event: str, data: dict) -> str:

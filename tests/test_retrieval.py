@@ -1,5 +1,8 @@
+import psycopg
 import pytest
-from habitus.online.retrieval import build_where, rrf_merge
+from habitus.config import settings
+from habitus.db.init_db import init_db
+from habitus.online.retrieval import build_where, constraint_diagnostics, rrf_merge
 from habitus.online.schema import GeoConstraint, ParsedQuery
 
 
@@ -74,3 +77,62 @@ def test_build_where_scopes_by_city():
 def test_build_where_without_city_is_unscoped():
     where, _ = build_where(ParsedQuery())
     assert "city" not in where
+
+
+# --- constraint_diagnostics (Task 6): диагностика пустой выдачи -------------
+
+@pytest.fixture
+def diag_conn():
+    """Три объекта: A/B проходят по цене и комнатам, C — нет ни по цене, ни по
+    комнатам, ни по шуму."""
+    rows = [
+        # (eid, price, rooms, area, walk_min_school, noise)
+        ("A", 10_000_000, 2, 50.0, 8.0, "low"),
+        ("B", 12_000_000, 2, 55.0, 9.0, "low"),
+        ("C", 30_000_000, 3, 80.0, 25.0, "high"),
+    ]
+    with psycopg.connect(settings.db_dsn) as c:
+        init_db(c)
+        with c.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            for eid, price, rooms, area, ws, noise in rows:
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active, price,
+                           rooms, area, walk_min_school, noise_level, doc_text)
+                       VALUES (%s,'test',TRUE,%s,%s,%s,%s,%s,%s);""",
+                    (eid, price, rooms, area, ws, noise, f"объект {eid}"))
+        c.commit()
+        yield c
+
+
+def test_constraint_diagnostics_shows_killer_condition(diag_conn):
+    # price_max=1 — ниже любой цены в фикстуре: убийственное условие обязано
+    # обнулить remaining ровно на шаге «цена», а не раньше и не позже.
+    pq = ParsedQuery(price_max=1, rooms=[2])
+    diag = constraint_diagnostics(diag_conn, pq)
+    by_label = {d["constraint"]: d["remaining"] for d in diag}
+    assert by_label["база"] == 3
+    assert by_label["цена"] == 0
+    assert by_label["комнаты"] == 0     # цена уже обнулила — дальше остаётся 0
+
+
+def test_constraint_diagnostics_no_constraints_returns_full_base(diag_conn):
+    diag = constraint_diagnostics(diag_conn, ParsedQuery())
+    assert diag == [{"constraint": "база", "remaining": 3}]
+
+
+def test_constraint_diagnostics_step_order_matches_build_where(diag_conn):
+    # Порядок шагов обязан совпадать с текущим build_where (Task 5: ориентация
+    # окон в нём больше не клауза, поэтому в диагностике её тоже быть не должно).
+    pq = ParsedQuery(price_min=1, price_max=50_000_000, rooms=[2, 3],
+                     area_min=10.0, area_max=100.0,
+                     geo=[GeoConstraint(kind="school", walk_minutes=30)],
+                     window_orientation=["SW"], noise_max="medium",
+                     stop_factors=["bars"])
+    diag = constraint_diagnostics(diag_conn, pq, geo_sql="TRUE", geo_params=(),
+                                  city=None)
+    labels = [d["constraint"] for d in diag]
+    assert labels == ["база", "цена", "комнаты", "площадь", "гео-минуты",
+                      "шум", "стоп-факторы", "гео-предикат области"]
+    remaining = [d["remaining"] for d in diag]
+    assert remaining == sorted(remaining, reverse=True)   # накопительно не растёт

@@ -120,6 +120,11 @@ class SearchResponse(BaseModel):
     # trace.collector(); стадия, которая не выполнилась в этом запросе, в
     # словарь не попадает — нулей вместо отсутствующего замера не выдумываем
     timings: dict[str, float] = {}
+    # диагностика ограничений: сколько объектов остаётся при последовательном
+    # наложении клауз build_where (retrieval.constraint_diagnostics). Считается
+    # только когда results пуст — иначе непонятно, какое условие обнулило
+    # выборку, а на непустой выдаче лишние COUNT'ы не нужны.
+    diagnostics: list[dict] = []
 
 
 class PointConstraint(BaseModel):
@@ -140,6 +145,9 @@ class SearchRequest(BaseModel):
     # Разбор предыдущего шага диалога (из chat_searches на стороне шлюза).
     # None — независимый запрос, поведение как раньше.
     prev_parsed: ParsedQuery | None = None
+    # Сколько объектов вернуть сверх первой страницы (запас для «показать ещё»
+    # на стороне шлюза). None — дефолт settings.result_max_n.
+    top_n: int | None = Field(default=None, gt=0, le=50)
 
 
 class ExplainRequest(BaseModel):

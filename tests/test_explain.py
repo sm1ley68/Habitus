@@ -1,3 +1,4 @@
+from habitus.config import settings
 from habitus.online.explain import (GROUNDED_SYSTEM, explain, facts_block,
                                     template_explanation)
 from habitus.online.llm import FakeLLM, LLMResponse
@@ -30,6 +31,17 @@ def test_facts_block_carries_notes():
 def test_facts_block_without_notes_has_no_note_line():
     block = facts_block([_item()], [])
     assert "ПРИМЕЧАНИЕ" not in block
+
+
+def test_facts_block_caps_to_rerank_top_n(monkeypatch):
+    # /search теперь отдаёт запас до settings.result_max_n (30) объектов для
+    # пагинации шлюза — в промпт объяснения должны уехать только первые
+    # settings.rerank_top_n, а не весь запас.
+    monkeypatch.setattr(settings, "rerank_top_n", 2)
+    items = [_item(f"X{i}") for i in range(5)]
+    block = facts_block(items, [])
+    ids_present = [f'"id": "X{i}"' in block for i in range(5)]
+    assert ids_present == [True, True, False, False, False]
 
 
 def test_explain_sends_only_facts_to_llm():
