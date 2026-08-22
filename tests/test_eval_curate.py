@@ -2,7 +2,8 @@ import yaml
 import psycopg
 from habitus.config import settings
 from habitus.db.init_db import init_db
-from habitus.eval.curate import MIN_PRICE_PER_SQM, TOP_N, curate, eligible_rows
+from habitus.eval.curate import (MIN_PRICE_PER_SQM, TOP_N, _where_and_params,
+                                 curate, eligible_rows)
 
 
 def _seed(conn):
@@ -109,3 +110,65 @@ def test_curate_flag_marks_queries_buildable_by_rules(tmp_path, monkeypatch):
     by_id = {x["id"]: x for x in out}
     assert by_id["b01"]["relevant_ids"] == ["cian_1"]
     assert by_id["b05"]["relevant_ids"] == []   # семантику правилами не выдумываем
+
+
+def test_match_address_ilike_is_parameterized():
+    # SQL-фрагмент содержит только плейсхолдер, значение уезжает в params —
+    # никакой склейки строк с текстом паттерна.
+    where, params = _where_and_params({}, {"address_ilike": "%Хамовник%"})
+    assert "address ILIKE %s" in where
+    assert not any("Хамовник" in clause for clause in where)
+    assert params[-1] == "%Хамовник%"
+
+
+def test_match_metro_ilike_is_parameterized():
+    where, params = _where_and_params({}, {"metro_ilike": "%Павелецк%"})
+    assert "metro_station ILIKE %s" in where
+    assert not any("Павелецк" in clause for clause in where)
+    assert params[-1] == "%Павелецк%"
+
+
+def test_match_combines_both_and_ignores_absent_keys():
+    where, params = _where_and_params(
+        {"rooms": [2]}, {"address_ilike": "%Пресн%", "metro_ilike": "%Белорусск%"})
+    assert where.count("address ILIKE %s") == 1
+    assert where.count("metro_station ILIKE %s") == 1
+    # порядок params обязан совпадать с порядком клауз: rooms, потом адрес, потом метро
+    assert params == [[2], "%Пресн%", "%Белорусск%"]
+
+
+def test_match_none_and_empty_dict_add_no_clauses():
+    where_none, params_none = _where_and_params({"rooms": [1]}, None)
+    where_empty, params_empty = _where_and_params({"rooms": [1]}, {})
+    assert where_none == where_empty
+    assert params_none == params_empty
+    assert not any("ILIKE" in clause for clause in where_none)
+
+
+def test_eligible_rows_filters_by_address_and_metro_end_to_end():
+    """`match` действительно режет пул в БД, не только собирает клаузы."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            cur.execute("DELETE FROM urban_evidence;")
+            rows = [
+                ("in_hamovniki", "Москва, Хамовники, Комсомольский проспект", None),
+                ("elsewhere", "Москва, Марьина роща", None),
+                ("near_pavelets", None, "Павелецкая"),
+                ("near_belorus", None, "Белорусская"),
+            ]
+            for eid, address, metro in rows:
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active, city,
+                           price, area, rooms, address, metro_station, geom)
+                       VALUES (%s,'t',TRUE,'msk',20000000,50.0,2,%s,%s,
+                               ST_SetSRID(ST_MakePoint(37.6,55.75),4326));""",
+                    (eid, address, metro))
+        conn.commit()
+
+        addr_ids = {r["external_id"] for r in
+                   eligible_rows(conn, {}, {"address_ilike": "%Хамовник%"})}
+        metro_ids = {r["external_id"] for r in
+                    eligible_rows(conn, {}, {"metro_ilike": "%Павелецк%"})}
+    assert addr_ids == {"in_hamovniki"}
+    assert metro_ids == {"near_pavelets"}

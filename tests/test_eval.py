@@ -37,7 +37,8 @@ import psycopg
 from habitus.config import settings
 from habitus.db.init_db import init_db
 from habitus.embed.encode import SPARSE_DIM, to_sparsevec_literal
-from habitus.eval.runner import DEFAULT_GOLDEN, format_report, load_golden, run_eval
+from habitus.eval.runner import (DEFAULT_GOLDEN, check_thresholds, format_report,
+                                 load_golden, run_eval, series_of)
 from habitus.online.llm import FakeLLM, LLMResponse
 
 
@@ -101,3 +102,70 @@ def test_run_eval_retrieval_ablation():
         assert res["retrieval"][variant]["recall@10"] == 1.0
         assert res["retrieval"][variant]["ndcg@10"] == 1.0
     assert "rrf+rerank+prox" in format_report(res)
+
+
+def test_series_of_extracts_letter_prefix():
+    assert series_of("a01") == "a"
+    assert series_of("b06") == "b"
+    assert series_of("c10") == "c"
+
+
+def test_check_thresholds_pass_and_fail():
+    res = {"retrieval": {"rrf+rerank+prox": {"recall@10": 0.30, "ndcg@10": 0.28}}}
+    assert check_thresholds(res, min_recall=0.25, min_ndcg=0.25) == []
+
+    failures = check_thresholds(res, min_recall=0.40, min_ndcg=0.50)
+    assert len(failures) == 2
+    assert "recall@10" in failures[0] and "0.30" in failures[0] and "0.40" in failures[0]
+    assert "NDCG@10" in failures[1] and "0.28" in failures[1] and "0.50" in failures[1]
+
+
+def test_check_thresholds_uses_requested_variant():
+    res = {"retrieval": {"dense": {"recall@10": 0.10, "ndcg@10": 0.10},
+                        "rrf+rerank+prox": {"recall@10": 0.90, "ndcg@10": 0.90}}}
+    # порог, который завалил бы "dense", не должен трогать выбранный вариант
+    assert check_thresholds(res, min_recall=0.5, min_ndcg=0.5, variant="rrf+rerank+prox") == []
+
+
+def test_run_eval_by_series_breakdown_isolates_series():
+    """Серии golden-set меряют разные стадии (a — структурные фильтры,
+    c — текстовые оси) — разбивка по сериям обязана считаться отдельно, а не
+    случайно усредняться в одну цифру вместе с общим `retrieval`."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            dense = [0.0] * 1024
+            dense[0] = 1.0
+            vec = "[" + ",".join(f"{x:g}" for x in dense) + "]"
+            sparse = to_sparsevec_literal({10: 1.0}, SPARSE_DIM)
+            for eid, rooms in (("R2", 2), ("R3", 3)):
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active, price,
+                           rooms, doc_text, embedding, sparse_embedding)
+                       VALUES (%s,'test',TRUE,10000000,%s,'квартира',
+                               %s::vector,%s::sparsevec);""",
+                    (eid, rooms, vec, sparse))
+        conn.commit()
+        golden = [
+            # a-серия: найдёт R2 (rooms=2) — recall 1.0 в своей серии
+            {"id": "a1", "lang": "ru", "query": "двушка",
+             "expected_parse": {"rooms": [2]}, "relevant_ids": ["R2"]},
+            # c-серия: фильтр по rooms=3 отбирает только R3, но эталон указывает
+            # на несуществующий объект — recall 0.0, специально, чтобы разбивка
+            # по сериям была видна отдельно от a-серии, а не усреднена с ней
+            {"id": "c1", "lang": "ru", "query": "трёшка",
+             "expected_parse": {"rooms": [3]}, "relevant_ids": ["missing"]},
+        ]
+        res = run_eval(conn, None, golden, model=_EvalModel(), reranker=_EvalReranker())
+
+    assert set(res["by_series"].keys()) == {"a", "c"}
+    for variant in ("dense", "rrf", "rrf+rerank", "rrf+prox", "rrf+rerank+prox"):
+        assert res["by_series"]["a"][variant]["recall@10"] == 1.0
+        assert res["by_series"]["a"][variant]["n"] == 1
+        assert res["by_series"]["c"][variant]["recall@10"] == 0.0
+        assert res["by_series"]["c"][variant]["n"] == 1
+        # общий retrieval — блендинг обеих серий, а не подмена одной другой
+        assert res["retrieval"][variant]["recall@10"] == 0.5
+        assert res["retrieval"][variant]["n"] == 2
+    assert "По сериям" in format_report(res)

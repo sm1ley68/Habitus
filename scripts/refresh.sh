@@ -16,7 +16,13 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CSV=${HABITUS_CSV:-$ROOT/listings.csv}
 LOCK=${HABITUS_LOCK:-${TMPDIR:-/tmp}/habitus-refresh.lock}
 LOG=${HABITUS_LOG:-$ROOT/data/refresh.log}
-MAX_OFFERS=${HABITUS_MAX_OFFERS:-5000}
+# 400, не 5000: обход 17 августа собрал капчу на 85 страницах подряд одного
+# фильтра (см. docs/notes/cian-blocked-2026-08-17.md) — сработала поведенческая
+# проверка на монотонную пагинацию, а не отпечаток. При 400 за цикл обход идёт
+# 5-8 страниц, похоже на человека, листающего первые страницы выдачи. Цикл раз
+# в 6 часов даёт те же ~1500 объявлений в сутки, но размазанными по четырём
+# заходам, а не одним марш-броском.
+MAX_OFFERS=${HABITUS_MAX_OFFERS:-400}
 ROOMS=${HABITUS_ROOMS:-1,2,3,4}
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG"; }

@@ -30,8 +30,13 @@ NOISE_RADIUS_M = 500
 MIN_PRICE_PER_SQM = 100_000
 
 
-def eligible_rows(conn, exp: dict) -> list[dict]:
-    """Объекты, проходящие ЖЁСТКИЕ условия запроса, с полями для ранжирования."""
+def _where_and_params(exp: dict, match: dict | None = None) -> tuple[list[str], list]:
+    """Клаузы жёстких условий запроса → (список SQL-фрагментов с `%s`, params).
+
+    Вынесено из eligible_rows отдельной чистой функцией — так параметризацию
+    (никакой склейки строк с текстом запроса) видно и проверяемо без похода
+    в БД: тест собирает where/params и сверяет их напрямую.
+    """
     where = ["is_active = TRUE", "city = 'msk'", "geom IS NOT NULL",
              "price IS NOT NULL", "area > 0",
              f"price / area >= {MIN_PRICE_PER_SQM}"]
@@ -58,7 +63,23 @@ def eligible_rows(conn, exp: dict) -> list[dict]:
     if exp.get("noise_max") and exp["noise_max"] != "high":
         allowed = NOISE_ORDER[: NOISE_ORDER.index(exp["noise_max"]) + 1]
         where.append("noise_level = ANY(%s)"); params.append(allowed)
+    if match:
+        # Текстовые оси (адрес/метро по названию), которые build_where не умеет
+        # фильтровать вовсе: район/улица в адресе, станция метро. Условие
+        # проверяется ПРАВИЛОМ здесь же, в эталоне, а не в retrieval — измеряется
+        # именно то, находит ли dense/sparse/реранк такой объект по семантике
+        # doc_text, а не подмешивается ли SQL-фильтр, которого в пайплайне нет.
+        # Параметризованный ILIKE — никакой склейки строк с паттерном.
+        if match.get("address_ilike"):
+            where.append("address ILIKE %s"); params.append(match["address_ilike"])
+        if match.get("metro_ilike"):
+            where.append("metro_station ILIKE %s"); params.append(match["metro_ilike"])
+    return where, params
 
+
+def eligible_rows(conn, exp: dict, match: dict | None = None) -> list[dict]:
+    """Объекты, проходящие ЖЁСТКИЕ условия запроса, с полями для ранжирования."""
+    where, params = _where_and_params(exp, match)
     sql = f"""
         SELECT external_id, price, rooms, area,
                walk_min_school, walk_min_metro, walk_min_park, bar_density_500m,
@@ -105,7 +126,7 @@ def grade(i: int, n: int) -> int:
 
 def curate(conn, item: dict) -> tuple[list[str], dict[str, int], int]:
     exp = item.get("expected_parse") or {}
-    rows = eligible_rows(conn, exp)
+    rows = eligible_rows(conn, exp, item.get("match"))
     # тай-брейк по external_id — прогон обязан быть воспроизводимым
     rows.sort(key=lambda r: (-score(r, exp), r["external_id"]))
     top = rows[:TOP_N]

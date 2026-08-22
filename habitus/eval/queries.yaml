@@ -10,27 +10,27 @@
     - kind: school
       walk_minutes: 10
   relevant_ids:
-  - cian_329194296
+  - cian_325253772
+  - cian_330709692
+  - cian_332996134
+  - cian_331283091
+  - cian_327377687
+  - cian_330445647
   - cian_329997008
+  - cian_332833962
+  - cian_332473816
   - cian_331826409
-  - cian_329776569
-  - cian_329565699
-  - cian_330744168
-  - cian_331931549
-  - cian_325367059
-  - cian_331698609
-  - cian_331720191
   relevance:
-    cian_329194296: 3
-    cian_329997008: 3
-    cian_331826409: 3
-    cian_329776569: 2
-    cian_329565699: 2
-    cian_330744168: 2
-    cian_331931549: 1
-    cian_325367059: 1
-    cian_331698609: 1
-    cian_331720191: 1
+    cian_325253772: 3
+    cian_330709692: 3
+    cian_332996134: 3
+    cian_331283091: 2
+    cian_327377687: 2
+    cian_330445647: 2
+    cian_329997008: 1
+    cian_332833962: 1
+    cian_332473816: 1
+    cian_331826409: 1
 - id: a02
   lang: ru
   query: двушка до 40 млн, метро в 7 минутах, тихо
@@ -43,27 +43,27 @@
     - kind: metro
       walk_minutes: 7
   relevant_ids:
+  - cian_331283091
   - cian_329565699
+  - cian_332903552
   - cian_331190708
-  - cian_331820177
+  - cian_332777407
+  - cian_332183547
+  - cian_332404432
+  - cian_332441761
+  - cian_332631324
   - cian_329371191
-  - cian_331931549
-  - cian_329294989
-  - cian_331064475
-  - cian_326942725
-  - cian_331819305
-  - cian_331556580
   relevance:
+    cian_331283091: 3
     cian_329565699: 3
-    cian_331190708: 3
-    cian_331820177: 3
-    cian_329371191: 2
-    cian_331931549: 2
-    cian_329294989: 2
-    cian_331064475: 1
-    cian_326942725: 1
-    cian_331819305: 1
-    cian_331556580: 1
+    cian_332903552: 3
+    cian_331190708: 2
+    cian_332777407: 2
+    cian_332183547: 2
+    cian_332404432: 1
+    cian_332441761: 1
+    cian_332631324: 1
+    cian_329371191: 1
 - id: a03
   lang: ru
   query: однушка до 25 млн, парк в 8 минутах
@@ -75,27 +75,27 @@
     - kind: park
       walk_minutes: 8
   relevant_ids:
-  - cian_332049784
-  - cian_331919900
-  - cian_329103303
-  - cian_330209488
+  - cian_330931879
+  - cian_332938553
+  - cian_330885017
   - cian_324832041
-  - cian_331834498
-  - cian_331121853
-  - cian_331958492
-  - cian_331806444
-  - cian_326204575
+  - cian_331844933
+  - cian_332411567
+  - cian_332125162
+  - cian_332702262
+  - cian_332181136
+  - cian_332181868
   relevance:
-    cian_332049784: 3
-    cian_331919900: 3
-    cian_329103303: 3
-    cian_330209488: 2
+    cian_330931879: 3
+    cian_332938553: 3
+    cian_330885017: 3
     cian_324832041: 2
-    cian_331834498: 2
-    cian_331121853: 1
-    cian_331958492: 1
-    cian_331806444: 1
-    cian_326204575: 1
+    cian_331844933: 2
+    cian_332411567: 2
+    cian_332125162: 1
+    cian_332702262: 1
+    cian_332181136: 1
+    cian_332181868: 1
 - id: a04
   lang: en
   query: two-room flat under 40M, metro within 7 minutes, quiet
@@ -108,27 +108,27 @@
     - kind: metro
       walk_minutes: 7
   relevant_ids:
+  - cian_331283091
   - cian_329565699
+  - cian_332903552
   - cian_331190708
-  - cian_331820177
+  - cian_332777407
+  - cian_332183547
+  - cian_332404432
+  - cian_332441761
+  - cian_332631324
   - cian_329371191
-  - cian_331931549
-  - cian_329294989
-  - cian_331064475
-  - cian_326942725
-  - cian_331819305
-  - cian_331556580
   relevance:
+    cian_331283091: 3
     cian_329565699: 3
-    cian_331190708: 3
-    cian_331820177: 3
-    cian_329371191: 2
-    cian_331931549: 2
-    cian_329294989: 2
-    cian_331064475: 1
-    cian_326942725: 1
-    cian_331819305: 1
-    cian_331556580: 1
+    cian_332903552: 3
+    cian_331190708: 2
+    cian_332777407: 2
+    cian_332183547: 2
+    cian_332404432: 1
+    cian_332441761: 1
+    cian_332631324: 1
+    cian_329371191: 1
 - id: a05
   lang: ru
   query: трёшка до 70 млн, метро в 8 минутах
@@ -142,25 +142,25 @@
   relevant_ids:
   - cian_328664725
   - cian_330773471
+  - cian_331426346
+  - cian_326901740
   - cian_329560598
-  - cian_329709914
+  - cian_329560600
   - cian_330177606
+  - cian_331557823
+  - cian_331842100
   - cian_324427576
-  - cian_331040484
-  - cian_331195879
-  - cian_316038389
-  - cian_324779967
   relevance:
     cian_328664725: 3
     cian_330773471: 3
-    cian_329560598: 3
-    cian_329709914: 2
-    cian_330177606: 2
-    cian_324427576: 2
-    cian_331040484: 1
-    cian_331195879: 1
-    cian_316038389: 1
-    cian_324779967: 1
+    cian_331426346: 3
+    cian_326901740: 2
+    cian_329560598: 2
+    cian_329560600: 2
+    cian_330177606: 1
+    cian_331557823: 1
+    cian_331842100: 1
+    cian_324427576: 1
 - id: a06
   lang: ru
   query: однушка или двушка до 35 млн, школа и метро рядом
@@ -175,27 +175,27 @@
     - kind: metro
       walk_minutes: 15
   relevant_ids:
+  - cian_333016728
+  - cian_332257017
   - cian_329565699
-  - cian_331980611
-  - cian_332060678
-  - cian_331607192
-  - cian_331820177
-  - cian_331745115
-  - cian_332054266
-  - cian_332002788
-  - cian_329312653
-  - cian_331931549
+  - cian_332146503
+  - cian_332884945
+  - cian_332578650
+  - cian_330973135
+  - cian_331664017
+  - cian_332007395
+  - cian_332281652
   relevance:
+    cian_333016728: 3
+    cian_332257017: 3
     cian_329565699: 3
-    cian_331980611: 3
-    cian_332060678: 3
-    cian_331607192: 2
-    cian_331820177: 2
-    cian_331745115: 2
-    cian_332054266: 1
-    cian_332002788: 1
-    cian_329312653: 1
-    cian_331931549: 1
+    cian_332146503: 2
+    cian_332884945: 2
+    cian_332578650: 2
+    cian_330973135: 1
+    cian_331664017: 1
+    cian_332007395: 1
+    cian_332281652: 1
 - id: a07
   lang: ru
   query: тихая трёшка до 75 млн, школа в 10 минутах
@@ -209,26 +209,26 @@
       walk_minutes: 10
   relevant_ids:
   - cian_309288293
-  - cian_331856555
-  - cian_330805211
-  - cian_319983543
+  - cian_331659903
+  - cian_331617753
+  - cian_332931542
   - cian_324839501
   - cian_329480749
   - cian_330850262
-  - cian_331685830
-  - cian_330891228
-  - cian_331903578
+  - cian_331726195
+  - cian_329913344
+  - cian_331760858
   relevance:
     cian_309288293: 3
-    cian_331856555: 3
-    cian_330805211: 3
-    cian_319983543: 2
+    cian_331659903: 3
+    cian_331617753: 3
+    cian_332931542: 2
     cian_324839501: 2
     cian_329480749: 2
     cian_330850262: 1
-    cian_331685830: 1
-    cian_330891228: 1
-    cian_331903578: 1
+    cian_331726195: 1
+    cian_329913344: 1
+    cian_331760858: 1
 - id: a08
   lang: en
   query: one or two room flat up to 30M, school within 9 minutes
@@ -241,27 +241,27 @@
     - kind: school
       walk_minutes: 9
   relevant_ids:
+  - cian_314597303
   - cian_331826409
-  - cian_329776569
-  - cian_329194296
-  - cian_332057874
-  - cian_331708280
-  - cian_330495184
-  - cian_331694115
-  - cian_330813606
-  - cian_320145511
-  - cian_331686740
+  - cian_328541004
+  - cian_331116854
+  - cian_332257017
+  - cian_329819827
+  - cian_332702819
+  - cian_326006202
+  - cian_332833962
+  - cian_332416630
   relevance:
+    cian_314597303: 3
     cian_331826409: 3
-    cian_329776569: 3
-    cian_329194296: 3
-    cian_332057874: 2
-    cian_331708280: 2
-    cian_330495184: 2
-    cian_331694115: 1
-    cian_330813606: 1
-    cian_320145511: 1
-    cian_331686740: 1
+    cian_328541004: 3
+    cian_331116854: 2
+    cian_332257017: 2
+    cian_329819827: 2
+    cian_332702819: 1
+    cian_326006202: 1
+    cian_332833962: 1
+    cian_332416630: 1
 - id: a09
   lang: ru
   query: трёшка или четвёрка до 90 млн, парк и метро в 10 минутах
@@ -276,27 +276,27 @@
     - kind: metro
       walk_minutes: 10
   relevant_ids:
+  - cian_330600166
   - cian_330773471
-  - cian_329709914
-  - cian_330177606
-  - cian_315032889
-  - cian_330484655
-  - cian_331176835
-  - cian_331420359
-  - cian_328622376
-  - cian_331856555
-  - cian_331662178
+  - cian_330708830
+  - cian_332003713
+  - cian_332680338
+  - cian_332904631
+  - cian_331202250
+  - cian_332922695
+  - cian_328787576
+  - cian_331426346
   relevance:
+    cian_330600166: 3
     cian_330773471: 3
-    cian_329709914: 3
-    cian_330177606: 3
-    cian_315032889: 2
-    cian_330484655: 2
-    cian_331176835: 2
-    cian_331420359: 1
-    cian_328622376: 1
-    cian_331856555: 1
-    cian_331662178: 1
+    cian_330708830: 3
+    cian_332003713: 2
+    cian_332680338: 2
+    cian_332904631: 2
+    cian_331202250: 1
+    cian_332922695: 1
+    cian_328787576: 1
+    cian_331426346: 1
 - id: a10
   lang: ru
   query: двушка до 50 млн, метро в 10 минутах
@@ -309,26 +309,26 @@
       walk_minutes: 10
   relevant_ids:
   - cian_329565699
-  - cian_331980611
-  - cian_326599816
+  - cian_331230731
+  - cian_332052161
+  - cian_332755836
   - cian_328984084
-  - cian_330033787
   - cian_331190708
-  - cian_331740083
-  - cian_331745115
-  - cian_331820177
-  - cian_331894681
+  - cian_331901772
+  - cian_332183547
+  - cian_332777407
+  - cian_332823591
   relevance:
     cian_329565699: 3
-    cian_331980611: 3
-    cian_326599816: 3
+    cian_331230731: 3
+    cian_332052161: 3
+    cian_332755836: 2
     cian_328984084: 2
-    cian_330033787: 2
     cian_331190708: 2
-    cian_331740083: 1
-    cian_331745115: 1
-    cian_331820177: 1
-    cian_331894681: 1
+    cian_331901772: 1
+    cian_332183547: 1
+    cian_332777407: 1
+    cian_332823591: 1
 - id: b01
   lang: ru
   curate: true
@@ -339,7 +339,28 @@
     area_min: 45.0
     area_max: 60.0
     price_max: 35000000
-  relevant_ids: []
+  relevant_ids:
+  - cian_298380292
+  - cian_308937811
+  - cian_314931597
+  - cian_315116633
+  - cian_315689585
+  - cian_319197332
+  - cian_320395943
+  - cian_320702104
+  - cian_321059460
+  - cian_324948167
+  relevance:
+    cian_298380292: 3
+    cian_308937811: 3
+    cian_314931597: 3
+    cian_315116633: 2
+    cian_315689585: 2
+    cian_319197332: 2
+    cian_320395943: 1
+    cian_320702104: 1
+    cian_321059460: 1
+    cian_324948167: 1
 - id: b02
   lang: en
   curate: true
@@ -349,7 +370,28 @@
     - 1
     price_max: 25000000
     lang: en
-  relevant_ids: []
+  relevant_ids:
+  - cian_279862372
+  - cian_301575978
+  - cian_306868968
+  - cian_308398113
+  - cian_311748490
+  - cian_313031818
+  - cian_314597303
+  - cian_314882376
+  - cian_315116246
+  - cian_315689465
+  relevance:
+    cian_279862372: 3
+    cian_301575978: 3
+    cian_306868968: 3
+    cian_308398113: 2
+    cian_311748490: 2
+    cian_313031818: 2
+    cian_314597303: 1
+    cian_314882376: 1
+    cian_315116246: 1
+    cian_315689465: 1
 - id: b03
   lang: ru
   curate: true
@@ -361,7 +403,28 @@
     geo:
     - kind: metro
       walk_minutes: 7
-  relevant_ids: []
+  relevant_ids:
+  - cian_328664725
+  - cian_328787576
+  - cian_331604928
+  - cian_332535439
+  - cian_332915875
+  - cian_296106317
+  - cian_323831565
+  - cian_329560598
+  - cian_329560600
+  - cian_329560855
+  relevance:
+    cian_328664725: 3
+    cian_328787576: 3
+    cian_331604928: 3
+    cian_332535439: 2
+    cian_332915875: 2
+    cian_296106317: 2
+    cian_323831565: 1
+    cian_329560598: 1
+    cian_329560600: 1
+    cian_329560855: 1
 - id: b04
   lang: ru
   query: квартира в старом центре, рядом с Патриаршими
@@ -383,4 +446,178 @@
     stop_factors:
     - communal_flats
     - bars
-  relevant_ids: []
+  relevant_ids:
+  - cian_315689585
+  - cian_322728081
+  - cian_323804160
+  - cian_327297617
+  - cian_328787576
+  - cian_329289311
+  - cian_330474191
+  - cian_330616158
+  - cian_331076411
+  - cian_331150190
+  relevance:
+    cian_315689585: 3
+    cian_322728081: 3
+    cian_323804160: 3
+    cian_327297617: 2
+    cian_328787576: 2
+    cian_329289311: 2
+    cian_330474191: 1
+    cian_330616158: 1
+    cian_331076411: 1
+    cian_331150190: 1
+- id: c01
+  lang: ru
+  curate: true
+  query: сталинка в Хамовниках
+  expected_parse:
+    area: Хамовники
+  match:
+    address_ilike: '%Хамовник%'
+  relevant_ids:
+  - cian_327030757
+  - cian_328904515
+  - cian_328904518
+  - cian_331124720
+  relevance:
+    cian_327030757: 3
+    cian_328904515: 2
+    cian_328904518: 1
+    cian_331124720: 1
+- id: c02
+  lang: ru
+  curate: true
+  query: квартира у метро Павелецкая
+  expected_parse: {}
+  match:
+    metro_ilike: '%Павелецк%'
+  relevant_ids:
+  - cian_301260224
+  - cian_320458392
+  - cian_323516972
+  - cian_323516981
+  - cian_323517098
+  - cian_324615519
+  - cian_324615564
+  - cian_324615567
+  - cian_324615615
+  - cian_324615659
+  relevance:
+    cian_301260224: 3
+    cian_320458392: 3
+    cian_323516972: 3
+    cian_323516981: 2
+    cian_323517098: 2
+    cian_324615519: 2
+    cian_324615564: 1
+    cian_324615567: 1
+    cian_324615615: 1
+    cian_324615659: 1
+- id: c03
+  lang: ru
+  curate: true
+  query: двушка на Кутузовском проспекте
+  expected_parse:
+    rooms:
+    - 2
+    area: Кутузовский проспект
+  match:
+    address_ilike: '%Кутузовск%'
+  relevant_ids:
+  - cian_331204894
+  - cian_332036617
+  - cian_332518301
+  - cian_332572345
+  - cian_333007996
+  relevance:
+    cian_331204894: 3
+    cian_332036617: 3
+    cian_332518301: 2
+    cian_332572345: 1
+    cian_333007996: 1
+- id: c04
+  lang: ru
+  curate: true
+  query: квартира возле метро Фрунзенская
+  expected_parse: {}
+  match:
+    metro_ilike: '%Фрунзенск%'
+  relevant_ids:
+  - cian_319352551
+  - cian_319459986
+  - cian_321954764
+  - cian_324923398
+  - cian_325111598
+  - cian_327235620
+  - cian_327502967
+  - cian_328977592
+  - cian_328977598
+  - cian_329186667
+  relevance:
+    cian_319352551: 3
+    cian_319459986: 3
+    cian_321954764: 3
+    cian_324923398: 2
+    cian_325111598: 2
+    cian_327235620: 2
+    cian_327502967: 1
+    cian_328977592: 1
+    cian_328977598: 1
+    cian_329186667: 1
+- id: c05
+  lang: ru
+  curate: true
+  query: однушка в Пресне
+  expected_parse:
+    rooms:
+    - 1
+    area: Пресня
+  match:
+    address_ilike: '%Пресн%'
+  relevant_ids:
+  - cian_323463408
+  - cian_324172615
+  - cian_328636720
+  - cian_329159831
+  - cian_330691916
+  - cian_331233670
+  - cian_331299435
+  relevance:
+    cian_323463408: 3
+    cian_324172615: 3
+    cian_328636720: 2
+    cian_329159831: 2
+    cian_330691916: 1
+    cian_331233670: 1
+    cian_331299435: 1
+- id: c06
+  lang: ru
+  curate: true
+  query: квартира рядом со станцией Белорусская
+  expected_parse: {}
+  match:
+    metro_ilike: '%Белорусск%'
+  relevant_ids:
+  - cian_304244566
+  - cian_324948167
+  - cian_326192619
+  - cian_326702160
+  - cian_326901740
+  - cian_327029871
+  - cian_327956251
+  - cian_328477135
+  - cian_328639059
+  - cian_329237290
+  relevance:
+    cian_304244566: 3
+    cian_324948167: 3
+    cian_326192619: 3
+    cian_326702160: 2
+    cian_326901740: 2
+    cian_327029871: 2
+    cian_327956251: 1
+    cian_328477135: 1
+    cian_328639059: 1
+    cian_329237290: 1

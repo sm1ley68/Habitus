@@ -1,4 +1,5 @@
 import argparse
+import sys
 from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
@@ -29,6 +30,14 @@ def _refresh_doc_text(conn) -> int:
 
 
 _PARSERS = {"kaggle": parse_kaggle_csv, "cian": parse_cian_csv}
+
+# Пороги гейта `eval --check`: измеренное recall@10/NDCG@10 варианта
+# rrf+rerank+prox (полный golden-set, a+b+c серии) минус 0.05 — запас под шум
+# одного прогона, а не под ожидаемое улучшение. Источник измерения:
+# docs/notes/eval-baseline-2026-08-18.md; менять оба значения только вместе
+# с новым прогоном и новой записью в заметке.
+_DEFAULT_MIN_RECALL = 0.29
+_DEFAULT_MIN_NDCG = 0.30
 
 
 def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
@@ -81,6 +90,13 @@ def main():
     s.add_argument("query")
     ev = sub.add_parser("eval")
     ev.add_argument("--golden", type=Path, default=None)
+    ev.add_argument("--check", action="store_true",
+                    help="ненулевой код возврата при просадке ниже порогов")
+    # Дефолты — измеренное значение rrf+rerank+prox минус 0.05 (запас под шум
+    # прогона), зафиксировано после расширения golden-set c-серией:
+    # docs/notes/eval-baseline-2026-08-18.md. Обновлять вместе с этой заметкой.
+    ev.add_argument("--min-recall", type=float, default=_DEFAULT_MIN_RECALL)
+    ev.add_argument("--min-ndcg", type=float, default=_DEFAULT_MIN_NDCG)
     evidence = sub.add_parser("import-evidence")
     evidence.add_argument("--geojson", type=Path, required=True)
     zones = sub.add_parser("import-zones")
@@ -112,12 +128,21 @@ def main():
                 print("Деградация: " + ", ".join(resp.degraded))
             print(resp.data_freshness)
         elif args.cmd == "eval":
-            from habitus.eval.runner import (DEFAULT_GOLDEN, format_report,
-                                             load_golden, run_eval)
+            from habitus.eval.runner import (DEFAULT_GOLDEN, check_thresholds,
+                                             format_report, load_golden, run_eval)
             from habitus.online.llm import OpenRouterLLM
             llm = OpenRouterLLM() if settings.openrouter_api_key else None
             golden = load_golden(args.golden or DEFAULT_GOLDEN)
-            print(format_report(run_eval(conn, llm, golden)))
+            res = run_eval(conn, llm, golden)
+            print(format_report(res))
+            if args.check:
+                failures = check_thresholds(res, args.min_recall, args.min_ndcg)
+                if failures:
+                    print("\nГЕЙТ НЕ ПРОЙДЕН:")
+                    for f in failures:
+                        print(f"  - {f}")
+                    sys.exit(1)
+                print("\nгейт пройден")
         elif args.cmd == "import-evidence":
             from habitus.geo.evidence import import_geojson_file
             init_db(conn)
