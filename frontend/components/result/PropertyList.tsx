@@ -1,6 +1,7 @@
 "use client";
 import { motion } from "framer-motion";
 import PropertyCard from "./PropertyCard";
+import LoadMoreButton from "./LoadMoreButton";
 import { useSession } from "@/lib/store/session";
 
 export default function PropertyList() {
@@ -15,6 +16,7 @@ export default function PropertyList() {
       {properties.map((p, i) => (
         <PropertyCard key={p.id} property={p} index={i} onOpen={open} />
       ))}
+      <LoadMoreButton />
     </motion.div>
   );
 }

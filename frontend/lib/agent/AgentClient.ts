@@ -1,4 +1,4 @@
-import type { AgentEvent, Property, GeoZone } from "./types";
+import type { AgentEvent, Property, GeoZone, ConstraintDiagnostic } from "./types";
 
 export interface RunResult {
   properties: Property[];
@@ -8,6 +8,19 @@ export interface RunResult {
   areaLabel: string | null;
   /** Нужен паспорту объекта и чату по объекту как контекст поиска. */
   chatId: string;
+  /** Сколько объектов сохранено для этого поиска целиком (не только страница). */
+  total: number;
+  /** Есть ли за пределами properties ещё что показать — «показать ещё». */
+  hasMore: boolean;
+  /** Почему выдача пуста; непустой только при нулевой выдаче. */
+  diagnostics: ConstraintDiagnostic[];
+}
+
+export interface RunOptions {
+  /** Продолжить существующий диалог: реплика уходит в этот чат, и шлюз
+   *  подмешает разбор предыдущего шага (prev_parsed). Без него заводится
+   *  новый чат, то есть запрос разбирается без контекста. */
+  chatId?: string;
 }
 
 export interface RunHandlers {
@@ -18,5 +31,5 @@ export interface RunHandlers {
 
 export interface AgentClient {
   /** Starts a run; returns a cancel function that stops all pending emissions. */
-  run(query: string, handlers: RunHandlers): () => void;
+  run(query: string, handlers: RunHandlers, options?: RunOptions): () => void;
 }

@@ -2,6 +2,7 @@
 // должен: приложение берёт все факты из бэка (lib/api/*). Формы здесь повторяют
 // контракт, чтобы тесты рендерили компоненты на реалистичном входе.
 import type { Property, LifestyleBlock, HistoryItem, GeoZone, LayerId, Dossier } from "@/lib/agent/types";
+import type { RunResult } from "@/lib/agent/AgentClient";
 import { LAYER_LABELS } from "@/lib/agent/types";
 
 // Real SPb coordinates near Лицей 239 (Кирочная ул.).
@@ -245,3 +246,13 @@ export { LAYER_LABELS };
 
 export const ANSWER_TEXT =
   "Нашёл 4 варианта под ваш сценарий. Лучше всего подходит ЖК Neva Residence: до сильной школы 11 минут пешком без опасных переходов, окна во двор-парк, рядом нет баров. Ниже — карта зоны и карточки объектов, отсортированные по совпадению с запросом.";
+
+
+// runResult — RunResult с дефолтами полей пагинации и диагностики. Тесты
+// задают только то, что проверяют; остальное не должно шуметь в каждом вызове.
+export function runResult(patch: Partial<RunResult> = {}): RunResult {
+  return {
+    properties: [], zoneGeoJSON: null, areaLabel: null, chatId: "c1",
+    total: 0, hasMore: false, diagnostics: [], ...patch,
+  };
+}

@@ -69,6 +69,14 @@ export interface Property {
   coordinates: [number, number]; // [lng, lat]
 }
 
+/** Диагностика пустой выдачи: сколько объектов оставалось после каждой клаузы
+ *  фильтра, в порядке их наложения (habitus/online/retrieval.py). Приходит
+ *  только когда результатов ноль. */
+export interface ConstraintDiagnostic {
+  constraint: string;
+  remaining: number;
+}
+
 export type WaypointKind =
   | "home" | "park" | "crossing" | "school" | "bar" | "metro" | "poi";
 

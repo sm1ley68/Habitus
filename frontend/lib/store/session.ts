@@ -1,8 +1,11 @@
 import { create } from "zustand";
-import type { Stage, AgentEvent, Property, City, GeoZone, LayerId } from "@/lib/agent/types";
+import type {
+  Stage, AgentEvent, Property, City, GeoZone, LayerId, ConstraintDiagnostic,
+} from "@/lib/agent/types";
 import { nextStage } from "@/lib/agent/stageMachine";
 import type { AgentClient, RunResult } from "@/lib/agent/AgentClient";
 import { fetchLayers, fetchListings, type LayerCollections } from "@/lib/api/geo";
+import { fetchMoreResults } from "@/lib/api/results";
 
 export type Screen = "chat" | "result" | "map" | "passport";
 
@@ -27,12 +30,22 @@ interface SessionState {
   mapListings: GeoJSON.FeatureCollection | null;
   /** Объект, открытый КЛИКОМ ПО КАРТЕ: он вне выдачи, поэтому лежит отдельно. */
   mapProperty: Property | null;
-  /** chat_id текущего поиска — контекст для паспорта и чата по объекту. */
+  /** chat_id текущего поиска — контекст для паспорта, чата по объекту и
+   *  многоходового диалога: следующая реплика уходит в этот же чат. */
   chatId: string | null;
+  /** Сколько объектов сохранено для текущего поиска целиком. */
+  totalResults: number;
+  /** Есть ли что дотянуть кнопкой «показать ещё». */
+  hasMore: boolean;
+  /** Идёт ли догрузка страницы прямо сейчас. */
+  loadingMore: boolean;
+  /** Почему выдача пуста — непустой только при нулевой выдаче. */
+  diagnostics: ConstraintDiagnostic[];
   errorMessage: string | null;
   _cancel?: () => void;
 
   startQuery: (client: AgentClient, query: string) => void;
+  loadMore: () => Promise<void>;
   applyEvent: (e: AgentEvent) => void;
   finish: (result: RunResult) => void;
   fail: (message: string) => void;
@@ -66,6 +79,10 @@ const initial = {
   mapListings: null as GeoJSON.FeatureCollection | null,
   mapProperty: null as Property | null,
   chatId: null as string | null,
+  totalResults: 0,
+  hasMore: false,
+  loadingMore: false,
+  diagnostics: [] as ConstraintDiagnostic[],
   errorMessage: null as string | null,
 };
 
@@ -74,13 +91,42 @@ export const useSession = create<SessionState>((set, get) => ({
 
   startQuery: (client, query) => {
     get()._cancel?.();
-    set({ stage: "idle", answer: "", screen: "chat", properties: [], errorMessage: null });
+    // chatId НЕ сбрасываем: реплика уходит в тот же чат, и шлюз подмешает
+    // разбор предыдущего шага. Диалог начинается заново только через
+    // newDialog() или смену города.
+    const chatId = get().chatId;
+    set({ stage: "idle", answer: "", screen: "chat", properties: [],
+          diagnostics: [], hasMore: false, totalResults: 0, errorMessage: null });
     const cancel = client.run(query, {
       onEvent: (e) => get().applyEvent(e),
       onDone: (r) => get().finish(r),
       onError: (_code, message) => get().fail(message),
-    });
+    }, chatId ? { chatId } : undefined);
     set({ _cancel: cancel });
+  },
+
+  // «Показать ещё»: остаток сохранённого пула поднимается из
+  // GET /chats/{id}/results, повторный поиск не запускается.
+  loadMore: async () => {
+    const { chatId, properties, hasMore, loadingMore } = get();
+    if (!chatId || !hasMore || loadingMore) return;
+    set({ loadingMore: true });
+    try {
+      const page = await fetchMoreResults(chatId, properties.length);
+      set((s) => {
+        const merged = [...s.properties, ...page.objects];
+        return {
+          properties: merged,
+          totalResults: page.total,
+          hasMore: merged.length < page.total && page.objects.length > 0,
+          loadingMore: false,
+        };
+      });
+    } catch {
+      // Не дотянулось — оставляем то, что уже показано, и прячем кнопку:
+      // повторный тык по неработающей кнопке хуже её отсутствия.
+      set({ loadingMore: false, hasMore: false });
+    }
   },
 
   applyEvent: (e) =>
@@ -89,11 +135,15 @@ export const useSession = create<SessionState>((set, get) => ({
       answer: e.token ? st.answer + e.token : st.answer,
     })),
 
-  finish: ({ properties, zoneGeoJSON, areaLabel, chatId }) =>
-    set({ properties, stage: "done", screen: "result", zoneGeoJSON, areaLabel, chatId }),
+  finish: ({ properties, zoneGeoJSON, areaLabel, chatId, total, hasMore, diagnostics }) =>
+    set({ properties, stage: "done", screen: "result", zoneGeoJSON, areaLabel, chatId,
+          totalResults: total, hasMore, diagnostics }),
 
   fail: (errorMessage) => set({ stage: "error", errorMessage }),
 
+  // «Новый поиск» в LeftRail: обрывает и выдачу, и ДИАЛОГ — chatId уходит в
+  // null, поэтому следующий запрос заведёт новый чат и уйдёт в ML без
+  // prev_parsed. Это единственный способ начать разговор с чистого листа.
   reset: () => { get()._cancel?.(); set({ ...initial }); },
 
   // Уход с паспорта снимает объект, открытый с карты: иначе он перекрыл бы
@@ -102,9 +152,12 @@ export const useSession = create<SessionState>((set, get) => ({
   selectProperty: (selectedIndex) => set({ selectedIndex, screen: "passport", mapProperty: null }),
   // Смена города обесценивает всё, что было посчитано для прежнего: слои,
   // выдачу и зону. Иначе на карте Питера остались бы московские полигоны.
+  // chatId тоже сбрасывается: чат привязан к городу на бэке, продолжать
+  // московский диалог питерской репликой нельзя.
   setCity: (city) => set({ city, layerData: {}, properties: [], zoneGeoJSON: null,
                            areaLabel: null, selectedIndex: 0, mapListings: null,
-                           mapProperty: null }),
+                           mapProperty: null, chatId: null, totalResults: 0,
+                           hasMore: false, diagnostics: [] }),
   toggleHistory: () => set((s) => ({ historyOpen: !s.historyOpen })),
 
   // «Бары» — один тумблер на две формы одних и тех же данных: точки заведений

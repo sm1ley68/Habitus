@@ -375,3 +375,49 @@ func TestHistoryObjectIDsKeepsShortListIntact(t *testing.T) {
 		t.Fatalf("len = %d; want 3 — короткий список режется зря", len(got))
 	}
 }
+
+func TestFinalResultCarriesDiagnosticsWhenEmpty(t *testing.T) {
+	// Пустая выдача без объяснения читается как поломка: диагностика ML —
+	// единственный способ назвать условие, которое обнулило выборку.
+	svc := &SearchStreamService{}
+	resp := &client.SearchResponse{
+		Diagnostics: []client.ConstraintDiagnostic{
+			{Constraint: "база", Remaining: 340},
+			{Constraint: "цена", Remaining: 0},
+		},
+	}
+
+	final, _, _ := svc.buildFinalResult(context.Background(), resp, nil)
+
+	b, err := json.Marshal(final)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	steps, ok := got["diagnostics"].([]any)
+	if !ok || len(steps) != 2 {
+		t.Fatalf("diagnostics = %#v; want два шага", got["diagnostics"])
+	}
+	first := steps[0].(map[string]any)
+	if first["constraint"] != "база" || first["remaining"].(float64) != 340 {
+		t.Fatalf("первый шаг = %#v; порядок клауз обязан сохраниться", first)
+	}
+}
+
+func TestFinalResultOmitsDiagnosticsWhenResultsPresent(t *testing.T) {
+	// ML считает диагностику только при нулевой выдаче; пустой список в
+	// событии фронт принял бы за «посчитали и ничего не нашли».
+	svc := &SearchStreamService{}
+
+	final, _, _ := svc.buildFinalResult(context.Background(), &client.SearchResponse{}, nil)
+
+	b, _ := json.Marshal(final)
+	var got map[string]any
+	_ = json.Unmarshal(b, &got)
+	if _, present := got["diagnostics"]; present {
+		t.Fatalf("diagnostics присутствует = %#v; want поле отсутствует", got["diagnostics"])
+	}
+}

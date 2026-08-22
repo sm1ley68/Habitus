@@ -74,11 +74,14 @@ type SearchResponse struct {
 	// Notes — честные примечания ML о покрытии данных (например: ориентация
 	// окон известна у ~2% объявлений, поэтому учтена как предпочтение, а не
 	// как фильтр). Нужны объяснению, иначе оно о них не узнает.
-	Notes         []string `json:"notes"`
-	DataFreshness string   `json:"data_freshness"`
-	Degraded      []string `json:"degraded"`
-	AreaLabel     string   `json:"area_label"`
-	AreaGeojson   any      `json:"area_geojson"`
+	Notes []string `json:"notes"`
+	// Diagnostics — почему выдача пуста: сколько объектов оставалось после
+	// каждой клаузы фильтра. ML считает их только при нулевой выдаче.
+	Diagnostics   []ConstraintDiagnostic `json:"diagnostics"`
+	DataFreshness string                 `json:"data_freshness"`
+	Degraded      []string               `json:"degraded"`
+	AreaLabel     string                 `json:"area_label"`
+	AreaGeojson   any                    `json:"area_geojson"`
 	// Intent — намерение реплики многоходового чата (Task 3 ML: TurnIntent).
 	// Пустая строка равнозначна отсутствию поля в ответе — до значения по
 	// умолчанию его сама ML не заполняет.
@@ -88,6 +91,13 @@ type SearchResponse struct {
 	// не выполнилась в этом запросе, в словаре отсутствует — нулей вместо
 	// отсутствующего замера здесь так же не бывает, как и на стороне ML.
 	Timings map[string]float64 `json:"timings"`
+}
+
+// ConstraintDiagnostic — один шаг диагностики пустой выдачи
+// (habitus/online/retrieval.py::constraint_diagnostics).
+type ConstraintDiagnostic struct {
+	Constraint string `json:"constraint"`
+	Remaining  int    `json:"remaining"`
 }
 
 type PointConstraint struct {

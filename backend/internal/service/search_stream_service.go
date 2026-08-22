@@ -65,6 +65,11 @@ type FinalResultEvent struct {
 	// не трогаем, фронт без «показать ещё» может их игнорировать.
 	Total   int  `json:"total"`
 	HasMore bool `json:"has_more"`
+	// Diagnostics — почему выдача пуста: сколько объектов оставалось после
+	// каждой клаузы фильтра. ML присылает их только при нулевой выдаче,
+	// omitempty сохраняет ту же семантику в событии: поля нет, а не пустой
+	// список, который фронт принял бы за «диагностика посчитана и пуста».
+	Diagnostics []client.ConstraintDiagnostic `json:"diagnostics,omitempty"`
 }
 
 // pickSuggestedAreas: реальная граница зоны (из ML) заменяет convex-hull результатов.
@@ -515,6 +520,7 @@ func (s *SearchStreamService) buildFinalResult(ctx context.Context, resp *client
 		Intent:                resp.Intent,
 		Total:                 total,
 		HasMore:               hasMore,
+		Diagnostics:           resp.Diagnostics,
 	}, objectIDs, scores
 }
 
