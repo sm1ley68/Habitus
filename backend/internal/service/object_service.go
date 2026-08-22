@@ -251,7 +251,7 @@ type ObjectPassport struct {
 	LifestyleAnalysis LifestyleAnalysis `json:"lifestyle_analysis"`
 }
 
-// dossierStore и listingFacts — части ChatSearchRepo и ListingRepo, нужные
+// dossierStore и listingSource — части ChatSearchRepo и ListingRepo, нужные
 // этому сервису. Обособленные интерфейсы — тот же приём, что у chatSearchStore
 // в search_stream_service.go и resultsLister в results_service.go: позволяют
 // проверить деградацию (ML упала, кэш протух) без реальной БД.

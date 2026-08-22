@@ -244,3 +244,25 @@ func TestSweepKeepsUsersStillInsideWindow(t *testing.T) {
 		t.Fatal("третий запрос при лимите 2 прошёл — квота обнулилась чисткой")
 	}
 }
+
+func TestSweepKeepsWindowWhoseOldestEntryExpired(t *testing.T) {
+	// Окно из двух отметок: первая уже вышла за границу, вторая — нет. Судить
+	// о живости окна по САМОЙ СТАРОЙ отметке значит снести ещё действующую
+	// квоту и молча выдать пользователю вторую.
+	limiter, clock := newTestLimiter(2, time.Hour)
+	user := uuid.New()
+
+	limiter.Allow(user) // отметка 1
+	clock.advance(50 * time.Minute)
+	limiter.Allow(user)             // отметка 2 — квота исчерпана
+	clock.advance(20 * time.Minute) // отметка 1 протухла, отметка 2 жива
+
+	limiter.Sweep()
+
+	// Запись обязана уцелеть: судить о живости окна по самой старой отметке
+	// значит потерять ещё действующую. (Третий запрос здесь пройдёт законно —
+	// в окне осталась одна отметка из двух разрешённых, это и есть скольжение.)
+	if got := limiter.Track(); got != 1 {
+		t.Fatalf("Track() = %d; want 1 — окно с живой отметкой снесено", got)
+	}
+}
