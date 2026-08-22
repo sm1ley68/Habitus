@@ -162,3 +162,49 @@ def test_snapshot_spans_two_last_crawls():
 def test_more_crawls_requested_than_exist_keeps_everything():
     rows = [{"external_id": "a", "collected_at": "2026-08-17T19:23:27Z"}]
     assert latest_snapshot_ids(rows, crawls=5) == {"a"}
+
+
+def test_partial_snapshot_deactivates_nothing():
+    """Щадящий обход (HABITUS_MAX_OFFERS=400) снимает первые страницы выдачи,
+    а не всю базу. Объявление, которого нет в таком снимке, скорее «не
+    долистали», чем «снято с продажи»: без порога один щадящий цикл гасил бы
+    всё, что собрали предыдущие, и база схлопывалась до размера снимка."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            for i in range(20):
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active)
+                       VALUES (%s,'cian',true);""", (f"cian_{i:02d}",))
+        conn.commit()
+
+        # снимок покрывает 2 из 20 активных — 10%, заведомо ниже порога
+        gone = deactivate_missing({"cian_00", "cian_01"}, conn, source="cian")
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM listings WHERE is_active;")
+            alive = cur.fetchone()[0]
+    assert gone == 0
+    assert alive == 20
+
+
+def test_full_snapshot_still_deactivates():
+    """Обратная сторона: полный обход обязан гасить снятое с продажи, иначе
+    защита от частичного снимка превращается в отключение гашения вовсе."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            for i in range(10):
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active)
+                       VALUES (%s,'cian',true);""", (f"cian_{i:02d}",))
+        conn.commit()
+
+        # снимок покрывает 9 из 10 — обход полный, одно объявление ушло
+        snapshot = {f"cian_{i:02d}" for i in range(9)}
+        gone = deactivate_missing(snapshot, conn, source="cian")
+        with conn.cursor() as cur:
+            cur.execute("SELECT is_active FROM listings WHERE external_id='cian_09';")
+            assert cur.fetchone()[0] is False
+    assert gone == 1

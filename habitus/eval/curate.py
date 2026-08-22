@@ -20,6 +20,10 @@ from habitus.online.retrieval import NOISE_ORDER
 GOLDEN = Path(__file__).parent / "queries.yaml"
 TOP_N = 10
 
+# Гео-оси, для которых в listings есть колонка walk_min_* (тот же Literal, что
+# в schema.GeoConstraint).
+GEO_KINDS = ("school", "metro", "park")
+
 # Радиус, в котором enrich усредняет модельные дБ (habitus/geo/enrich.py).
 NOISE_RADIUS_M = 500
 
@@ -52,6 +56,10 @@ def _where_and_params(exp: dict, match: dict | None = None) -> tuple[list[str], 
     if exp.get("area_max") is not None:
         where.append("area <= %s"); params.append(exp["area_max"])
     for g in exp.get("geo") or []:
+        # имя колонки приходит из YAML — замыкаем на белый список, чтобы оно
+        # физически не могло попасть в текст SQL произвольной строкой
+        if g["kind"] not in GEO_KINDS:
+            raise ValueError(f"неизвестная гео-ось: {g['kind']!r}")
         col = f"walk_min_{g['kind']}"
         where.append(f"{col} IS NOT NULL AND {col} <= %s")
         params.append(g["walk_minutes"])
@@ -70,6 +78,14 @@ def _where_and_params(exp: dict, match: dict | None = None) -> tuple[list[str], 
         # именно то, находит ли dense/sparse/реранк такой объект по семантике
         # doc_text, а не подмешивается ли SQL-фильтр, которого в пайплайне нет.
         # Параметризованный ILIKE — никакой склейки строк с паттерном.
+        # Опечатка в имени ключа не должна молча дать эталон вообще без
+        # текстового фильтра — это ровно тот фиктивный эталон, против которого
+        # написано правило «не выдумывать факты».
+        unknown = set(match) - {"address_ilike", "metro_ilike"}
+        if unknown:
+            raise ValueError(
+                f"неизвестные ключи match: {sorted(unknown)}; "
+                f"поддерживаются address_ilike, metro_ilike")
         if match.get("address_ilike"):
             where.append("address ILIKE %s"); params.append(match["address_ilike"])
         if match.get("metro_ilike"):
@@ -127,6 +143,20 @@ def grade(i: int, n: int) -> int:
 def curate(conn, item: dict) -> tuple[list[str], dict[str, int], int]:
     exp = item.get("expected_parse") or {}
     rows = eligible_rows(conn, exp, item.get("match"))
+    scores = [score(r, exp) for r in rows]
+
+    # Ранжирующего сигнала нет (score одинаков у всех — так бывает у запросов
+    # без geo и noise_max, например у всей текстовой c-серии): порядок внутри
+    # пула ничего не значит. Срезать такой пул до TOP_N значит объявить
+    # произвольные 10 наименьших external_id «лучшими», а остальные
+    # десятки подходящих объектов — нерелевантными. Вместо этого признаём
+    # релевантным весь пул с одинаковой оценкой: recall@10 у такого запроса
+    # честно ограничен сверху 10/|пул|, зато NDCG перестаёт мерить случайную
+    # перестановку.
+    if len(set(scores)) <= 1:
+        ids = sorted(r["external_id"] for r in rows)
+        return ids, {eid: 1 for eid in ids}, len(rows)
+
     # тай-брейк по external_id — прогон обязан быть воспроизводимым
     rows.sort(key=lambda r: (-score(r, exp), r["external_id"]))
     top = rows[:TOP_N]

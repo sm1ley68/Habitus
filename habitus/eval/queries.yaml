@@ -471,7 +471,7 @@
 - id: c01
   lang: ru
   curate: true
-  query: сталинка в Хамовниках
+  query: квартира в Хамовниках
   expected_parse:
     area: Хамовники
   match:

@@ -1,8 +1,17 @@
+import logging
 from datetime import datetime, timedelta
 
 import psycopg
 from habitus.geo.osm_extract import upsert_poi
 from habitus.geo.enrich import enrich_around
+
+log = logging.getLogger("habitus.update.incremental")
+
+# Какую долю активной базы должен покрыть снимок, чтобы по нему вообще можно
+# было гасить. 0.5 — не подобранное число: щадящий обход берёт 400 объявлений
+# при базе в тысячи (доля ~0.1), полный — почти всю базу (доля ~1.0), и
+# половина лежит в широком зазоре между этими режимами.
+SNAPSHOT_COVERAGE_MIN = 0.5
 
 # Порог, отделяющий один обход источника от другого. Обход 1500 объявлений
 # укладывается в пять минут, а прогоны идут раз в 6 часов — между этими
@@ -84,6 +93,15 @@ def deactivate_missing(active_ids: set[str], conn: psycopg.Connection,
     Пустой снимок не гасит ничего. Сорванный обход (капча, сеть, пустой файл)
     неотличим по данным от «всё снято с продажи», и цена ошибки несимметрична:
     обнулить базу дорого, пропустить один цикл гашения — нет.
+
+    По той же причине не гасим по ЧАСТИЧНОМУ снимку. Щадящий режим сбора
+    (HABITUS_MAX_OFFERS=400, см. scripts/refresh.sh и
+    docs/notes/cian-blocked-2026-08-17.md) снимает первые страницы выдачи, а не
+    всю базу: объявление, которого нет в таком снимке, скорее «не долистали»,
+    чем «снято с продажи». Без этого порога один щадящий цикл гасит всё, что
+    собрали предыдущие, — база схлопывается до размера одного снимка.
+    Настоящее гашение по частичным снимкам требует отметки «когда видели
+    последний раз», это отдельная задача.
     """
     if not active_ids:
         return 0
@@ -92,6 +110,13 @@ def deactivate_missing(active_ids: set[str], conn: psycopg.Connection,
     with conn.cursor() as cur:
         cur.execute(f"SELECT external_id FROM listings WHERE {where};", params)
         current = {r[0] for r in cur.fetchall()}
+        if len(active_ids) < len(current) * SNAPSHOT_COVERAGE_MIN:
+            log.warning(
+                "гашение пропущено: снимок %d объявлений против %d активных "
+                "(меньше %.0f%%) — похоже на частичный обход, а не на снятие "
+                "с продажи", len(active_ids), len(current),
+                SNAPSHOT_COVERAGE_MIN * 100)
+            return 0
         missing = current - active_ids
         if missing:
             cur.execute("UPDATE listings SET is_active=false, updated_at=now() "
