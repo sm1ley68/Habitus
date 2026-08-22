@@ -205,3 +205,42 @@ func TestRateLimiterDropsEntryWhenBlockedWindowEmpties(t *testing.T) {
 		t.Fatalf("Track() = %d; want 0 — пустое окно не должно оседать в карте", got)
 	}
 }
+
+func TestSweepDropsUsersWhoNeverCameBack(t *testing.T) {
+	// setWindow чистит запись только когда тот же пользователь приходит снова,
+	// поэтому зашедший однажды и не вернувшийся остался бы в карте навсегда.
+	limiter, clock := newTestLimiter(5, time.Hour)
+
+	for i := 0; i < 3; i++ {
+		limiter.Allow(uuid.New())
+	}
+	if got := limiter.Track(); got != 3 {
+		t.Fatalf("Track() = %d; want 3", got)
+	}
+
+	clock.advance(2 * time.Hour) // окна всех троих вышли
+	limiter.Sweep()
+
+	if got := limiter.Track(); got != 0 {
+		t.Fatalf("Track() = %d; want 0 — протухшие окна должны уйти", got)
+	}
+}
+
+func TestSweepKeepsUsersStillInsideWindow(t *testing.T) {
+	// Обратная сторона: чистка не имеет права снести живое окно, иначе лимит
+	// молча обнуляется и пользователь получает вторую квоту.
+	limiter, clock := newTestLimiter(2, time.Hour)
+	user := uuid.New()
+
+	limiter.Allow(user)
+	clock.advance(30 * time.Minute) // окно ещё живо
+	limiter.Sweep()
+
+	if got := limiter.Track(); got != 1 {
+		t.Fatalf("Track() = %d; want 1 — живое окно снесено", got)
+	}
+	limiter.Allow(user)
+	if allowed, _ := limiter.Allow(user); allowed {
+		t.Fatal("третий запрос при лимите 2 прошёл — квота обнулилась чисткой")
+	}
+}

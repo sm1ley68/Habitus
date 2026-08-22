@@ -27,7 +27,14 @@ type RateLimiter struct {
 	window   time.Duration
 	now      func() time.Time // подменяемый источник времени — тесты двигают окно без time.Sleep
 	requests map[uuid.UUID][]time.Time
+	calls    int // счётчик до следующей чистки карты, см. sweepEvery
 }
+
+// Как часто проходить карту целиком. setWindow удаляет запись только когда тот
+// же пользователь приходит снова, поэтому зашедший однажды и не вернувшийся
+// остался бы в ней навсегда. Чистка оппортунистическая, а не по тикеру: не
+// нужен ни контекст, ни фоновая горутина на процесс.
+const sweepEvery = 1000
 
 // NewRateLimiter — limit <= 0 трактуется как «ничего не пропускать»: сам по
 // себе лимитер не должен молча превращаться в заглушку. Проводка в app.go при
@@ -71,7 +78,24 @@ func (r *RateLimiter) Allow(userID uuid.UUID) (allowed bool, retryAfter time.Dur
 
 	kept = append(kept, now)
 	r.setWindow(userID, kept)
+
+	r.calls++
+	if r.calls >= sweepEvery {
+		r.calls = 0
+		r.sweepLocked(now)
+	}
 	return true, 0
+}
+
+// sweepLocked выбрасывает окна, целиком вышедшие за границу. Вызывается под
+// уже взятым r.mu.
+func (r *RateLimiter) sweepLocked(now time.Time) {
+	cutoff := now.Add(-r.window)
+	for userID, window := range r.requests {
+		if len(window) == 0 || !window[len(window)-1].After(cutoff) {
+			delete(r.requests, userID)
+		}
+	}
 }
 
 // setWindow сохраняет окно пользователя, удаляя запись целиком, когда окно
@@ -92,6 +116,14 @@ func (r *RateLimiter) Track() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.requests)
+}
+
+// Sweep — та же чистка вручную; нужна тестам, чтобы не гонять sweepEvery
+// вызовов ради проверки.
+func (r *RateLimiter) Sweep() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sweepLocked(r.now())
 }
 
 // RateLimitLLM — middleware для LLM-ручек (POST .../messages/stream и

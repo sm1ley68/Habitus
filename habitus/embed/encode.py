@@ -25,7 +25,9 @@ SPARSE_MAX_NNZ = 1000
 # encode_texts здесь, RERANK_LOCK — rerank() в habitus/online/rerank.py.
 EMBED_LOCK = threading.Lock()
 RERANK_LOCK = threading.Lock()
-# Публичное имя сохранено алиасом: на него ссылаются существующие импорты.
+# Историческое имя: до разделения локов инференса общий лок назывался так.
+# Внутри репозитория больше не используется — оставлен на случай внешних
+# импортов; удалять вместе с ними.
 INFERENCE_LOCK = EMBED_LOCK
 
 _model = None

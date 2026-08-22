@@ -20,8 +20,11 @@ VARIANTS = {"dense": ("dense",), "rrf": ("dense", "sparse")}
 # абляции поверх RRF: чистый реранк, proximity-бленд, реранк+proximity
 DERIVED = ("rrf+rerank", "rrf+prox", "rrf+rerank+prox")
 
-# Вариант, по которому судим о готовности к продакшену (тот же путь, что и
-# online.pipeline.run_search): им же гейтит --check в habitus/cli.py.
+# Вариант, по которому судим о готовности к продакшену: та же связка
+# retrieval + реранк + proximity, что в online.pipeline.run_search. Не путь
+# целиком — run_eval зовёт hybrid_search напрямую, без резолва области и без
+# relaxation, поэтому меряет более трудную задачу, чем прод (см.
+# docs/notes/eval-baseline-2026-08-18.md). Им же гейтит --check в cli.py.
 GATE_VARIANT = "rrf+rerank+prox"
 
 

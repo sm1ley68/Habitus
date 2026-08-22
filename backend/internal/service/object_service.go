@@ -251,10 +251,26 @@ type ObjectPassport struct {
 	LifestyleAnalysis LifestyleAnalysis `json:"lifestyle_analysis"`
 }
 
+// dossierStore и listingFacts — части ChatSearchRepo и ListingRepo, нужные
+// этому сервису. Обособленные интерфейсы — тот же приём, что у chatSearchStore
+// в search_stream_service.go и resultsLister в results_service.go: позволяют
+// проверить деградацию (ML упала, кэш протух) без реальной БД.
+type dossierStore interface {
+	GetResult(ctx context.Context, chatID uuid.UUID, externalID string) (domain.ChatSearchResult, error)
+	GetSearch(ctx context.Context, id uuid.UUID) (domain.ChatSearch, error)
+	SaveDossier(ctx context.Context, chatID, searchID uuid.UUID,
+		externalID, version string, dossier map[string]any) error
+}
+
+type listingSource interface {
+	GetByExternalID(ctx context.Context, externalID string) (domain.Listing, error)
+	GetUpdatedAt(ctx context.Context, externalID string) (*time.Time, error)
+}
+
 type ObjectService struct {
 	chats     *ChatService
-	results   *repository.ChatSearchRepo
-	listings  *repository.ListingRepo
+	results   dossierStore
+	listings  listingSource
 	ml        *client.MLClient
 	mlTimeout time.Duration
 	// ttlHours — срок жизни кэша chat_search_results.dossier (Task 7, config
@@ -454,7 +470,13 @@ func dossierFresh(dossierUpdatedAt, listingUpdatedAt *time.Time, ttlHours int, n
 
 func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID, city string,
 	res domain.ChatSearchResult) (DossierPayload, bool) {
+	// Протухший кэш держим наготове: если ML не ответит, отдать досье суточной
+	// давности честнее, чем не отдать ничего. Обмен «слегка устаревшее» на
+	// «блока нет» был бы ухудшением деградации, а не улучшением свежести.
+	var stale DossierPayload
+	staleOK := false
 	if res.DossierVersion == DossierSchemaVersion && res.Dossier != nil {
+		stale, staleOK = decodeDossier(res.Dossier)
 		listingUpdatedAt, err := s.listings.GetUpdatedAt(ctx, objectID)
 		if err != nil {
 			// Не удалось сверить свежесть с listings — не считаем это поводом
@@ -462,7 +484,7 @@ func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID,
 			listingUpdatedAt = nil
 		}
 		if dossierFresh(res.DossierUpdatedAt, listingUpdatedAt, s.ttlHours, time.Now()) {
-			return decodeDossier(res.Dossier)
+			return stale, staleOK
 		}
 	}
 	key := chatID.String() + "\x00" + objectID
@@ -471,9 +493,12 @@ func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID,
 		s.mu.Unlock()
 		select {
 		case <-call.done:
-			return call.payload, call.payload.Verdict.Headline != ""
+			if call.payload.Verdict.Headline != "" {
+				return call.payload, true
+			}
+			return stale, staleOK // чужой вызов не дал досье — свой кэш всё ещё лучше пустоты
 		case <-ctx.Done():
-			return DossierPayload{}, false
+			return stale, staleOK
 		}
 	}
 	call := &dossierCall{done: make(chan struct{})}
@@ -488,7 +513,7 @@ func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID,
 
 	search, err := s.results.GetSearch(ctx, res.SearchID)
 	if err != nil {
-		return DossierPayload{}, false
+		return stale, staleOK
 	}
 	mlCtx, cancel := context.WithTimeout(ctx, s.mlTimeout)
 	defer cancel()
@@ -500,11 +525,11 @@ func (s *ObjectService) dossier(ctx context.Context, chatID uuid.UUID, objectID,
 	})
 	observability.Default.ObserveMLCall("dossier", time.Since(callStart).Seconds())
 	if err != nil || response.SchemaVersion != DossierSchemaVersion {
-		return DossierPayload{}, false
+		return stale, staleOK // ML недоступна — лучше устаревшее, чем пусто
 	}
 	payload, ok := decodeDossier(response.Dossier)
 	if !ok {
-		return DossierPayload{}, false
+		return stale, staleOK
 	}
 	call.payload = payload
 	_ = s.results.SaveDossier(ctx, chatID, res.SearchID, objectID,
