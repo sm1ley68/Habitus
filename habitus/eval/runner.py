@@ -6,8 +6,8 @@ from pathlib import Path
 import yaml
 
 from habitus.config import settings
-from habitus.eval.metrics import (ndcg_at_k, parse_accuracy, recall_at_k,
-                                   reciprocal_rank)
+from habitus.eval.metrics import (ndcg_at_k, parse_accuracy, precision_at_k,
+                                  recall_at_k, reciprocal_rank)
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, parse_query
 from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
@@ -48,11 +48,12 @@ def series_of(query_id: str) -> str:
 
 def _aggregate(rows: list[dict]) -> dict[str, dict[str, float]]:
     """Список сырых замеров (по одному на пару запрос×вариант) → таблица
-    вариант → {recall@10, ndcg@10, mrr, n}, как в format_report."""
+    вариант → {recall@10, precision@10, ndcg@10, mrr, n}, как в format_report."""
     out = {}
     for v in (*VARIANTS, *DERIVED):
         sub = [r for r in rows if r["variant"] == v]
         out[v] = {"recall@10": _avg([r["recall"] for r in sub]),
+                  "precision@10": _avg([r["precision"] for r in sub]),
                   "ndcg@10": _avg([r["ndcg"] for r in sub]),
                   "mrr": _avg([r["mrr"] for r in sub]),
                   "n": len(sub)}
@@ -70,6 +71,7 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         ids = [c.external_id for c in cands]
         rows.append({"variant": variant, "series": series,
                     "recall": recall_at_k(relevant, ids),
+                    "precision": precision_at_k(relevant, ids),
                     "ndcg": ndcg_at_k(rel_map, ids),
                     "mrr": reciprocal_rank(relevant, ids)})
 
@@ -123,18 +125,26 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
     }
 
 
-def check_thresholds(res: dict, min_recall: float, min_ndcg: float,
+def check_thresholds(res: dict, min_precision: float, min_ndcg: float,
                      variant: str = GATE_VARIANT) -> list[str]:
-    """Сравнивает измеренные recall@10/NDCG@10 варианта `variant` (по умолчанию —
-    продакшен-путь rrf+rerank+prox) с порогами гейта. Пустой список — гейт
-    пройден; иначе — человекочитаемые сообщения, какая метрика и насколько
-    просела, для habitus/cli.py (`eval --check`)."""
+    """Сравнивает измеренные precision@10/NDCG@10 варианта `variant` (по
+    умолчанию — продакшен-путь rrf+rerank+prox) с порогами гейта. Пустой
+    список — гейт пройден; иначе человекочитаемые сообщения, какая метрика и
+    насколько просела, для habitus/cli.py (`eval --check`).
+
+    Гейт судит по precision, а не по recall: у запросов без ранжирующего
+    сигнала релевантен весь пул (сотни объектов), их recall@10 упирается в
+    10/|пул| и меняется от размера базы, а не от качества поиска. Precision@10
+    от размера пула не зависит.
+    """
+    if not res["retrieval"][variant]["n"]:
+        return [f"мерить нечего: ни одного запроса с эталоном для {variant}"]
     m = res["retrieval"][variant]
     failures = []
-    if m["recall@10"] < min_recall:
+    if m["precision@10"] < min_precision:
         failures.append(
-            f"recall@10 ({variant}) = {m['recall@10']:.3f}, порог {min_recall:.3f} "
-            f"— просадка {min_recall - m['recall@10']:.3f}")
+            f"precision@10 ({variant}) = {m['precision@10']:.3f}, порог "
+            f"{min_precision:.3f} — просадка {min_precision - m['precision@10']:.3f}")
     if m["ndcg@10"] < min_ndcg:
         failures.append(
             f"NDCG@10 ({variant}) = {m['ndcg@10']:.3f}, порог {min_ndcg:.3f} "
@@ -146,18 +156,26 @@ def format_report(res: dict) -> str:
     lines = ["# Habitus eval", "",
              f"Запросов в golden-set: {res['n_queries']}",
              f"parse-accuracy: {res['parse_accuracy']:.2f}", "",
-             "| вариант | recall@10 | NDCG@10 | MRR | n |",
-             "|---|---|---|---|---|"]
+             "| вариант | recall@10 | precision@10 | NDCG@10 | MRR | n |",
+             "|---|---|---|---|---|---|"]
     for name, m in res["retrieval"].items():
         lines.append(f"| {name} | {m['recall@10']:.2f} | "
+                     f"{m['precision@10']:.2f} | "
                      f"{m['ndcg@10']:.2f} | {m['mrr']:.2f} | {m['n']} |")
     # По сериям — только тот же продакшен-вариант, иначе таблица не влезает и
     # дублирует то, что уже видно выше по каждой абляции.
     if res.get("by_series"):
         lines += ["", f"По сериям ({GATE_VARIANT}):", "",
-                 "| серия | recall@10 | NDCG@10 | MRR | n |", "|---|---|---|---|---|"]
+                 "| серия | recall@10 | precision@10 | NDCG@10 | MRR | n |",
+                 "|---|---|---|---|---|---|"]
         for series, agg in res["by_series"].items():
             m = agg[GATE_VARIANT]
             lines.append(f"| {series} | {m['recall@10']:.2f} | "
+                         f"{m['precision@10']:.2f} | "
                          f"{m['ndcg@10']:.2f} | {m['mrr']:.2f} | {m['n']} |")
+        lines += ["",
+                  "recall@10 сопоставим только внутри серии: у запросов без "
+                  "ранжирующего сигнала релевантен весь пул (сотни объектов), "
+                  "поэтому их recall упирается в 10/|пул|. precision@10 от "
+                  "размера пула не зависит — по нему и гейт."]
     return "\n".join(lines)

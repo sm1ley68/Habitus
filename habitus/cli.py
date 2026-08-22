@@ -31,13 +31,15 @@ def _refresh_doc_text(conn) -> int:
 
 _PARSERS = {"kaggle": parse_kaggle_csv, "cian": parse_cian_csv}
 
-# Пороги гейта `eval --check`: измеренное recall@10/NDCG@10 варианта
+# Пороги гейта `eval --check`: измеренные precision@10/NDCG@10 варианта
 # rrf+rerank+prox (полный golden-set, a+b+c серии) минус 0.05 — запас под шум
-# одного прогона, а не под ожидаемое улучшение. Источник измерения:
+# одного прогона, а не под ожидаемое улучшение. Precision, а не recall: у
+# запросов без ранжирующего сигнала релевантен весь пул, и recall@10 у них
+# зависит от размера базы, а не от качества поиска. Источник измерения:
 # docs/notes/eval-baseline-2026-08-18.md; менять оба значения только вместе
 # с новым прогоном и новой записью в заметке.
-_DEFAULT_MIN_RECALL = 0.29
-_DEFAULT_MIN_NDCG = 0.30
+_DEFAULT_MIN_PRECISION = 0.40
+_DEFAULT_MIN_NDCG = 0.41
 
 
 def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
@@ -95,7 +97,7 @@ def main():
     # Дефолты — измеренное значение rrf+rerank+prox минус 0.05 (запас под шум
     # прогона), зафиксировано после расширения golden-set c-серией:
     # docs/notes/eval-baseline-2026-08-18.md. Обновлять вместе с этой заметкой.
-    ev.add_argument("--min-recall", type=float, default=_DEFAULT_MIN_RECALL)
+    ev.add_argument("--min-precision", type=float, default=_DEFAULT_MIN_PRECISION)
     ev.add_argument("--min-ndcg", type=float, default=_DEFAULT_MIN_NDCG)
     evidence = sub.add_parser("import-evidence")
     evidence.add_argument("--geojson", type=Path, required=True)
@@ -136,7 +138,7 @@ def main():
             res = run_eval(conn, llm, golden)
             print(format_report(res))
             if args.check:
-                failures = check_thresholds(res, args.min_recall, args.min_ndcg)
+                failures = check_thresholds(res, args.min_precision, args.min_ndcg)
                 if failures:
                     print("\nГЕЙТ НЕ ПРОЙДЕН:")
                     for f in failures:

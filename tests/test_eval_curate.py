@@ -1,8 +1,9 @@
+import pytest
 import yaml
 import psycopg
 from habitus.config import settings
 from habitus.db.init_db import init_db
-from habitus.eval.curate import (MIN_PRICE_PER_SQM, TOP_N, _where_and_params,
+from habitus.eval.curate import (MIN_PRICE_PER_SQM, TOP_N, where_and_params,
                                  curate, eligible_rows)
 
 
@@ -115,21 +116,21 @@ def test_curate_flag_marks_queries_buildable_by_rules(tmp_path, monkeypatch):
 def test_match_address_ilike_is_parameterized():
     # SQL-фрагмент содержит только плейсхолдер, значение уезжает в params —
     # никакой склейки строк с текстом паттерна.
-    where, params = _where_and_params({}, {"address_ilike": "%Хамовник%"})
+    where, params = where_and_params({}, {"address_ilike": "%Хамовник%"})
     assert "address ILIKE %s" in where
     assert not any("Хамовник" in clause for clause in where)
     assert params[-1] == "%Хамовник%"
 
 
 def test_match_metro_ilike_is_parameterized():
-    where, params = _where_and_params({}, {"metro_ilike": "%Павелецк%"})
+    where, params = where_and_params({}, {"metro_ilike": "%Павелецк%"})
     assert "metro_station ILIKE %s" in where
     assert not any("Павелецк" in clause for clause in where)
     assert params[-1] == "%Павелецк%"
 
 
 def test_match_combines_both_and_ignores_absent_keys():
-    where, params = _where_and_params(
+    where, params = where_and_params(
         {"rooms": [2]}, {"address_ilike": "%Пресн%", "metro_ilike": "%Белорусск%"})
     assert where.count("address ILIKE %s") == 1
     assert where.count("metro_station ILIKE %s") == 1
@@ -138,8 +139,8 @@ def test_match_combines_both_and_ignores_absent_keys():
 
 
 def test_match_none_and_empty_dict_add_no_clauses():
-    where_none, params_none = _where_and_params({"rooms": [1]}, None)
-    where_empty, params_empty = _where_and_params({"rooms": [1]}, {})
+    where_none, params_none = where_and_params({"rooms": [1]}, None)
+    where_empty, params_empty = where_and_params({"rooms": [1]}, {})
     assert where_none == where_empty
     assert params_none == params_empty
     assert not any("ILIKE" in clause for clause in where_none)
@@ -172,3 +173,68 @@ def test_eligible_rows_filters_by_address_and_metro_end_to_end():
                     eligible_rows(conn, {}, {"metro_ilike": "%Павелецк%"})}
     assert addr_ids == {"in_hamovniki"}
     assert metro_ids == {"near_pavelets"}
+
+
+def test_unknown_match_key_raises():
+    # Опечатка `adress_ilike` не должна молча дать эталон вообще без текстового
+    # фильтра — это ровно тот фиктивный эталон, против которого правило
+    # «не выдумывать факты».
+    with pytest.raises(ValueError, match="неизвестные ключи match"):
+        where_and_params({}, {"adress_ilike": "%Хамовник%"})
+
+
+def test_unknown_geo_kind_raises():
+    # Имя колонки walk_min_* собирается из YAML — оно обязано быть из белого
+    # списка, а не любой строкой, попадающей в текст SQL.
+    with pytest.raises(ValueError, match="неизвестная гео-ось"):
+        where_and_params({"geo": [{"kind": "airport", "walk_minutes": 10}]})
+
+
+def test_degenerate_score_keeps_whole_pool_relevant():
+    """Запрос без geo и noise_max не имеет ранжирующего сигнала: срезать пул до
+    TOP_N значит объявить произвольные 10 наименьших id «лучшими», а десятки
+    одинаково подходящих объектов — нерелевантными."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            for i in range(25):
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active, city,
+                           price, rooms, area, geom)
+                       VALUES (%s,'test',TRUE,'msk',20000000,2,50,
+                               ST_SetSRID(ST_MakePoint(37.6,55.75),4326));""",
+                    (f"id_{i:03d}",))
+        conn.commit()
+
+        ids, grades, total = curate(conn, {"expected_parse": {"rooms": [2]}})
+
+    assert total == 25
+    assert len(ids) == 25                      # пул не срезан до TOP_N
+    assert set(grades.values()) == {1}         # порядок ничего не значит — оценка одна
+    assert ids == sorted(ids)                  # воспроизводимо
+
+
+def test_ranked_score_still_cuts_to_top_n():
+    """Обратная сторона: когда скор различает объекты, эталон по-прежнему
+    top-10 с градациями 3/2/1, иначе NDCG перестанет что-либо мерить."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings;")
+            for i in range(25):
+                cur.execute(
+                    """INSERT INTO listings (external_id, source, is_active, city,
+                           price, rooms, area, walk_min_metro, geom)
+                       VALUES (%s,'test',TRUE,'msk',20000000,2,50,%s,
+                               ST_SetSRID(ST_MakePoint(37.6,55.75),4326));""",
+                    (f"id_{i:03d}", 1 + i % 9))
+        conn.commit()
+
+        ids, grades, total = curate(
+            conn, {"expected_parse": {"rooms": [2],
+                                      "geo": [{"kind": "metro", "walk_minutes": 10}]}})
+
+    assert total == 25
+    assert len(ids) == TOP_N
+    assert set(grades.values()) == {3, 2, 1}

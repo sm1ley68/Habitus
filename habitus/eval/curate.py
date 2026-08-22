@@ -34,12 +34,13 @@ NOISE_RADIUS_M = 500
 MIN_PRICE_PER_SQM = 100_000
 
 
-def _where_and_params(exp: dict, match: dict | None = None) -> tuple[list[str], list]:
+def where_and_params(exp: dict, match: dict | None = None) -> tuple[list[str], list]:
     """Клаузы жёстких условий запроса → (список SQL-фрагментов с `%s`, params).
 
     Вынесено из eligible_rows отдельной чистой функцией — так параметризацию
     (никакой склейки строк с текстом запроса) видно и проверяемо без похода
-    в БД: тест собирает where/params и сверяет их напрямую.
+    в БД: тест собирает where/params и сверяет их напрямую. Имя без
+    подчёркивания: функция — часть тестового контракта, а не деталь модуля.
     """
     where = ["is_active = TRUE", "city = 'msk'", "geom IS NOT NULL",
              "price IS NOT NULL", "area > 0",
@@ -95,7 +96,7 @@ def _where_and_params(exp: dict, match: dict | None = None) -> tuple[list[str], 
 
 def eligible_rows(conn, exp: dict, match: dict | None = None) -> list[dict]:
     """Объекты, проходящие ЖЁСТКИЕ условия запроса, с полями для ранжирования."""
-    where, params = _where_and_params(exp, match)
+    where, params = where_and_params(exp, match)
     sql = f"""
         SELECT external_id, price, rooms, area,
                walk_min_school, walk_min_metro, walk_min_park, bar_density_500m,

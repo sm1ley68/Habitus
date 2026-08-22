@@ -29,6 +29,22 @@ def recall_at_k(relevant: set[str], got: list[str], k: int = 10) -> float:
     return len(relevant & set(got[:k])) / len(relevant)
 
 
+def precision_at_k(relevant: set[str], got: list[str], k: int = 10) -> float:
+    """Доля выдачи, действительно удовлетворяющая запросу.
+
+    Нужна там, где recall@k бессмыслен по построению: у запроса без
+    ранжирующего сигнала (см. curate — нет geo и noise_max) релевантен весь
+    пул, а он бывает в сотни объектов, так что recall@10 упирается в потолок
+    10/|пул| независимо от качества поиска. Precision@10 при этом честно
+    отвечает на вопрос «сколько из показанных десяти действительно у
+    Павелецкой» и не зависит от размера пула.
+    """
+    if not got:
+        return 0.0
+    head = got[:k]
+    return len(relevant & set(head)) / len(head)
+
+
 def reciprocal_rank(relevant: set[str], got: list[str]) -> float:
     """1/позиция первого релевантного результата (0, если его нет)."""
     if not relevant:

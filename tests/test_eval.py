@@ -1,4 +1,7 @@
+import contextlib
 import math
+import sys
+
 import pytest
 from habitus.eval.metrics import ndcg_at_k, parse_accuracy, recall_at_k
 from habitus.online.schema import ParsedQuery
@@ -110,21 +113,34 @@ def test_series_of_extracts_letter_prefix():
     assert series_of("c10") == "c"
 
 
-def test_check_thresholds_pass_and_fail():
-    res = {"retrieval": {"rrf+rerank+prox": {"recall@10": 0.30, "ndcg@10": 0.28}}}
-    assert check_thresholds(res, min_recall=0.25, min_ndcg=0.25) == []
+def _thr(precision: float, ndcg: float, n: int = 1) -> dict:
+    return {"precision@10": precision, "ndcg@10": ndcg, "n": n}
 
-    failures = check_thresholds(res, min_recall=0.40, min_ndcg=0.50)
+
+def test_check_thresholds_pass_and_fail():
+    res = {"retrieval": {"rrf+rerank+prox": _thr(0.30, 0.28)}}
+    assert check_thresholds(res, min_precision=0.25, min_ndcg=0.25) == []
+
+    failures = check_thresholds(res, min_precision=0.40, min_ndcg=0.50)
     assert len(failures) == 2
-    assert "recall@10" in failures[0] and "0.30" in failures[0] and "0.40" in failures[0]
+    assert "precision@10" in failures[0] and "0.30" in failures[0] and "0.40" in failures[0]
     assert "NDCG@10" in failures[1] and "0.28" in failures[1] and "0.50" in failures[1]
 
 
 def test_check_thresholds_uses_requested_variant():
-    res = {"retrieval": {"dense": {"recall@10": 0.10, "ndcg@10": 0.10},
-                        "rrf+rerank+prox": {"recall@10": 0.90, "ndcg@10": 0.90}}}
+    res = {"retrieval": {"dense": _thr(0.10, 0.10),
+                        "rrf+rerank+prox": _thr(0.90, 0.90)}}
     # порог, который завалил бы "dense", не должен трогать выбранный вариант
-    assert check_thresholds(res, min_recall=0.5, min_ndcg=0.5, variant="rrf+rerank+prox") == []
+    assert check_thresholds(res, min_precision=0.5, min_ndcg=0.5,
+                            variant="rrf+rerank+prox") == []
+
+
+def test_check_thresholds_reports_nothing_to_measure():
+    """Пустой golden-set не должен читаться как «просадка до нуля»: гейт обязан
+    сказать, что мерить нечего, иначе красный прогон уводит не туда."""
+    res = {"retrieval": {"rrf+rerank+prox": _thr(0.0, 0.0, n=0)}}
+    failures = check_thresholds(res, min_precision=0.29, min_ndcg=0.30)
+    assert len(failures) == 1 and "мерить нечего" in failures[0]
 
 
 def test_run_eval_by_series_breakdown_isolates_series():
@@ -169,3 +185,60 @@ def test_run_eval_by_series_breakdown_isolates_series():
         assert res["retrieval"][variant]["recall@10"] == 0.5
         assert res["retrieval"][variant]["n"] == 2
     assert "По сериям" in format_report(res)
+
+
+# --- гейт `eval --check`: код возврата (Task 9) -----------------------------
+
+def _gate_report(precision: float, ndcg: float) -> dict:
+    """Подставной отчёт run_eval — гейт проверяется без реального прогона."""
+    return {"n_queries": 1, "parse_accuracy": 1.0,
+            "retrieval": {"rrf+rerank+prox": {"recall@10": 0.5,
+                                              "precision@10": precision,
+                                              "ndcg@10": ndcg,
+                                              "mrr": 0.5, "n": 1}},
+            "by_series": {}}
+
+
+def _run_gate(monkeypatch, report: dict, argv: list[str]) -> int | None:
+    """Прогоняет `habitus eval --check` с подменённым run_eval и возвращает код
+    выхода (None — вышли нормально). Проверяется именно связка «непустой список
+    находок → ненулевой код», а не одна check_thresholds: без неё гейт молча
+    превратился бы в печать текста."""
+    import habitus.cli as cli
+    from habitus.eval import runner
+
+    monkeypatch.setattr(runner, "run_eval", lambda *a, **kw: report)
+    monkeypatch.setattr(runner, "load_golden", lambda path: [])
+    monkeypatch.setattr(cli, "get_conn", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(sys, "argv", ["habitus", *argv])
+    try:
+        cli.main()
+    except SystemExit as exc:
+        return exc.code
+    return None
+
+
+def test_check_exits_nonzero_below_threshold(monkeypatch, capsys):
+    code = _run_gate(monkeypatch, _gate_report(0.10, 0.10),
+                     ["eval", "--check", "--min-precision", "0.29",
+                      "--min-ndcg", "0.30"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "ГЕЙТ НЕ ПРОЙДЕН" in out
+    assert "precision@10" in out and "0.290" in out  # видно, какая метрика и порог
+
+
+def test_check_exits_zero_above_threshold(monkeypatch, capsys):
+    code = _run_gate(monkeypatch, _gate_report(0.40, 0.40),
+                     ["eval", "--check", "--min-precision", "0.29",
+                      "--min-ndcg", "0.30"])
+    assert code is None                              # sys.exit не вызывался
+    assert "гейт пройден" in capsys.readouterr().out
+
+
+def test_without_check_flag_low_metrics_do_not_fail(monkeypatch, capsys):
+    # Без --check прогон остаётся информационным: просадка печатается, но
+    # код возврата нулевой — иначе обычный `habitus eval` ломал бы скрипты.
+    code = _run_gate(monkeypatch, _gate_report(0.01, 0.01), ["eval"])
+    assert code is None
+    assert "ГЕЙТ НЕ ПРОЙДЕН" not in capsys.readouterr().out
