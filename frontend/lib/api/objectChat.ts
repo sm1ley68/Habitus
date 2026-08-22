@@ -1,5 +1,6 @@
 import { parseSSE } from "./searchStream";
 import { API_BASE } from "./config";
+import { describeFailure } from "./streamError";
 
 // Чат по конкретному объекту (контракт §Н.6). Имена SSE-событий те же, что у
 // поискового движка: text_token / error / stream_end.
@@ -42,7 +43,7 @@ export function createObjectChatClient(): ObjectChatClient {
           );
 
           if (!res.ok || !res.body) {
-            handlers.onError("internal_error", `Не удалось начать поток (${res.status})`);
+            handlers.onError(...(await describeFailure(res)));
             return;
           }
 

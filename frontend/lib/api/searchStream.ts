@@ -5,6 +5,7 @@ import type {
 import { useSession } from "@/lib/store/session";
 import { createChat } from "./chats";
 import { API_BASE } from "./config";
+import { describeFailure } from "./streamError";
 
 export interface SSEFrame { event: string; data: Record<string, unknown> }
 
@@ -24,34 +25,6 @@ export function parseSSE(frame: string): SSEFrame | null {
   } catch {
     return null;
   }
-}
-
-// describeFailure — что показать пользователю на неуспешный HTTP-ответ.
-// Шлюз кладёт в тело честное объяснение (`{code, message}`), и на 429 это
-// «Превышен лимит запросов к ИИ (30 в час). Попробуйте снова через N мин.» —
-// выбрасывать его и показывать «внутреннюю ошибку» значит врать пользователю
-// про причину. Тела нет или оно не JSON — тогда и только тогда общий текст.
-async function describeFailure(res: Response): Promise<[string, string]> {
-  try {
-    // Единый конверт ошибок шлюза — {"error":{"code","message"}}
-    // (backend/internal/http/middleware/errorenvelope.go).
-    const body = await res.json();
-    const err = body?.error ?? body;
-    const code = typeof err?.code === "string" ? err.code : null;
-    const message = typeof err?.message === "string" ? err.message : null;
-    if (code || message) {
-      return [
-        code ?? (res.status === 429 ? "rate_limited" : "internal_error"),
-        message ?? `Не удалось начать поток (${res.status})`,
-      ];
-    }
-  } catch {
-    // не JSON — падаем в общий текст ниже
-  }
-  if (res.status === 429) {
-    return ["rate_limited", "Слишком много запросов к ИИ. Попробуйте чуть позже."];
-  }
-  return ["internal_error", `Не удалось начать поток (${res.status})`];
 }
 
 // Реальный поисковый клиент: создаёт чат, затем читает SSE-поток шлюза.

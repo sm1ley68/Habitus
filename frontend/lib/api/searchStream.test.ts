@@ -132,3 +132,24 @@ test("final_result без новых полей не ломает старый �
 test("parseSSE переживает битый кадр", () => {
   expect(parseSSE("event: x\ndata: {не json")).toBeNull();
 });
+
+test("чат по объекту тоже показывает честный 429", async () => {
+  // Тот же разбор конверта: рейт-лимит бьёт по обеим LLM-ручкам, и «внутренняя
+  // ошибка» вместо объяснения врала бы одинаково в обеих.
+  const { createObjectChatClient } = await import("./objectChat");
+  fetchMock.mockResolvedValueOnce({
+    ok: false, status: 429, body: null,
+    json: async () => ({ error: { code: "rate_limited", message: "Попробуйте через 5 мин." } }),
+  } as unknown as Response);
+
+  const res = await new Promise<{ code: string; message: string }>((resolve) => {
+    createObjectChatClient().ask("obj-1", "c1", "почему тут шумно?", {
+      onToken: () => {},
+      onDone: () => {},
+      onError: (code, message) => resolve({ code, message }),
+    });
+  });
+
+  expect(res.code).toBe("rate_limited");
+  expect(res.message).toContain("5 мин");
+});
