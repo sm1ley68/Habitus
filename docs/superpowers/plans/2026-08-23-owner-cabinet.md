@@ -597,9 +597,13 @@ type OwnerListing struct {
 	Rooms             *int
 	Level             *int
 	Levels            *int
-	Address           string
-	Lng               float64
-	Lat               float64
+	Address string
+	// Указатели, как и остальные nullable-числа этой структуры: у черновика,
+	// которому ещё не поставили точку на карте, координат нет. Ноль вместо них
+	// был бы выдуманной точкой в Гвинейском заливе, а синтетический ноль вместо
+	// отсутствующего значения правилами проекта запрещён.
+	Lng               *float64
+	Lat               *float64
 	WindowOrientation []string
 	Description       string
 	Photos            []string
@@ -658,7 +662,7 @@ var ErrExternalIDTaken = errors.New("owner listing external_id already taken")
 // требование к любому новому запросу в этом файле.
 const ownerListingColumns = `id, user_id, external_id, origin, status, verification, city,
 	price, area, kitchen_area, rooms, level, levels,
-	address, coalesce(lng, 0), coalesce(lat, 0),
+	address, lng, lat,
 	window_orientation, description, photos,
 	source_url, import_error, created_at, updated_at, published_at`
 
@@ -2463,12 +2467,18 @@ git commit -m "feat: ML-клиент объявлений продавца, ко
   - `domain.ListingSnapshot` — плоский снимок строки `listings` для предпросмотра:
     `ExternalID, Source string; City string; Price *int64; Area *float32;
      KitchenArea *float32; Rooms, Level, Levels *int; Address, Description string;
-     Lng, Lat float64; Photos, WindowOrientation []string; SourceURL string;
+     Lng, Lat *float64; Photos, WindowOrientation []string; SourceURL string;
      OwnerManaged bool`
   - `domain.SimilarListing` — `ExternalID, Address string; Price *int64; Area *float32`
   - `(*ListingRepo).SnapshotByExternalID(ctx, externalID string) (domain.ListingSnapshot, error)`
-  - `(*ListingRepo).FindSimilar(ctx, lng, lat float64, rooms, level *int, area *float32, excludeExternalID string) ([]domain.SimilarListing, error)`
+  - `(*ListingRepo).FindSimilar(ctx, lng, lat *float64, rooms, level *int, area *float32, excludeExternalID string) ([]domain.SimilarListing, error)`
   Использует Task 11.
+
+**Координаты — указатели, а не значения.** Колонка `listings.geom` nullable, и
+`ST_X(NULL)` возвращает NULL: скан в `float64` на такой строке просто упадёт.
+Синтетический ноль вместо отсутствующих координат запрещён правилами проекта —
+объект без геометрии обязан читаться как «координат нет», а не как точка `[0, 0]`
+в Гвинейском заливе. То же решение принято для `domain.OwnerListing` в Task 3.
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -2507,8 +2517,11 @@ func TestSnapshotByExternalID(t *testing.T) {
 	if got.Address != "Москва, улица Мельникова, 3к1" || *got.Rooms != 2 {
 		t.Fatalf("неверный снимок: %+v", got)
 	}
-	if got.Lng < 37.65 || got.Lng > 37.67 || got.Lat < 55.70 || got.Lat > 55.72 {
-		t.Fatalf("координаты разобраны неверно: %f %f", got.Lng, got.Lat)
+	if got.Lng == nil || got.Lat == nil {
+		t.Fatal("координаты должны быть разобраны")
+	}
+	if *got.Lng < 37.65 || *got.Lng > 37.67 || *got.Lat < 55.70 || *got.Lat > 55.72 {
+		t.Fatalf("координаты разобраны неверно: %f %f", *got.Lng, *got.Lat)
 	}
 	if len(got.Photos) != 1 {
 		t.Fatalf("фото не доехали: %+v", got.Photos)
@@ -2544,12 +2557,30 @@ func TestFindSimilarMatchesNearbyTwin(t *testing.T) {
 	repo := NewListingRepo(pool)
 	rooms, level := 2, 4
 	area := float32(54.3)
-	found, err := repo.FindSimilar(ctx, 37.6595, 55.7108, &rooms, &level, &area, "cian_new")
+	lng, lat := 37.6595, 55.7108
+	found, err := repo.FindSimilar(ctx, &lng, &lat, &rooms, &level, &area, "cian_new")
 	if err != nil {
 		t.Fatalf("find similar: %v", err)
 	}
 	if len(found) != 1 || found[0].ExternalID != "cian_twin" {
 		t.Fatalf("ожидался ровно близнец, получено %+v", found)
+	}
+}
+
+func TestFindSimilarWithoutCoordinatesReturnsNothing(t *testing.T) {
+	pool := testPool(t)
+	repo := NewListingRepo(pool)
+	rooms, level := 2, 4
+	area := float32(54.0)
+
+	// Объявление без геометрии не с чем сравнивать по расстоянию. Подставить
+	// сюда ноль значило бы искать дубли в Гвинейском заливе.
+	found, err := repo.FindSimilar(context.Background(), nil, nil, &rooms, &level, &area, "x")
+	if err != nil {
+		t.Fatalf("find similar: %v", err)
+	}
+	if len(found) != 0 {
+		t.Fatalf("без координат сравнивать не с чем: %+v", found)
 	}
 }
 
@@ -2569,7 +2600,8 @@ func TestFindSimilarExcludesSelf(t *testing.T) {
 	repo := NewListingRepo(pool)
 	rooms, level := 2, 4
 	area := float32(54.0)
-	found, err := repo.FindSimilar(ctx, 37.6595, 55.7108, &rooms, &level, &area, "cian_self")
+	lng, lat := 37.6595, 55.7108
+	found, err := repo.FindSimilar(ctx, &lng, &lat, &rooms, &level, &area, "cian_self")
 	if err != nil {
 		t.Fatalf("find similar: %v", err)
 	}
@@ -2582,7 +2614,8 @@ func TestFindSimilarWithoutRoomsReturnsNothing(t *testing.T) {
 	pool := testPool(t)
 	repo := NewListingRepo(pool)
 	area := float32(54.0)
-	found, err := repo.FindSimilar(context.Background(), 37.6595, 55.7108, nil, nil, &area, "x")
+	lng, lat := 37.6595, 55.7108
+	found, err := repo.FindSimilar(context.Background(), &lng, &lat, nil, nil, &area, "x")
 	if err != nil {
 		t.Fatalf("find similar: %v", err)
 	}
@@ -2620,8 +2653,10 @@ type ListingSnapshot struct {
 	Levels            *int
 	Address           string
 	Description       string
-	Lng               float64
-	Lat               float64
+	// Указатели: geom у строки витрины может отсутствовать, и «координат нет» —
+	// законное состояние. Ноль вместо них был бы выдуманной точкой на карте.
+	Lng               *float64
+	Lat               *float64
 	Photos            []string
 	WindowOrientation []string
 	SourceURL         string
@@ -2661,11 +2696,11 @@ func (r *ListingRepo) SnapshotByExternalID(ctx context.Context, externalID strin
 }
 
 // FindSimilar ищет ту же квартиру, перевыставленную под другим id: тот же дом
-// (150 м), те же комнаты и этаж, площадь в пределах метра. Без комнат и этажа
-// сравнивать не с чем — возвращаем пусто, чтобы не сыпать ложными дублями.
-func (r *ListingRepo) FindSimilar(ctx context.Context, lng, lat float64,
+// (150 м), те же комнаты и этаж, площадь в пределах метра. Без координат, комнат
+// или этажа сравнивать не с чем — возвращаем пусто, чтобы не сыпать ложными дублями.
+func (r *ListingRepo) FindSimilar(ctx context.Context, lng, lat *float64,
 	rooms, level *int, area *float32, excludeExternalID string) ([]domain.SimilarListing, error) {
-	if rooms == nil || level == nil || area == nil {
+	if lng == nil || lat == nil || rooms == nil || level == nil || area == nil {
 		return nil, nil
 	}
 	rows, err := r.pool.Query(ctx, `
@@ -2678,7 +2713,7 @@ func (r *ListingRepo) FindSimilar(ctx context.Context, lng, lat float64,
 		  AND external_id <> $6
 		  AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 150)
 		ORDER BY geom <-> ST_SetSRID(ST_MakePoint($1, $2), 4326)
-		LIMIT 3`, lng, lat, *rooms, *level, *area, excludeExternalID)
+		LIMIT 3`, *lng, *lat, *rooms, *level, *area, excludeExternalID)
 	if err != nil {
 		return nil, err
 	}
@@ -2891,7 +2926,8 @@ func TestPreviewClaimableSkipsCian(t *testing.T) {
 			ExternalID: "cian_318394906", Source: "cian", City: "msk",
 			Price: i64p(12_500_000), Area: f32p(54.3), Rooms: intp(2),
 			Level: intp(4), Levels: intp(17),
-			Address: "Москва, улица Мельникова, 3к1", Lng: 37.6595, Lat: 55.7108,
+			Address: "Москва, улица Мельникова, 3к1",
+			Lng:     f64p(37.6595), Lat: f64p(55.7108),
 			Photos: []string{"https://images.cdn-cian.ru/1.jpg"},
 		},
 	}}
@@ -3206,12 +3242,10 @@ func listingToDraft(l cian.Listing, externalID string) domain.OwnerListing {
 		area := float32(*l.Area)
 		draft.Area = &area
 	}
-	if l.Longitude != nil {
-		draft.Lng = *l.Longitude
-	}
-	if l.Latitude != nil {
-		draft.Lat = *l.Latitude
-	}
+	// Указатели переносятся как есть: у объявления Циана координат может не быть,
+	// и это должно остаться видимым, а не превратиться в точку [0, 0].
+	draft.Lng = l.Longitude
+	draft.Lat = l.Latitude
 	if draft.Photos == nil {
 		draft.Photos = []string{}
 	}
@@ -3412,10 +3446,11 @@ func publishableDraft(userID uuid.UUID) domain.OwnerListing {
 	price := int64(12_000_000)
 	area := float32(54.0)
 	rooms, level, levels := 2, 4, 17
+	lng, lat := 37.6055, 55.7601
 	return domain.OwnerListing{
 		UserID: userID, ExternalID: "owner_abc", Origin: "manual", Status: "draft",
 		City: "msk", Price: &price, Area: &area, Rooms: &rooms, Level: &level, Levels: &levels,
-		Address: "Москва, Тверская 1", Lng: 37.6055, Lat: 55.7601,
+		Address: "Москва, Тверская 1", Lng: &lng, Lat: &lat,
 		Description: "Светлая двушка", Photos: []string{}, WindowOrientation: []string{},
 	}
 }
@@ -3461,6 +3496,33 @@ func TestPublishSendsShowcasePayloadAndMarksPublished(t *testing.T) {
 	// а не «ничего не произошло» на время расчёта эмбеддинга.
 	if len(store.statusLog) < 2 || store.statusLog[0] != "publishing" {
 		t.Fatalf("статусная машина: %+v", store.statusLog)
+	}
+}
+
+func TestPublishRejectsListingWithoutCoordinates(t *testing.T) {
+	store := newFakeStore()
+	publisher := &fakePublisher{indexed: true}
+	svc := NewOwnerListingService(store, publisher, true)
+	userID := uuid.New()
+	draft := publishableDraft(userID)
+	draft.Lng, draft.Lat = nil, nil
+	stored := store.put(draft)
+
+	_, err := svc.Publish(context.Background(), userID, stored.ID)
+
+	var appErr *apperr.Error
+	if !errors.As(err, &appErr) || appErr.Code != "owner_listing_invalid" {
+		t.Fatalf("ожидался owner_listing_invalid, получено %v", err)
+	}
+	if !strings.Contains(appErr.Message, "точку на карте") {
+		t.Fatalf("сообщение должно объяснять, что делать: %q", appErr.Message)
+	}
+	// Отказ до смены статуса: черновик не должен застревать в publishing.
+	if len(store.statusLog) != 0 {
+		t.Fatalf("статус не должен был меняться: %+v", store.statusLog)
+	}
+	if publisher.lastRequest.ExternalID != "" {
+		t.Fatal("витрину звать было незачем")
 	}
 }
 
@@ -3717,6 +3779,13 @@ func (s *OwnerListingService) Publish(ctx context.Context, userID, id uuid.UUID)
 	if err != nil {
 		return domain.OwnerListing{}, err
 	}
+	// Объект без координат публиковать некуда: витрина строит по ним гео-факты
+	// и досье. Отвергаем здесь, до смены статуса, с указанием, что поправить —
+	// подставить ноль значило бы опубликовать точку в Гвинейском заливе.
+	if listing.Lng == nil || listing.Lat == nil {
+		return domain.OwnerListing{}, apperr.OwnerListingInvalid(
+			"coordinates", "Поставьте точку на карте — без неё объявление не опубликовать")
+	}
 	if err := s.store.SetStatus(ctx, id, "publishing", ""); err != nil {
 		return domain.OwnerListing{}, err
 	}
@@ -3731,7 +3800,7 @@ func (s *OwnerListingService) Publish(ctx context.Context, userID, id uuid.UUID)
 		ExternalID: listing.ExternalID, Source: source, City: listing.City,
 		Price: listing.Price, Area: listing.Area, KitchenArea: listing.KitchenArea,
 		Rooms: listing.Rooms, Level: listing.Level, Levels: listing.Levels,
-		Address: listing.Address, Lng: listing.Lng, Lat: listing.Lat,
+		Address: listing.Address, Lng: *listing.Lng, Lat: *listing.Lat,
 		WindowOrientation: listing.WindowOrientation, Description: listing.Description,
 		Photos: listing.Photos, SourceURL: listing.SourceURL,
 	})
@@ -3852,13 +3921,14 @@ func TestOwnerListingDTOShape(t *testing.T) {
 	price := int64(12_500_000)
 	area := float32(54.3)
 	rooms, level, levels := 2, 4, 17
+	lng, lat := 37.6595, 55.7108
 	published := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
 	dto := OwnerListingDTO(domain.OwnerListing{
 		ID: uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		ExternalID: "cian_318394906", Origin: "cian", Status: "published",
 		Verification: "unverified", City: "msk",
 		Price: &price, Area: &area, Rooms: &rooms, Level: &level, Levels: &levels,
-		Address: "Москва, улица Мельникова, 3к1", Lng: 37.6595, Lat: 55.7108,
+		Address: "Москва, улица Мельникова, 3к1", Lng: &lng, Lat: &lat,
 		Description: "Тихая двушка", Photos: []string{"https://images.cdn-cian.ru/1.jpg"},
 		WindowOrientation: []string{"юг"},
 		SourceURL: "https://www.cian.ru/sale/flat/318394906/",
@@ -3908,6 +3978,11 @@ func TestOwnerListingDTONullsAreExplicit(t *testing.T) {
 	if got["published_at"] != nil {
 		t.Fatalf("published_at = %v, ожидался null", got["published_at"])
 	}
+	// То же и с координатами: черновик без точки на карте отдаёт null, а не
+	// [0, 0] — иначе фронт нарисует метку в Гвинейском заливе.
+	if got["coordinates"] != nil {
+		t.Fatalf("coordinates = %v, ожидался null", got["coordinates"])
+	}
 	if photos, ok := got["photos"].([]any); !ok || photos == nil {
 		t.Fatalf("photos должны быть пустым массивом, а не null: %v", got["photos"])
 	}
@@ -3949,6 +4024,12 @@ func NewOwnerHandler(listings *service.OwnerListingService, imports *service.Own
 // [lng, lat] тем же контрактом, что и везде в проекте: фронт не делает
 // никаких преобразований.
 func OwnerListingDTO(l domain.OwnerListing) fiber.Map {
+	// null, а не [0, 0]: у черновика без точки на карте координат нет, и
+	// выдуманный ноль отрисовался бы на карте настоящей меткой.
+	var coordinates any
+	if l.Lng != nil && l.Lat != nil {
+		coordinates = [2]float64{*l.Lng, *l.Lat}
+	}
 	return fiber.Map{
 		"id":                 l.ID,
 		"external_id":        l.ExternalID,
@@ -3963,7 +4044,7 @@ func OwnerListingDTO(l domain.OwnerListing) fiber.Map {
 		"level":              l.Level,
 		"levels":             l.Levels,
 		"address":            l.Address,
-		"coordinates":        [2]float64{l.Lng, l.Lat},
+		"coordinates":        coordinates,
 		"window_orientation": nonNilStrings(l.WindowOrientation),
 		"description":        l.Description,
 		"photos":             nonNilStrings(l.Photos),
@@ -4061,11 +4142,12 @@ func (h *OwnerHandler) Create(c *fiber.Ctx) error {
 	if body.Coordinates == nil {
 		return apperr.Validation("Не указаны координаты — поставьте точку на карте")
 	}
+	lng, lat := body.Coordinates[0], body.Coordinates[1]
 	draft := domain.OwnerListing{
 		City: *body.City, Price: body.Price, Area: body.Area,
 		KitchenArea: body.KitchenArea, Rooms: body.Rooms,
 		Level: body.Level, Levels: body.Levels,
-		Lng: body.Coordinates[0], Lat: body.Coordinates[1],
+		Lng: &lng, Lat: &lat,
 	}
 	if body.Address != nil {
 		draft.Address = *body.Address
@@ -4919,8 +5001,12 @@ export interface OwnerListing {
   level: number | null;
   levels: number | null;
   address: string;
-  /** Всегда [lng, lat], WGS84 — как везде в проекте. */
-  coordinates: [number, number];
+  /**
+   * Всегда [lng, lat], WGS84 — как везде в проекте.
+   * null у черновика, которому ещё не поставили точку на карте: подставлять
+   * вместо неё [0, 0] запрещено — метка уехала бы в Гвинейский залив.
+   */
+  coordinates: [number, number] | null;
   window_orientation: string[];
   description: string;
   photos: string[];
@@ -5880,7 +5966,11 @@ test("пустое поле сохраняется как отсутствующ
 
 **`ListingEditor.tsx`** — двухколоночный экран: слева `ListingPreview`, справа
 форма правки на примитивах `Field`. Числовые поля: пустая строка → `null`,
-никогда не `0`. Шапка: `StatusBadge`, пометка «Не подтверждено» с пояснением
+никогда не `0`. `coordinates` может прийти `null` — тогда вместо карты рисуется
+приглашение поставить точку, а кнопка «Опубликовать» недоступна с пояснением
+«Поставьте точку на карте»: бэкенд такую публикацию всё равно отвергнет
+(`apperr.OwnerListingInvalid("coordinates", …)`), и лучше сказать это до нажатия.
+Подставлять `[0, 0]` вместо отсутствующих координат запрещено. Шапка: `StatusBadge`, пометка «Не подтверждено» с пояснением
 «Мы не проверяли, что объявление принадлежит вам», действия
 «Опубликовать»/«Снять с публикации»/«Удалить». Для `failed` — `import_error`
 и «Повторить».
