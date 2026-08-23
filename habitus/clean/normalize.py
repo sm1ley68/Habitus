@@ -13,7 +13,6 @@ CITY_BBOX = {
 # Историческое имя: на него ссылается код пайплайна и тесты.
 MSK_BBOX = CITY_BBOX["msk"]
 
-
 def is_valid(row: dict) -> bool:
     price = row.get("price") or 0
     area = row.get("area") or 0
