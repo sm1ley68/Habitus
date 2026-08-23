@@ -50,3 +50,26 @@ def build_doc_text(row: dict) -> str:
 
 def content_hash(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def refresh_doc_text(conn, external_ids: list[str] | None = None) -> int:
+    """Пересобирает doc_text. Без списка — по всей таблице (батч-пайплайн),
+    со списком — только по указанным объявлениям (публикация из кабинета)."""
+    from psycopg.rows import dict_row
+
+    sql = "SELECT * FROM listings"
+    params: tuple = ()
+    if external_ids is not None:
+        if not external_ids:
+            return 0
+        sql += " WHERE external_id = ANY(%s)"
+        params = (list(external_ids),)
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(sql + ";", params)
+        rows = cur.fetchall()
+    with conn.cursor() as cur:
+        for r in rows:
+            cur.execute("UPDATE listings SET doc_text=%s WHERE external_id=%s;",
+                        (build_doc_text(r), r["external_id"]))
+    conn.commit()
+    return len(rows)

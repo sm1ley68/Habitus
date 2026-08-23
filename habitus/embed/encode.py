@@ -87,12 +87,21 @@ def to_sparsevec_literal(sparse: dict[int, float], dim: int) -> str:
     return f"{{{items}}}/{dim}"
 
 
-def embed_pending(conn: psycopg.Connection, model=None) -> int:
+def embed_pending(conn: psycopg.Connection, model=None,
+                  external_ids: list[str] | None = None) -> int:
     # берём все строки с doc_text и их сохранённый хэш; изменившиеся — те,
     # у кого hash(doc_text) != content_hash (в т.ч. NULL при первом прогоне).
+    # external_ids сужает выборку: при публикации одного объявления из кабинета
+    # незачем хэшировать весь корпус.
+    sql = "SELECT external_id, doc_text, content_hash FROM listings WHERE doc_text IS NOT NULL"
+    params: tuple = ()
+    if external_ids is not None:
+        if not external_ids:
+            return 0
+        sql += " AND external_id = ANY(%s)"
+        params = (list(external_ids),)
     with conn.cursor() as cur:
-        cur.execute("""SELECT external_id, doc_text, content_hash FROM listings
-                       WHERE doc_text IS NOT NULL;""")
+        cur.execute(sql + ";", params)
         rows = cur.fetchall()
     to_do = [(eid, txt) for eid, txt, stored in rows
              if stored != content_hash(txt)]

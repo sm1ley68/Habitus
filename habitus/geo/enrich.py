@@ -93,6 +93,7 @@ UPDATE listings l SET
          THEN 'high' ELSE 'low' END),
   updated_at = now()
 WHERE l.geom IS NOT NULL
+  AND (%(filter_ids)s::text[] IS NULL OR l.external_id = ANY(%(filter_ids)s::text[]))
   AND (%(filter_geog)s::text IS NULL
        OR ST_DWithin(l.geom::geography, ST_GeogFromText(%(filter_geog)s::text), %(radius)s));
 """
@@ -100,14 +101,33 @@ WHERE l.geom IS NOT NULL
 
 def enrich_all(conn: psycopg.Connection) -> int:
     with conn.cursor() as cur:
-        cur.execute(_ENRICH_SQL, {"radius": settings.poi_radius_m, "filter_geog": None})
+        cur.execute(_ENRICH_SQL, {"radius": settings.poi_radius_m,
+                                  "filter_geog": None, "filter_ids": None})
         n = cur.rowcount
     conn.commit()
     return n
 
 
 def enrich_around(conn: psycopg.Connection, poi_geom_wkt: str) -> int:
-    params = {"radius": settings.poi_radius_m, "filter_geog": f"SRID=4326;{poi_geom_wkt}"}
+    params = {"radius": settings.poi_radius_m,
+              "filter_geog": f"SRID=4326;{poi_geom_wkt}", "filter_ids": None}
+    with conn.cursor() as cur:
+        cur.execute(_ENRICH_SQL, params)
+        n = cur.rowcount
+    conn.commit()
+    return n
+
+
+def enrich_ids(conn: psycopg.Connection, external_ids: list[str]) -> int:
+    """Обогащает ровно перечисленные объявления.
+
+    Нужен публикации из личного кабинета: enrich_all переписывает всю таблицу
+    (на рабочем объёме — минуты), а публикуется одно объявление.
+    """
+    if not external_ids:
+        return 0
+    params = {"radius": settings.poi_radius_m,
+              "filter_geog": None, "filter_ids": list(external_ids)}
     with conn.cursor() as cur:
         cur.execute(_ENRICH_SQL, params)
         n = cur.rowcount
