@@ -141,7 +141,13 @@ func (r *OwnerListingRepo) UpdateFields(ctx context.Context, id, userID uuid.UUI
 		f.Address, f.Lng, f.Lat, wo, f.Description, f.City))
 }
 
+// SetPhotos перезаписывает список фото целиком. photos — NOT NULL DEFAULT '{}':
+// nil (например, «удалили последнюю фотографию») лёг бы как явный SQL NULL и
+// уронил бы запрос, поэтому здесь та же подстраховка, что и в Create.
 func (r *OwnerListingRepo) SetPhotos(ctx context.Context, id, userID uuid.UUID, photos []string) (domain.OwnerListing, error) {
+	if photos == nil {
+		photos = []string{}
+	}
 	return scanOwnerListing(r.pool.QueryRow(ctx, `
 		UPDATE owner_listings SET photos = $3, updated_at = now()
 		WHERE id = $1 AND user_id = $2
