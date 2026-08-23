@@ -3,8 +3,16 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
-# грубый bbox Москвы (в пределах МКАД + Новая Москва небольшим запасом)
-MSK_BBOX = (37.30, 55.48, 37.95, 55.95)  # lon_min, lat_min, lon_max, lat_max
+# Грубые bbox городов: lon_min, lat_min, lon_max, lat_max.
+# msk — в пределах МКАД плюс Новая Москва небольшим запасом.
+CITY_BBOX = {
+    "msk": (37.30, 55.48, 37.95, 55.95),
+    "spb": (29.60, 59.70, 30.70, 60.20),
+}
+
+# Историческое имя: на него ссылается код пайплайна и тесты.
+MSK_BBOX = CITY_BBOX["msk"]
+
 
 def is_valid(row: dict) -> bool:
     price = row.get("price") or 0
@@ -16,7 +24,11 @@ def is_valid(row: dict) -> bool:
         return False
     if lat is None or lon is None:
         return False
-    lon_min, lat_min, lon_max, lat_max = MSK_BBOX
+    # Строка без city — это выхлоп батч-пайплайна Циана, он московский.
+    bbox = CITY_BBOX.get(row.get("city") or "msk")
+    if bbox is None:
+        return False
+    lon_min, lat_min, lon_max, lat_max = bbox
     if not (lon_min <= lon <= lon_max and lat_min <= lat <= lat_max):
         return False
     return True
