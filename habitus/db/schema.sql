@@ -176,3 +176,9 @@ ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS address      text;
 ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS source_url   text;
 ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS photos       text[];
 ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS source_extra jsonb NOT NULL DEFAULT '{}';
+
+-- Объявление, которым управляет продавец через личный кабинет. Помечает
+-- строки, на которые не распространяются два механизма батч-пайплайна:
+-- гашение по снимку источника (объявления продавца ни в каком снимке нет)
+-- и перезапись полей при повторном обходе (правки продавца главнее источника).
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS owner_managed boolean NOT NULL DEFAULT false;

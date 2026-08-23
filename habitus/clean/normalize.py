@@ -63,7 +63,8 @@ def promote_to_listings(conn: psycopg.Connection) -> int:
            source_extra=EXCLUDED.source_extra, metro_station=EXCLUDED.metro_station,
            walk_min_metro_src=EXCLUDED.walk_min_metro_src,
            photos=EXCLUDED.photos,
-           is_active=true, updated_at=now();
+           is_active=true, updated_at=now()
+        WHERE NOT listings.owner_managed;
     """
     with conn.cursor() as cur:
         cur.executemany(sql, valid)

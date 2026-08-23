@@ -105,7 +105,9 @@ def deactivate_missing(active_ids: set[str], conn: psycopg.Connection,
     """
     if not active_ids:
         return 0
-    where = "is_active = true" + (" AND source = %s" if source else "")
+    # owner_managed исключается всегда: объявление продавца не приходит ни в
+    # одном снимке источника, поэтому «его нет в снимке» ничего не означает.
+    where = "is_active = true AND NOT owner_managed" + (" AND source = %s" if source else "")
     params = (source,) if source else ()
     with conn.cursor() as cur:
         cur.execute(f"SELECT external_id FROM listings WHERE {where};", params)
