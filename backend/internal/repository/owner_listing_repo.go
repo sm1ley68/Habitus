@@ -21,7 +21,7 @@ var ErrExternalIDTaken = errors.New("owner listing external_id already taken")
 // требование к любому новому запросу в этом файле.
 const ownerListingColumns = `id, user_id, external_id, origin, status, verification, city,
 	price, area, kitchen_area, rooms, level, levels,
-	address, coalesce(lng, 0), coalesce(lat, 0),
+	address, lng, lat,
 	window_orientation, description, photos,
 	source_url, import_error, created_at, updated_at, published_at`
 
@@ -70,7 +70,10 @@ func (r *OwnerListingRepo) Create(ctx context.Context, l domain.OwnerListing) (d
 		l.Rooms, l.Level, l.Levels, l.Address, l.Lng, l.Lat, windowOrientation,
 		l.Description, photos, l.SourceURL))
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+	// Сужаем по имени ограничения, а не только по коду 23505: этот код общий для
+	// любого уникального индекса таблицы, и первый же новый уникальный индекс
+	// начал бы молча приезжать наружу как «ссылка занята другим аккаунтом».
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "owner_listings_external_id_key" {
 		return domain.OwnerListing{}, ErrExternalIDTaken
 	}
 	return created, err
@@ -116,9 +119,18 @@ func (r *OwnerListingRepo) List(ctx context.Context, userID uuid.UUID) ([]domain
 // «could not determine data type of parameter». Приведения безвредны и
 // тогда, когда вывод типа сработал бы сам.
 func (r *OwnerListingRepo) UpdateFields(ctx context.Context, id, userID uuid.UUID, f domain.OwnerListingFields) (domain.OwnerListing, error) {
+	// f.WindowOrientation указывает на переданный срез. Если сам срез nil
+	// (вызывающий хотел очистить window_orientation до пустого, а не оставить
+	// прежним), *f.WindowOrientation тоже nil — тот же класс проблемы, что в
+	// Create и SetPhotos: нетипизированный nil лёг бы как SQL NULL, и COALESCE
+	// молча сохранил бы старое значение вместо очистки. Нормализуем в пустой срез.
 	var wo any
 	if f.WindowOrientation != nil {
-		wo = *f.WindowOrientation
+		orientation := *f.WindowOrientation
+		if orientation == nil {
+			orientation = []string{}
+		}
+		wo = orientation
 	}
 	return scanOwnerListing(r.pool.QueryRow(ctx, `
 		UPDATE owner_listings SET
@@ -157,7 +169,7 @@ func (r *OwnerListingRepo) SetPhotos(ctx context.Context, id, userID uuid.UUID, 
 // SetStatus — переход статусной машины. published_at ставится один раз, при
 // первом переходе в published: это дата появления в витрине, а не последней правки.
 func (r *OwnerListingRepo) SetStatus(ctx context.Context, id uuid.UUID, status, importError string) error {
-	_, err := r.pool.Exec(ctx, `
+	tag, err := r.pool.Exec(ctx, `
 		UPDATE owner_listings SET
 			status = $2,
 			import_error = $3,
@@ -165,7 +177,15 @@ func (r *OwnerListingRepo) SetStatus(ctx context.Context, id uuid.UUID, status, 
 			                    THEN now() ELSE published_at END,
 			updated_at = now()
 		WHERE id = $1`, id, status, importError)
-	return err
+	if err != nil {
+		return err
+	}
+	// Тот же контракт, что у Delete: несуществующий или уже удалённый id не
+	// должен молча читаться как «переход состоялся».
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *OwnerListingRepo) Delete(ctx context.Context, id, userID uuid.UUID) error {

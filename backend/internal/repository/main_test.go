@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -79,3 +80,25 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	t.Cleanup(pool.Close)
 	return pool
 }
+
+// newTestUser заводит пользователя для теста, которому нужен владелец, но не
+// важны детали учётной записи. Общий хелпер: используется репозиторными
+// тестами нескольких сущностей (owner_listings и далее).
+func newTestUser(t *testing.T, r *UserRepo) uuid.UUID {
+	t.Helper()
+	u, err := r.Create(context.Background(), uuid.NewString()+"@example.test", "hash", "Продавец")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	return u.ID
+}
+
+// newExternalID возвращает уникальный внешний идентификатор для теста.
+// Фиксированные литералы вроде "cian_319800087" ломают повторный ручной
+// прогон против персистентной тестовой БД (testPool её не сбрасывает между
+// прогонами) — UNIQUE не пускает второй прогон с тем же значением.
+func newExternalID() string {
+	return "cian_" + uuid.NewString()
+}
+
+func strptr(s string) *string { return &s }

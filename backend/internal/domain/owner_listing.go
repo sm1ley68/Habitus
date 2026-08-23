@@ -25,8 +25,8 @@ type OwnerListing struct {
 	Level             *int
 	Levels            *int
 	Address           string
-	Lng               float64
-	Lat               float64
+	Lng               *float64
+	Lat               *float64
 	WindowOrientation []string
 	Description       string
 	Photos            []string
