@@ -67,4 +67,6 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 	ownerGroup.Delete("/listings/:listing_id", h.Owner.Delete)
 	ownerGroup.Post("/listings/:listing_id/publish", h.Owner.Publish)
 	ownerGroup.Post("/listings/:listing_id/unpublish", h.Owner.Unpublish)
+	ownerGroup.Post("/listings/:listing_id/photos", h.Owner.UploadPhotos)
+	ownerGroup.Delete("/listings/:listing_id/photos", h.Owner.DeletePhoto)
 }

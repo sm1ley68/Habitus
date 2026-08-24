@@ -13,10 +13,12 @@ import (
 type OwnerHandler struct {
 	listings *service.OwnerListingService
 	imports  *service.OwnerImportService
+	photos   *service.PhotoStore
 }
 
-func NewOwnerHandler(listings *service.OwnerListingService, imports *service.OwnerImportService) *OwnerHandler {
-	return &OwnerHandler{listings: listings, imports: imports}
+func NewOwnerHandler(listings *service.OwnerListingService, imports *service.OwnerImportService,
+	photos *service.PhotoStore) *OwnerHandler {
+	return &OwnerHandler{listings: listings, imports: imports, photos: photos}
 }
 
 // OwnerListingDTO — форма ответа кабинета. Координаты отдаются парой
@@ -262,5 +264,94 @@ func (h *OwnerHandler) Delete(c *fiber.Ctx) error {
 	if err := h.listings.Delete(c.Context(), middleware.UserID(c), id); err != nil {
 		return err
 	}
+	// Файлы чистим после удаления карточки: осиротевший каталог безвреден,
+	// а удалённые файлы при выжившей карточке дали бы битые ссылки.
+	_ = h.photos.DeleteAll(id)
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *OwnerHandler) UploadPhotos(c *fiber.Ctx) error {
+	id, err := ownerListingID(c)
+	if err != nil {
+		return err
+	}
+	userID := middleware.UserID(c)
+	listing, err := h.listings.Get(c.Context(), userID, id)
+	if err != nil {
+		return err
+	}
+
+	form, err := c.MultipartForm()
+	if err != nil {
+		return apperr.Validation("Не удалось прочитать загруженные файлы")
+	}
+	files := form.File["photos"]
+	if len(files) == 0 {
+		return apperr.Validation("Не выбрано ни одной фотографии")
+	}
+	if len(listing.Photos)+len(files) > h.photos.MaxCount() {
+		return apperr.PhotoLimitExceeded(h.photos.MaxCount())
+	}
+
+	urls := append([]string{}, listing.Photos...)
+	for _, header := range files {
+		file, err := header.Open()
+		if err != nil {
+			return apperr.Validation("Не удалось прочитать файл " + header.Filename)
+		}
+		url, saveErr := h.photos.Save(id, header.Filename, file, header.Size)
+		_ = file.Close()
+		if saveErr != nil {
+			return saveErr
+		}
+		urls = append(urls, url)
+	}
+
+	updated, err := h.listings.SetPhotos(c.Context(), userID, id, urls)
+	if err != nil {
+		return err
+	}
+	return c.JSON(OwnerListingDTO(updated))
+}
+
+type deletePhotoBody struct {
+	URL string `json:"url"`
+}
+
+func (h *OwnerHandler) DeletePhoto(c *fiber.Ctx) error {
+	id, err := ownerListingID(c)
+	if err != nil {
+		return err
+	}
+	var body deletePhotoBody
+	if err := c.BodyParser(&body); err != nil {
+		return apperr.Validation("Не удалось разобрать тело запроса")
+	}
+	userID := middleware.UserID(c)
+	listing, err := h.listings.Get(c.Context(), userID, id)
+	if err != nil {
+		return err
+	}
+
+	kept := make([]string, 0, len(listing.Photos))
+	found := false
+	for _, url := range listing.Photos {
+		if url == body.URL {
+			found = true
+			continue
+		}
+		kept = append(kept, url)
+	}
+	if !found {
+		return apperr.Validation("Такой фотографии нет в объявлении")
+	}
+	if err := h.photos.Delete(id, body.URL); err != nil {
+		return apperr.Internal("Не удалось удалить фотографию")
+	}
+
+	updated, err := h.listings.SetPhotos(c.Context(), userID, id, kept)
+	if err != nil {
+		return err
+	}
+	return c.JSON(OwnerListingDTO(updated))
 }

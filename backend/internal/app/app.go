@@ -25,9 +25,11 @@ type Services struct {
 	ObjectAsk *service.ObjectAskService
 	GeoLayers *service.GeoLayersService
 	Results   *service.ResultsService
-	// Личный кабинет продавца: управление карточками и импорт с Циана.
+	// Личный кабинет продавца: управление карточками, импорт с Циана и
+	// хранилище загруженных фотографий.
 	OwnerListings *service.OwnerListingService
 	OwnerImports  *service.OwnerImportService
+	OwnerPhotos   *service.PhotoStore
 }
 
 // Границы HTTP-слоя. ReadTimeout не режет SSE (он про чтение запроса, а не
@@ -40,10 +42,28 @@ const (
 	rateLimitPerHourDef = 30
 )
 
+// uploadBodyLimit — сколько байт нужно на одну загрузку фотографий объявления.
+// Ноль, когда кабинет не сконфигурирован (например, в тестах, собирающих
+// config.Settings{} напрямую): тогда предел остаётся прежним.
+func uploadBodyLimit(cfg config.Settings) int {
+	if cfg.OwnerPhotoMaxMB <= 0 || cfg.OwnerPhotoMaxCount <= 0 {
+		return 0
+	}
+	return (cfg.OwnerPhotoMaxMB*cfg.OwnerPhotoMaxCount + 1) << 20
+}
+
 func New(cfg config.Settings, svc Services) *fiber.App {
 	bodyLimit := cfg.BodyLimitBytes
 	if bodyLimit <= 0 {
 		bodyLimit = bodyLimitDef
+	}
+	// Предел тела определяется загрузкой фотографий, а не JSON: самый жирный
+	// JSON-запрос шлюза — сотни килобайт, а один снимок с телефона легко
+	// перекрывает дефолтный мегабайт. Берём максимум из явного BODY_LIMIT_BYTES
+	// и того, что нужно на полную пачку фото объявления (+1 МБ на границы
+	// multipart и служебные поля формы).
+	if photoLimit := uploadBodyLimit(cfg); photoLimit > bodyLimit {
+		bodyLimit = photoLimit
 	}
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.ErrorHandler,
@@ -84,7 +104,7 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		ObjectAsk: handlers.NewObjectAskHandler(svc.Object, svc.ObjectAsk),
 		Geo:       handlers.NewGeoHandler(svc.GeoLayers),
 		Results:   handlers.NewResultsHandler(svc.Results),
-		Owner:     handlers.NewOwnerHandler(svc.OwnerListings, svc.OwnerImports),
+		Owner:     handlers.NewOwnerHandler(svc.OwnerListings, svc.OwnerImports, svc.OwnerPhotos),
 	}, svc.Auth, middleware.RateLimitLLM(rateLimiter))
 
 	return app

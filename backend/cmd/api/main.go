@@ -82,6 +82,8 @@ func main() {
 	// Сессия к Циану поднимается лениво, по первому импорту: на старте она не
 	// нужна, а её создание ходит в сеть за cookie.
 	offerFetcher := service.NewLazyOfferFetcher(cfg.CianProxies, cfg.CianRegion, mlTimeout)
+	photoStore := service.NewPhotoStore(cfg.StaticDir,
+		int64(cfg.OwnerPhotoMaxMB)<<20, cfg.OwnerPhotoMaxCount)
 	ownerImportService := service.NewOwnerImportService(
 		ownerRepo, listingRepo, offerFetcher,
 		cian.NewRateLimiter(cfg.CianFetchPerMin, nil),
@@ -99,6 +101,7 @@ func main() {
 
 		OwnerListings: ownerListingService,
 		OwnerImports:  ownerImportService,
+		OwnerPhotos:   photoStore,
 	})
 
 	go func() {
