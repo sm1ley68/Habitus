@@ -27,6 +27,11 @@ const (
 
 var ErrBlocked = errors.New("Cian anti-bot returned a captcha or blocked response")
 
+// ErrOfferNotFound — Циан ответил пустым списком: объявление снято, скрыто
+// или id не существует. Отличать от ErrBlocked обязательно: первое — сообщение
+// продавцу, второе — повод сменить сессию и прокси.
+var ErrOfferNotFound = errors.New("Cian offer not found")
+
 type browserIdentity struct {
 	profile profiles.ClientProfile
 	version string
@@ -152,6 +157,46 @@ func (session *Session) Search(ctx context.Context, filter Filter, page int) ([]
 	return offers, nil
 }
 
+// FetchByID забирает одно объявление. В отличие от Search, вызывается
+// интерактивно — продавец ждёт ответа, — поэтому пауз между запросами здесь
+// нет: темп ограничивает вызывающая сторона общим лимитером.
+func (session *Session) FetchByID(ctx context.Context, offerID int64) (Listing, error) {
+	if session.config.BootstrapCookies && !session.initialized {
+		if err := session.bootstrap(ctx); err != nil {
+			return Listing{}, err
+		}
+	}
+
+	body, err := BuildOfferBody(session.config.Region, offerID)
+	if err != nil {
+		return Listing{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, session.config.APIURL, bytes.NewReader(body))
+	if err != nil {
+		return Listing{}, fmt.Errorf("create Cian API request: %w", err)
+	}
+	req.Header = apiHeaders(session.identity)
+
+	responseBody, contentType, err := session.do(req)
+	if err != nil {
+		return Listing{}, err
+	}
+	if isBlockedAPIResponse(contentType, responseBody) {
+		return Listing{}, ErrBlocked
+	}
+	if !json.Valid(responseBody) {
+		return Listing{}, fmt.Errorf("Cian API returned non-JSON response (%s)", contentType)
+	}
+	offers, err := ParseSearchResponse(responseBody, time.Now())
+	if err != nil {
+		return Listing{}, err
+	}
+	if len(offers) == 0 {
+		return Listing{}, ErrOfferNotFound
+	}
+	return offers[0], nil
+}
+
 func (session *Session) bootstrap(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, session.config.HomeURL, nil)
 	if err != nil {
@@ -222,6 +267,26 @@ func BuildSearchBody(region int, filter Filter, page int) ([]byte, error) {
 	}
 	if filter.MinPrice > 0 && filter.MaxPrice > 0 && filter.MinPrice > filter.MaxPrice {
 		return nil, errors.New("minimum price exceeds maximum price")
+	}
+	return json.Marshal(map[string]any{"jsonQuery": query})
+}
+
+// BuildOfferBody — тот же внутренний запрос Циана, но суженный до одного
+// объявления фильтром ids. Отдельная функция, а не флаг в Filter: у забора по
+// id нет ни страниц, ни ценовых окон, и смешивать их в одной сигнатуре значит
+// плодить невозможные комбинации.
+func BuildOfferBody(region int, offerID int64) ([]byte, error) {
+	if region < 1 {
+		return nil, errors.New("region must be at least 1")
+	}
+	if offerID < 1 {
+		return nil, errors.New("offer id must be at least 1")
+	}
+	query := map[string]any{
+		"region":         map[string]any{"type": "terms", "value": []int{region}},
+		"_type":          "flatsale",
+		"engine_version": map[string]any{"type": "term", "value": 2},
+		"ids":            map[string]any{"type": "terms", "value": []int64{offerID}},
 	}
 	return json.Marshal(map[string]any{"jsonQuery": query})
 }
