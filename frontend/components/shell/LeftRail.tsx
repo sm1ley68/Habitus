@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useSession } from "@/lib/store/session";
 
 const Icon = {
@@ -6,8 +7,6 @@ const Icon = {
   grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   pin: "M12 21s7-5.5 7-11a7 7 0 10-14 0c0 5.5 7 11 7 11z",
   clock: "M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  // clean two-slider "settings" glyph (Lucide settings-2)
-  sliders: "M20 7h-9M14 17H5M17 14a3 3 0 100 6 3 3 0 000-6zM7 4a3 3 0 100 6 3 3 0 000-6z",
 };
 
 function RailBtn({
@@ -52,23 +51,16 @@ export default function LeftRail() {
 
       <RailBtn d={Icon.clock} label="История" active={historyOpen} onClick={toggleHistory} />
 
-      <button
-        aria-label="Настройки"
-        title="Настройки"
-        className="hidden md:grid place-items-center h-9 w-9 rounded-xl cursor-pointer text-zinc-500 transition-colors duration-150 hover:bg-zinc-100 hover:text-zinc-900 active:scale-[0.94]"
+      {/* Вход в кабинет продавца. Раньше здесь был неинтерактивный аватар —
+          единственное место, откуда пользователь ждёт перехода «к себе». */}
+      <Link
+        href="/lk"
+        aria-label="Личный кабинет"
+        title="Личный кабинет"
+        className="hidden md:grid place-items-center h-8 w-8 mt-1 rounded-full bg-gradient-to-br from-zinc-600 to-zinc-900 text-white text-[11px] font-medium select-none transition-opacity duration-150 hover:opacity-85"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d={Icon.sliders} />
-        </svg>
-      </button>
-
-      <div
-        aria-hidden="true"
-        className="hidden md:grid place-items-center h-8 w-8 mt-1 rounded-full bg-gradient-to-br from-zinc-600 to-zinc-900 text-white text-[11px] font-medium select-none"
-      >
-        Г
-      </div>
+        Я
+      </Link>
     </nav>
   );
 }
