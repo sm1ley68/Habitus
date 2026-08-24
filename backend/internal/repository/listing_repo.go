@@ -121,3 +121,55 @@ func (r *ListingRepo) ListInBBox(ctx context.Context, city string, bbox [4]float
 	}
 	return out, rows.Err()
 }
+
+func (r *ListingRepo) SnapshotByExternalID(ctx context.Context, externalID string) (domain.ListingSnapshot, error) {
+	var s domain.ListingSnapshot
+	err := r.pool.QueryRow(ctx, `
+		SELECT external_id, source, coalesce(city, 'msk'), price, area, kitchen_area,
+		       rooms, level, levels, coalesce(address, ''), coalesce(description, ''),
+		       ST_X(geom), ST_Y(geom), coalesce(photos, '{}'),
+		       coalesce(window_orientation, '{}'), coalesce(source_url, ''), owner_managed
+		FROM listings WHERE external_id = $1`, externalID).Scan(
+		&s.ExternalID, &s.Source, &s.City, &s.Price, &s.Area, &s.KitchenArea,
+		&s.Rooms, &s.Level, &s.Levels, &s.Address, &s.Description,
+		&s.Lng, &s.Lat, &s.Photos, &s.WindowOrientation, &s.SourceURL, &s.OwnerManaged)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ListingSnapshot{}, ErrNotFound
+	}
+	return s, err
+}
+
+// FindSimilar ищет ту же квартиру, перевыставленную под другим id: тот же дом
+// (150 м), те же комнаты и этаж, площадь в пределах метра. Без координат, комнат
+// или этажа сравнивать не с чем — возвращаем пусто, чтобы не сыпать ложными дублями.
+func (r *ListingRepo) FindSimilar(ctx context.Context, lng, lat *float64,
+	rooms, level *int, area *float32, excludeExternalID string) ([]domain.SimilarListing, error) {
+	if lng == nil || lat == nil || rooms == nil || level == nil || area == nil {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT external_id, coalesce(address, ''), price, area
+		FROM listings
+		WHERE is_active
+		  AND rooms = $3
+		  AND level = $4
+		  AND abs(area - $5) <= 1.0
+		  AND external_id <> $6
+		  AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 150)
+		ORDER BY geom <-> ST_SetSRID(ST_MakePoint($1, $2), 4326)
+		LIMIT 3`, *lng, *lat, *rooms, *level, *area, excludeExternalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []domain.SimilarListing{}
+	for rows.Next() {
+		var s domain.SimilarListing
+		if err := rows.Scan(&s.ExternalID, &s.Address, &s.Price, &s.Area); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
