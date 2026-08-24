@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Settings struct {
@@ -31,6 +32,22 @@ type Settings struct {
 	// RateLimitLLMPerHour — Task 8: сколько раз за скользящий час один
 	// пользователь может дёрнуть LLM-ручки (messages/stream, ask/stream).
 	RateLimitLLMPerHour int
+	// MLOwnerTimeoutS — публикация объявления продавца: ML считает эмбеддинг
+	// BGE-M3, на холодной модели это заметно дольше остальных ручек.
+	MLOwnerTimeoutS int
+	// CianFetchPerMin — общий потолок исходящих запросов к Циану. Бан прилетает
+	// по IP всему сервису сразу, поэтому лимит суммарный, а не на пользователя.
+	CianFetchPerMin int
+	// OwnerImportPerHour — сколько импортов в час доступно одному продавцу.
+	OwnerImportPerHour int
+	// OwnerAutopublish — публиковать импортированное объявление сразу.
+	// Рубильник на случай наплыва чужих ссылок: false оставляет всё в draft.
+	OwnerAutopublish   bool
+	OwnerPhotoMaxMB    int
+	OwnerPhotoMaxCount int
+	// CianProxies — пул прокси для импорта; та же переменная, что у батч-парсера.
+	CianProxies []string
+	CianRegion  int
 }
 
 func Load() Settings {
@@ -52,6 +69,14 @@ func Load() Settings {
 		BodyLimitBytes:      getenvInt("BODY_LIMIT_BYTES", 1<<20),
 		DossierTTLHours:     getenvInt("DOSSIER_TTL_HOURS", 24),
 		RateLimitLLMPerHour: getenvInt("RATE_LIMIT_LLM_PER_HOUR", 30),
+		MLOwnerTimeoutS:     getenvInt("ML_OWNER_TIMEOUT_S", 60),
+		CianFetchPerMin:     getenvInt("CIAN_FETCH_PER_MIN", 6),
+		OwnerImportPerHour:  getenvInt("OWNER_IMPORT_PER_HOUR", 20),
+		OwnerAutopublish:    getenvBool("OWNER_AUTOPUBLISH", true),
+		OwnerPhotoMaxMB:     getenvInt("OWNER_PHOTO_MAX_MB", 10),
+		OwnerPhotoMaxCount:  getenvInt("OWNER_PHOTO_MAX_COUNT", 20),
+		CianProxies:         getenvList("CIAN_PROXIES"),
+		CianRegion:          getenvInt("CIAN_REGION", 1),
 	}
 }
 
@@ -78,4 +103,22 @@ func getenvBool(key string, def bool) bool {
 		}
 	}
 	return def
+}
+
+// getenvList читает список, разделённый запятыми или переводами строк, —
+// тот же формат, что понимает батч-парсер (cmd/cian-parser/main.go).
+func getenvList(key string) []string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == ' '
+	}) {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

@@ -135,6 +135,47 @@ type DossierResponse struct {
 	SchemaVersion string         `json:"schema_version"`
 }
 
+type OwnerUpsertRequest struct {
+	ExternalID        string   `json:"external_id"`
+	Source            string   `json:"source"`
+	City              string   `json:"city"`
+	Price             *int64   `json:"price"`
+	Area              *float32 `json:"area"`
+	KitchenArea       *float32 `json:"kitchen_area"`
+	Rooms             *int     `json:"rooms"`
+	Level             *int     `json:"level"`
+	Levels            *int     `json:"levels"`
+	Address           string   `json:"address"`
+	Lng               float64  `json:"lng"`
+	Lat               float64  `json:"lat"`
+	WindowOrientation []string `json:"window_orientation"`
+	Description       string   `json:"description"`
+	Photos            []string `json:"photos"`
+	SourceURL         string   `json:"source_url"`
+}
+
+type OwnerUpsertResponse struct {
+	ExternalID string `json:"external_id"`
+	Indexed    bool   `json:"indexed"`
+}
+
+type OwnerWithdrawResponse struct {
+	ExternalID  string `json:"external_id"`
+	Deactivated bool   `json:"deactivated"`
+}
+
+// OwnerListingInvalidError — 422 от ML: объявление не прошло пороги витрины.
+// Отдельный тип, а не ErrBadResponse: продавцу нужно показать, какое поле
+// поправить, и без имени поля сообщение бесполезно.
+type OwnerListingInvalidError struct {
+	Field   string
+	Message string
+}
+
+func (e *OwnerListingInvalidError) Error() string {
+	return e.Field + ": " + e.Message
+}
+
 type ObjectAskRequest struct {
 	Question      string         `json:"question"`
 	Passport      map[string]any `json:"passport"`
@@ -211,6 +252,16 @@ func (c *MLClient) Search(ctx context.Context, req SearchRequest) (*SearchRespon
 }
 
 func (c *MLClient) postJSON(ctx context.Context, path string, in, out any) error {
+	return c.post(ctx, path, in, out, false)
+}
+
+// postJSONWithValidation отличается от postJSON одним: 422 разбирается в
+// OwnerListingInvalidError вместо того, чтобы схлопнуться в ErrBadResponse.
+func (c *MLClient) postJSONWithValidation(ctx context.Context, path string, in, out any) error {
+	return c.post(ctx, path, in, out, true)
+}
+
+func (c *MLClient) post(ctx context.Context, path string, in, out any, parseValidation bool) error {
 	body, err := json.Marshal(in)
 	if err != nil {
 		return fmt.Errorf("%w: encode request: %v", ErrBadResponse, err)
@@ -228,6 +279,18 @@ func (c *MLClient) postJSON(ctx context.Context, path string, in, out any) error
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	defer resp.Body.Close()
+	if parseValidation && resp.StatusCode == http.StatusUnprocessableEntity {
+		var detail struct {
+			Detail struct {
+				Field   string `json:"field"`
+				Message string `json:"message"`
+			} `json:"detail"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+			return fmt.Errorf("%w: decode 422: %v", ErrBadResponse, err)
+		}
+		return &OwnerListingInvalidError{Field: detail.Detail.Field, Message: detail.Detail.Message}
+	}
 	if resp.StatusCode >= 500 {
 		return ErrServer
 	}
@@ -243,6 +306,23 @@ func (c *MLClient) postJSON(ctx context.Context, path string, in, out any) error
 func (c *MLClient) Dossier(ctx context.Context, req DossierRequest) (*DossierResponse, error) {
 	var out DossierResponse
 	if err := c.postJSON(ctx, "/dossier", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *MLClient) OwnerUpsert(ctx context.Context, req OwnerUpsertRequest) (*OwnerUpsertResponse, error) {
+	var out OwnerUpsertResponse
+	if err := c.postJSONWithValidation(ctx, "/listings/owner-upsert", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *MLClient) OwnerWithdraw(ctx context.Context, externalID string) (*OwnerWithdrawResponse, error) {
+	var out OwnerWithdrawResponse
+	if err := c.postJSON(ctx, "/listings/owner-withdraw",
+		map[string]string{"external_id": externalID}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
