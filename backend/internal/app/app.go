@@ -25,6 +25,9 @@ type Services struct {
 	ObjectAsk *service.ObjectAskService
 	GeoLayers *service.GeoLayersService
 	Results   *service.ResultsService
+	// Личный кабинет продавца: управление карточками и импорт с Циана.
+	OwnerListings *service.OwnerListingService
+	OwnerImports  *service.OwnerImportService
 }
 
 // Границы HTTP-слоя. ReadTimeout не режет SSE (он про чтение запроса, а не
@@ -81,6 +84,7 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		ObjectAsk: handlers.NewObjectAskHandler(svc.Object, svc.ObjectAsk),
 		Geo:       handlers.NewGeoHandler(svc.GeoLayers),
 		Results:   handlers.NewResultsHandler(svc.Results),
+		Owner:     handlers.NewOwnerHandler(svc.OwnerListings, svc.OwnerImports),
 	}, svc.Auth, middleware.RateLimitLLM(rateLimiter))
 
 	return app

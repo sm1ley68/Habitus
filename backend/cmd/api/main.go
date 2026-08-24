@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"habitus-backend/internal/app"
+	"habitus-backend/internal/cian"
 	"habitus-backend/internal/client"
 	"habitus-backend/internal/config"
 	"habitus-backend/internal/db"
@@ -71,6 +72,22 @@ func main() {
 	streamService := service.NewSearchStreamService(chatRepo, messageRepo, chatSearchRepo, listingRepo, mlClient, mlTimeout, explainTimeout)
 	resultsService := service.NewResultsService(chatService, chatSearchRepo, listingRepo)
 
+	ownerRepo := repository.NewOwnerListingRepo(pool)
+	ownerListingService := service.NewOwnerListingService(
+		ownerRepo,
+		client.NewMLClient(cfg.MLServiceURL, time.Duration(cfg.MLOwnerTimeoutS)*time.Second),
+		cfg.OwnerAutopublish,
+	)
+
+	// Сессия к Циану поднимается лениво, по первому импорту: на старте она не
+	// нужна, а её создание ходит в сеть за cookie.
+	offerFetcher := service.NewLazyOfferFetcher(cfg.CianProxies, cfg.CianRegion, mlTimeout)
+	ownerImportService := service.NewOwnerImportService(
+		ownerRepo, listingRepo, offerFetcher,
+		cian.NewRateLimiter(cfg.CianFetchPerMin, nil),
+		cian.NewUserQuota(cfg.OwnerImportPerHour, nil),
+	)
+
 	fiberApp := app.New(cfg, app.Services{
 		Auth:      authService,
 		Chat:      chatService,
@@ -79,6 +96,9 @@ func main() {
 		ObjectAsk: objectAskService,
 		GeoLayers: geoLayersService,
 		Results:   resultsService,
+
+		OwnerListings: ownerListingService,
+		OwnerImports:  ownerImportService,
 	})
 
 	go func() {

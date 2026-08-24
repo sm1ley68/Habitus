@@ -19,6 +19,7 @@ type Handlers struct {
 	ObjectAsk *handlers.ObjectAskHandler
 	Geo       *handlers.GeoHandler
 	Results   *handlers.ResultsHandler
+	Owner     *handlers.OwnerHandler
 }
 
 // rateLimitLLM применяется только к двум ручкам, которые реально жгут бюджет
@@ -51,4 +52,19 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 
 	api.Get("/geo/layers", authMw, h.Geo.Layers)
 	api.Get("/geo/listings", authMw, h.Geo.Listings)
+
+	// Личный кабинет продавца. Всё за authMw: объявление всегда принадлежит
+	// конкретному пользователю, анонимного доступа здесь нет по определению.
+	// Порядок важен: /listings/import объявляется до /listings/:listing_id,
+	// иначе Fiber примет import за uuid и вернёт 404.
+	ownerGroup := api.Group("/owner", authMw)
+	ownerGroup.Get("/listings", h.Owner.List)
+	ownerGroup.Post("/listings", h.Owner.Create)
+	ownerGroup.Post("/listings/import/preview", h.Owner.ImportPreview)
+	ownerGroup.Post("/listings/import", h.Owner.Import)
+	ownerGroup.Get("/listings/:listing_id", h.Owner.Get)
+	ownerGroup.Patch("/listings/:listing_id", h.Owner.Update)
+	ownerGroup.Delete("/listings/:listing_id", h.Owner.Delete)
+	ownerGroup.Post("/listings/:listing_id/publish", h.Owner.Publish)
+	ownerGroup.Post("/listings/:listing_id/unpublish", h.Owner.Unpublish)
 }
