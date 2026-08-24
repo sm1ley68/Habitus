@@ -19,7 +19,11 @@ from habitus.online.dossier import DossierNotFound, build_dossier
 from habitus.online.object_qa import answer_object_async
 from habitus.online.schema import (DossierRequest, DossierResponse,
                                    ExplainRequest, ObjectAskRequest,
-                                   ObjectAskResponse, SearchRequest,
+                                   ObjectAskResponse,
+                                   OwnerListingUpsertRequest,
+                                   OwnerListingUpsertResponse,
+                                   OwnerListingWithdrawRequest,
+                                   OwnerListingWithdrawResponse, SearchRequest,
                                    SearchResponse)
 
 
@@ -113,6 +117,29 @@ def dossier(req: DossierRequest) -> DossierResponse:
     except DossierNotFound as exc:
         raise HTTPException(status_code=404, detail="object not found") from exc
     return DossierResponse(dossier=payload)
+
+
+@app.post("/listings/owner-upsert", response_model=OwnerListingUpsertResponse)
+def owner_upsert(req: OwnerListingUpsertRequest) -> OwnerListingUpsertResponse:
+    from habitus.online.owner_listing import (OwnerListingInvalid,
+                                              upsert_owner_listing)
+    try:
+        with get_conn() as conn:
+            indexed = upsert_owner_listing(req, conn)
+    except OwnerListingInvalid as exc:
+        # 422 с именем поля: шлюз показывает продавцу, что именно поправить.
+        raise HTTPException(status_code=422,
+                            detail={"field": exc.field, "message": str(exc)}) from exc
+    return OwnerListingUpsertResponse(external_id=req.external_id, indexed=indexed)
+
+
+@app.post("/listings/owner-withdraw", response_model=OwnerListingWithdrawResponse)
+def owner_withdraw(req: OwnerListingWithdrawRequest) -> OwnerListingWithdrawResponse:
+    from habitus.online.owner_listing import withdraw_owner_listing
+    with get_conn() as conn:
+        deactivated = withdraw_owner_listing(req.external_id, conn)
+    return OwnerListingWithdrawResponse(external_id=req.external_id,
+                                        deactivated=deactivated)
 
 
 @app.post("/object-ask", response_model=ObjectAskResponse)

@@ -307,3 +307,40 @@ class GroundedSentence(BaseModel):
 
 class ObjectAskResponse(BaseModel):
     sentences: list[GroundedSentence]
+
+
+# --- Объявление из личного кабинета продавца -------------------------------
+# Витрина принимает его той же формой, что и объявление источника: разница
+# только в source и в том, что строка помечается owner_managed.
+
+class OwnerListingUpsertRequest(BaseModel):
+    external_id: str = Field(min_length=1, max_length=128)
+    source: Literal["cian", "owner"]
+    city: Literal["msk", "spb"]
+    price: int | None = None
+    area: float | None = None
+    kitchen_area: float | None = None
+    rooms: int | None = None
+    level: int | None = None
+    levels: int | None = None
+    address: str = ""
+    lng: float
+    lat: float
+    window_orientation: list[str] = Field(default_factory=list)
+    description: str = ""
+    photos: list[str] = Field(default_factory=list)
+    source_url: str = ""
+
+
+class OwnerListingUpsertResponse(BaseModel):
+    external_id: str
+    indexed: bool
+
+
+class OwnerListingWithdrawRequest(BaseModel):
+    external_id: str = Field(min_length=1, max_length=128)
+
+
+class OwnerListingWithdrawResponse(BaseModel):
+    external_id: str
+    deactivated: bool
