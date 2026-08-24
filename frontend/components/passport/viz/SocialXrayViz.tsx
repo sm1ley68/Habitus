@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
-import maplibregl from "maplibre-gl";
-import { useMaplibre } from "@/lib/map/useMaplibre";
+import { useGoogleMap } from "@/lib/map/useGoogleMap";
+import { removeAdvancedMarker, toLatLng } from "@/lib/map/google";
 import { DUR, EASE } from "@/lib/motion";
 import type { SocialEnvironmentData, SocialLayerId } from "@/lib/agent/types";
 import type { VizProps } from "./index";
@@ -54,35 +54,14 @@ function riskWord(v: number) {
   return "высокий";
 }
 
-type LngLat = [number, number];
-
-// A ground-truth radius ring: metres → a lng/lat polygon around home. The
-// cos(lat) correction keeps it round at Petersburg latitudes, not an ellipse.
-function ringPolygon(center: LngLat, radiusM: number, steps = 72): LngLat[] {
-  const dLat = radiusM / 111_320;
-  const dLng = radiusM / (111_320 * Math.cos((center[1] * Math.PI) / 180));
-  const out: LngLat[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const a = (i / steps) * Math.PI * 2;
-    out.push([center[0] + dLng * Math.cos(a), center[1] + dLat * Math.sin(a)]);
-  }
-  return out;
-}
-
-function fillId(id: SocialLayerId) {
-  return `xray-fill-${id}`;
-}
-function circleId(id: SocialLayerId) {
-  return `xray-circle-${id}`;
-}
-
 export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
   const social = data as SocialEnvironmentData | undefined;
   const reduce = useReducedMotion();
 
   const rootRef = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
-  const { map, ready, missingKey } = useMaplibre(container);
+  const { map, ready, unavailable } = useGoogleMap(container, { interactive: false, zoom: 14 });
+  const heatLayers = useRef<Partial<Record<SocialLayerId, google.maps.Data>>>({});
 
   // Revealed once the panel scrolls into view — drives both the sweep and the
   // heat fade-in. `once` so it plays a single time, never on every scroll.
@@ -93,7 +72,7 @@ export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
 
   const scores = social?.scores ?? { communal_share: 0, bars_density: 0, crime_index: 0 };
 
-  // --- Map: home ring + heat layers, built once GL is ready. ---
+  // --- Google Map: home radius + independently switchable evidence layers. ---
   useEffect(() => {
     if (!map || !ready || !social) return;
     // home в payload опционален (контракт §2.2). Запасной вариант — координаты
@@ -101,91 +80,27 @@ export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
     // вокруг выдуманной точки. Нет ни того, ни другого — карту не рисуем.
     const home = social.home ?? objectHome;
     if (!home) return;
-    const reduced = reduce ?? false;
-
-    map.scrollZoom.disable();
-    map.doubleClickZoom.disable();
-    map.dragRotate.disable();
-    map.touchZoomRotate.disableRotation();
-
-    const ring = ringPolygon(home, social.radius_m);
-    const markers: maplibregl.Marker[] = [];
-    const ownedLayers: string[] = [];
-    const ownedSources: string[] = [];
-
-    // Frame the whole ring with a little breathing room.
-    const bounds = ring.reduce(
-      (b, c) => b.extend(c),
-      new maplibregl.LngLatBounds(home, home),
-    );
-    map.fitBounds(bounds, {
-      padding: 34,
-      duration: reduced ? 0 : DUR.slow * 1000,
-      maxZoom: 15.5,
+    map.setCenter(toLatLng(home));
+    const ring = new google.maps.Circle({
+      map,
+      center: toLatLng(home),
+      radius: social.radius_m,
+      fillColor: ACCENT,
+      fillOpacity: 0.05,
+      strokeColor: ACCENT,
+      strokeOpacity: 0.7,
+      strokeWeight: 1.4,
+      clickable: false,
+      zIndex: 2,
     });
+    const bounds = ring.getBounds();
+    if (bounds) map.fitBounds(bounds, 34);
 
-    // Home ring — the single accent-coloured mark on the canvas.
-    if (!map.getSource("xray-ring")) {
-      map.addSource("xray-ring", {
-        type: "geojson",
-        data: { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } },
-      });
-      ownedSources.push("xray-ring");
-      map.addLayer({
-        id: "xray-ring-fill",
-        type: "fill",
-        source: "xray-ring",
-        paint: { "fill-color": ACCENT, "fill-opacity": 0.05 },
-      });
-      map.addLayer({
-        id: "xray-ring-line",
-        type: "line",
-        source: "xray-ring",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": ACCENT, "line-width": 1.4, "line-opacity": 0.7, "line-dasharray": [2, 2] },
-      });
-      ownedLayers.push("xray-ring-fill", "xray-ring-line");
-    }
-
-    // Heat features, keyed by properties.layer. One fill layer (polygons) and one
-    // circle layer (points) per social layer so we can crossfade by opacity.
-    if (!map.getSource("xray-heat")) {
-      map.addSource("xray-heat", { type: "geojson", data: social.heat });
-      ownedSources.push("xray-heat");
-      const fadeMs = reduced ? 0 : DUR.slow * 1000;
-      for (const { id } of LAYERS) {
-        const tint = LAYER_TINT[id];
-        map.addLayer({
-          id: fillId(id),
-          type: "fill",
-          source: "xray-heat",
-          filter: ["all", ["==", ["get", "layer"], id], ["==", ["geometry-type"], "Polygon"]],
-          paint: {
-            "fill-color": tint,
-            "fill-opacity": 0,
-            "fill-opacity-transition": { duration: fadeMs, delay: 0 },
-            "fill-outline-color": tint,
-          },
-        });
-        map.addLayer({
-          id: circleId(id),
-          type: "circle",
-          source: "xray-heat",
-          filter: ["all", ["==", ["get", "layer"], id], ["==", ["geometry-type"], "Point"]],
-          paint: {
-            "circle-color": tint,
-            "circle-radius": 9,
-            "circle-blur": 0.55,
-            "circle-opacity": 0,
-            "circle-opacity-transition": { duration: fadeMs, delay: 0 },
-            "circle-stroke-color": tint,
-            "circle-stroke-width": 1,
-            "circle-stroke-opacity": 0,
-            "circle-stroke-opacity-transition": { duration: fadeMs, delay: 0 },
-          },
-        });
-        ownedLayers.push(fillId(id), circleId(id));
-      }
+    for (const { id } of LAYERS) {
+      const features = social.heat.features.filter((feature) => feature.properties?.layer === id);
+      const layer = new google.maps.Data({ map });
+      layer.addGeoJson({ type: "FeatureCollection", features } as GeoJSON.GeoJsonObject);
+      heatLayers.current[id] = layer;
     }
 
     // Home dot — a calm anchor at the centre of the ring.
@@ -193,18 +108,19 @@ export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
     homeEl.style.cssText =
       "width:12px;height:12px;border-radius:9999px;background:#fff;" +
       `box-shadow:0 0 0 2px ${ACCENT},0 1px 4px rgba(20,20,34,0.25);`;
-    markers.push(new maplibregl.Marker({ element: homeEl, anchor: "center" }).setLngLat(home).addTo(map));
+    const marker = new google.maps.marker.AdvancedMarkerElement({
+      map,
+      position: toLatLng(home),
+      content: homeEl,
+      title: "Дом",
+    });
 
     return () => {
-      markers.forEach((m) => m.remove());
-      try {
-        ownedLayers.forEach((id) => { if (map.getLayer(id)) map.removeLayer(id); });
-        ownedSources.forEach((id) => { if (map.getSource(id)) map.removeSource(id); });
-      } catch { /* map already torn down */ }
+      removeAdvancedMarker(marker);
+      ring.setMap(null);
+      Object.values(heatLayers.current).forEach((layer) => layer?.setMap(null));
+      heatLayers.current = {};
     };
-    // Досье объекта неизменно на время показа карточки; пересобираем слои
-    // только когда готов GL-стиль или сменился сам объект.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, ready, social, objectHome]);
 
   // --- Crossfade: only the active layer is visible, and only once revealed. ---
@@ -212,13 +128,34 @@ export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
     if (!map || !ready || !social) return;
     for (const { id } of LAYERS) {
       const on = revealed && id === active;
-      try {
-        if (map.getLayer(fillId(id))) map.setPaintProperty(fillId(id), "fill-opacity", on ? 0.34 : 0);
-        if (map.getLayer(circleId(id))) {
-          map.setPaintProperty(circleId(id), "circle-opacity", on ? 0.42 : 0);
-          map.setPaintProperty(circleId(id), "circle-stroke-opacity", on ? 0.7 : 0);
+      const tint = LAYER_TINT[id];
+      heatLayers.current[id]?.setStyle((feature) => {
+        const geometry = feature.getGeometry()?.getType();
+        if (geometry === "Point" || geometry === "MultiPoint") {
+          return {
+            visible: on,
+            clickable: false,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              fillColor: tint,
+              fillOpacity: 0.42,
+              strokeColor: tint,
+              strokeOpacity: 0.7,
+              strokeWeight: 1,
+              scale: 9,
+            },
+          };
         }
-      } catch { /* layers not ready yet */ }
+        return {
+          visible: on,
+          clickable: false,
+          fillColor: tint,
+          fillOpacity: 0.34,
+          strokeColor: tint,
+          strokeOpacity: 0.55,
+          strokeWeight: 1,
+        };
+      });
     }
   }, [map, ready, social, active, revealed]);
 
@@ -229,7 +166,7 @@ export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
       className="grid gap-4 lg:grid-cols-[1fr_15rem]"
     >
       {/* Map column — optional. The scores panel below stands on its own. */}
-      {!missingKey && (
+      {!unavailable && (
         <div className="relative overflow-hidden rounded-2xl bg-[#f6f7fb] ring-1 ring-inset ring-black/[0.06]">
           <div className="relative h-64 w-full lg:h-full lg:min-h-[16rem]">
             <div ref={container} className="absolute inset-0" />
