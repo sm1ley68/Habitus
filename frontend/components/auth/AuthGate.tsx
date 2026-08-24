@@ -1,14 +1,12 @@
 "use client";
 import { useEffect, useState, type FormEvent } from "react";
 import { me, login, register, type User } from "@/lib/api/auth";
+import { Input } from "@/components/ui";
 
 // Все /api/v1 роуты, кроме auth/*, закрыты сессионной кукой (Go: middleware.Auth).
 // Без входа приложение получит 401 на каждый запрос, поэтому шелл рендерится
 // только поверх живой сессии.
 type Mode = "login" | "register";
-
-const field =
-  "rounded-lg border border-zinc-200 px-3 py-2 text-[#1c1d20] outline-none transition-colors focus:border-accent";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -70,8 +68,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         {mode === "register" && (
           <label className="flex flex-col gap-1 text-sm text-zinc-500">
             Имя
-            <input
-              className={field}
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoComplete="name"
@@ -81,8 +78,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
         <label className="flex flex-col gap-1 text-sm text-zinc-500">
           Email
-          <input
-            className={field}
+          <Input
             type="email"
             required
             value={email}
@@ -93,8 +89,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
         <label className="flex flex-col gap-1 text-sm text-zinc-500">
           Пароль
-          <input
-            className={field}
+          <Input
             type="password"
             required
             value={password}
