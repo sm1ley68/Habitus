@@ -1,6 +1,7 @@
 import { parseSSE } from "./searchStream";
 import { API_BASE } from "./config";
-import { describeFailure } from "./streamError";
+import { describeFailure, failureFromEvent, localFailure } from "./streamError";
+import type { StreamFailure } from "./streamError";
 
 // Чат по конкретному объекту (контракт §Н.6). Имена SSE-событий те же, что у
 // поискового движка: text_token / error / stream_end.
@@ -8,7 +9,7 @@ import { describeFailure } from "./streamError";
 export interface ObjectChatHandlers {
   onToken(token: string): void;
   onDone(): void;
-  onError(code: string, message: string): void;
+  onError(failure: StreamFailure): void;
 }
 
 export interface ObjectChatClient {
@@ -43,7 +44,7 @@ export function createObjectChatClient(): ObjectChatClient {
           );
 
           if (!res.ok || !res.body) {
-            handlers.onError(...(await describeFailure(res)));
+            handlers.onError(await describeFailure(res));
             return;
           }
 
@@ -66,10 +67,7 @@ export function createObjectChatClient(): ObjectChatClient {
               if (parsed.event === "text_token") {
                 handlers.onToken((parsed.data.token as string) ?? "");
               } else if (parsed.event === "error") {
-                handlers.onError(
-                  (parsed.data.code as string) ?? "internal_error",
-                  (parsed.data.message as string) ?? "Ошибка потока",
-                );
+                handlers.onError(failureFromEvent(parsed.data));
               } else if (parsed.event === "stream_end") {
                 handlers.onDone();
               }
@@ -77,10 +75,7 @@ export function createObjectChatClient(): ObjectChatClient {
           }
         } catch (err) {
           if (controller.signal.aborted) return; // отмена пользователем — молча
-          handlers.onError(
-            "internal_error",
-            err instanceof Error ? err.message : "Сетевая ошибка",
-          );
+          handlers.onError(localFailure(err));
         }
       })();
 

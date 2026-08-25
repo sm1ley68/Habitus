@@ -5,7 +5,7 @@ import type {
 import { useSession } from "@/lib/store/session";
 import { createChat } from "./chats";
 import { API_BASE } from "./config";
-import { describeFailure } from "./streamError";
+import { describeFailure, failureFromEvent, localFailure } from "./streamError";
 
 export interface SSEFrame { event: string; data: Record<string, unknown> }
 
@@ -34,7 +34,7 @@ export function parseSSE(frame: string): SSEFrame | null {
 //   chat_renamed  {chat_id,title}
 //   final_result  {suggested_areas_geojson,objects,data_freshness,total,has_more,
 //                  intent,diagnostics}
-//   error         {code,message}
+//   error         {code,message,cause?,hint?}
 //   stream_end    {}
 export function createSearchClient(): AgentClient {
   return {
@@ -61,7 +61,7 @@ export function createSearchClient(): AgentClient {
           });
 
           if (!res.ok || !res.body) {
-            handlers.onError?.(...(await describeFailure(res)));
+            handlers.onError?.(await describeFailure(res));
             return;
           }
 
@@ -101,10 +101,7 @@ export function createSearchClient(): AgentClient {
               diagnostics = (f.data.diagnostics as ConstraintDiagnostic[]) ?? [];
             } else if (f.event === "error") {
               failed = true;
-              handlers.onError?.(
-                (f.data.code as string) ?? "internal_error",
-                (f.data.message as string) ?? "Ошибка потока",
-              );
+              handlers.onError?.(failureFromEvent(f.data));
             }
           };
 
@@ -130,10 +127,7 @@ export function createSearchClient(): AgentClient {
           }
         } catch (err) {
           if (controller.signal.aborted) return; // отмена пользователем — молча
-          handlers.onError?.(
-            "internal_error",
-            err instanceof Error ? err.message : "Сетевая ошибка",
-          );
+          handlers.onError?.(localFailure(err));
         }
       })();
 

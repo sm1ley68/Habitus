@@ -1,3 +1,4 @@
+import type { StreamFailure } from "@/lib/api/streamError";
 import type { AgentEvent, Property, GeoZone, ConstraintDiagnostic } from "./types";
 
 export interface RunResult {
@@ -26,7 +27,8 @@ export interface RunOptions {
 export interface RunHandlers {
   onEvent(event: AgentEvent): void;
   onDone(result: RunResult): void;
-  onError(code: string, message: string): void;
+  /** Отказ целиком: code+message, плюс cause/hint, когда шлюз их прислал. */
+  onError(failure: StreamFailure): void;
 }
 
 export interface AgentClient {

@@ -47,7 +47,7 @@ const run = (query: string, options?: { chatId?: string }) =>
       {
         onEvent: () => {},
         onDone: (r) => resolve({ done: r }),
-        onError: (code, message) => resolve({ code, message }),
+        onError: (failure) => resolve(failure),
       },
       options,
     );
@@ -146,7 +146,7 @@ test("чат по объекту тоже показывает честный 42
     createObjectChatClient().ask("obj-1", "c1", "почему тут шумно?", {
       onToken: () => {},
       onDone: () => {},
-      onError: (code, message) => resolve({ code, message }),
+      onError: (failure) => resolve(failure),
     });
   });
 

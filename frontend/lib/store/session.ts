@@ -6,6 +6,7 @@ import { nextStage } from "@/lib/agent/stageMachine";
 import type { AgentClient, RunResult } from "@/lib/agent/AgentClient";
 import { fetchLayers, fetchListings, type LayerCollections } from "@/lib/api/geo";
 import { fetchMoreResults } from "@/lib/api/results";
+import type { StreamFailure } from "@/lib/api/streamError";
 
 export type Screen = "chat" | "result" | "map" | "passport";
 
@@ -42,13 +43,19 @@ interface SessionState {
   /** Почему выдача пуста — непустой только при нулевой выдаче. */
   diagnostics: ConstraintDiagnostic[];
   errorMessage: string | null;
+  /** Код отказа — по нему ищут в логах шлюза и ML. */
+  errorCode: string | null;
+  /** Техническая улика: ручка ML, статус, стадия, тайминги. Null — улики нет. */
+  errorCause: string | null;
+  /** Что с этим делать. Null — сказать нечего, и выдумывать нельзя. */
+  errorHint: string | null;
   _cancel?: () => void;
 
   startQuery: (client: AgentClient, query: string) => void;
   loadMore: () => Promise<void>;
   applyEvent: (e: AgentEvent) => void;
   finish: (result: RunResult) => void;
-  fail: (message: string) => void;
+  fail: (failure: StreamFailure) => void;
   reset: () => void;
   setScreen: (s: Screen) => void;
   selectProperty: (i: number) => void;
@@ -84,6 +91,9 @@ const initial = {
   loadingMore: false,
   diagnostics: [] as ConstraintDiagnostic[],
   errorMessage: null as string | null,
+  errorCode: null as string | null,
+  errorCause: null as string | null,
+  errorHint: null as string | null,
 };
 
 export const useSession = create<SessionState>((set, get) => ({
@@ -96,11 +106,12 @@ export const useSession = create<SessionState>((set, get) => ({
     // newDialog() или смену города.
     const chatId = get().chatId;
     set({ stage: "idle", answer: "", screen: "chat", properties: [],
-          diagnostics: [], hasMore: false, totalResults: 0, errorMessage: null });
+          diagnostics: [], hasMore: false, totalResults: 0,
+          errorMessage: null, errorCode: null, errorCause: null, errorHint: null });
     const cancel = client.run(query, {
       onEvent: (e) => get().applyEvent(e),
       onDone: (r) => get().finish(r),
-      onError: (_code, message) => get().fail(message),
+      onError: (failure) => get().fail(failure),
     }, chatId ? { chatId } : undefined);
     set({ _cancel: cancel });
   },
@@ -139,7 +150,13 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ properties, stage: "done", screen: "result", zoneGeoJSON, areaLabel, chatId,
           totalResults: total, hasMore, diagnostics }),
 
-  fail: (errorMessage) => set({ stage: "error", errorMessage }),
+  fail: (failure) => set({
+    stage: "error",
+    errorMessage: failure.message || null,
+    errorCode: failure.code || null,
+    errorCause: failure.cause ?? null,
+    errorHint: failure.hint ?? null,
+  }),
 
   // «Новый поиск» в LeftRail: обрывает и выдачу, и ДИАЛОГ — chatId уходит в
   // null, поэтому следующий запрос заведёт новый чат и уйдёт в ML без

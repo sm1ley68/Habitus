@@ -115,10 +115,14 @@ export default function PassportChat({
           setStreaming(false);
           cancelRef.current = null;
         },
-        onError: (_code, message) => {
+        onError: (failure) => {
           setStreaming(false);
           cancelRef.current = null;
-          setError(message || "Не удалось получить ответ. Попробуйте ещё раз.");
+          // Подсказка «что делать» приклеивается к тексту: у инлайн-ошибки в
+          // паспорте нет отдельного места под неё, а без неё сообщение снова
+          // становится тупиком.
+          setError([failure.message || "Не удалось получить ответ. Попробуйте ещё раз.",
+                    failure.hint].filter(Boolean).join(" — "));
           // Drop the empty assistant bubble so the thread stays clean.
           setMessages((m) => m.filter((msg) => !(msg.id === answerId && !msg.text)));
         },
