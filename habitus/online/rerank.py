@@ -8,6 +8,45 @@ from habitus.online.retrieval import Candidate
 from habitus.online.schema import ParsedQuery
 
 _reranker = None
+_cuda: bool | None = None
+
+
+def _cuda_available() -> bool:
+    """Есть ли CUDA. Результат кэшируется: torch импортируется лениво, а на
+    горячем пути реранка проверка зовётся на каждый запрос."""
+    global _cuda
+    if _cuda is None:
+        import torch
+        _cuda = torch.cuda.is_available()
+    return _cuda
+
+
+def _pool_configured() -> bool:
+    """Задавал ли оператор RERANK_POOL_N явно (env или .env)."""
+    return "rerank_pool_n" in settings.model_fields_set
+
+
+def effective_pool_n(pool_n: int | None = None) -> int:
+    """Сколько пар реально отдать кросс-энкодеру.
+
+    Вне CUDA реранкер идёт на CPU (см. get_reranker), а он линеен по числу пар:
+    на слабой машине пул в 40 пар — это десятки секунд, шлюз рвёт запрос по
+    таймауту и показывает ошибку, хотя ML честно досчитывает позже. Поэтому
+    дефолтный пул вне CUDA режется до rerank_pool_n_cpu.
+
+    Потолок — это дефолт для того, кто ничего не настраивал, а не запрет.
+    Явный запрос уважается в двух видах, и оба важны:
+      * аргумент pool_n — так зовут из тестов и из кода, который знает, чего хочет;
+      * заданный оператором RERANK_POOL_N — иначе `RERANK_POOL_N=100 habitus eval`
+        молча мерил бы 25 и врал бы в замерах.
+    """
+    if pool_n is not None:
+        return pool_n
+    if _pool_configured():
+        return settings.rerank_pool_n
+    if _cuda_available():
+        return settings.rerank_pool_n
+    return min(settings.rerank_pool_n, settings.rerank_pool_n_cpu)
 
 
 def get_reranker():
@@ -94,7 +133,7 @@ def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
     меньше пар, чем обещает settings.rerank_pool_n, ровно на тех запросах, ради
     которых вторая голова и вводилась.
     """
-    n = settings.rerank_pool_n if pool_n is None else pool_n
+    n = effective_pool_n(pool_n)
     if len(candidates) <= n:
         return candidates
     if not pq.geo:

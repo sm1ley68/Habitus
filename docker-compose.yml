@@ -44,6 +44,14 @@ services:
       HF_HOME: /root/.cache/huggingface
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       ORS_API_KEY: ${ORS_API_KEY:-}
+      # Ручки латентности реранка — он занимает львиную долю времени поиска.
+      # Внутрь контейнера .env не попадает, поэтому без этого проброса покрутить
+      # их можно было только правкой кода. Числа обязаны быть непустыми: пустую
+      # строку pydantic не приведёт к int и уронит сервис на старте. Значения
+      # дублируют дефолты habitus/config.py — источник правды там.
+      RERANK_POOL_N: "${RERANK_POOL_N:-40}"
+      RERANK_POOL_N_CPU: "${RERANK_POOL_N_CPU:-25}"
+      RERANK_MAX_LENGTH: "${RERANK_MAX_LENGTH:-256}"
     volumes:
       - habitus_hf:/root/.cache/huggingface
     depends_on:
@@ -74,7 +82,10 @@ services:
     environment:
       DB_DSN: postgresql://habitus:habitus@db:5432/habitus
       ML_SERVICE_URL: http://ml-service:8000
-      ML_SEARCH_TIMEOUT_S: "60"
+      # 120, а не 60: на машине без GPU кросс-энкодер реранка — десятки секунд,
+      # и при 60 шлюз рвал живой, успешный запрос по таймауту, показывая
+      # «ошибка ИИ». Бюджет режется не таймаутом, а RERANK_POOL_N выше.
+      ML_SEARCH_TIMEOUT_S: "${ML_SEARCH_TIMEOUT_S:-120}"
       ML_WARMUP_TIMEOUT_S: "600"
       ML_DOSSIER_TIMEOUT_S: "30"
       ML_OBJECT_ASK_TIMEOUT_S: "45"
