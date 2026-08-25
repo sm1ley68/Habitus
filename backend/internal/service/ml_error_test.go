@@ -13,30 +13,33 @@ import (
 // Раньше любой отказ ML схлопывался в «Не удалось получить ответ от ИИ» с кодом
 // llm_timeout. Это враньё в трёх из четырёх случаев: ML мог не подняться, мог
 // вернуть 5xx, мог ответить 404 на неизвестный путь — и ни в одном из них
-// никакой ИИ не отказывал. Диагноз по такому тексту невозможен: он одинаков
-// и для «модель ранжирования не уложилась в бюджет», и для «сервис не запущен».
+// никакой ИИ не отказывал. Следующий шаг — не только назвать класс отказа, но
+// и донести ПРИЧИНУ: какая стадия упала, что именно сказал ML, что чинить.
 
 func TestSearchTimeoutNamesTheBudget(t *testing.T) {
-	code, message := mapMLError(client.ErrTimeout, 70*time.Second)
+	fail := mapMLError(client.ErrTimeout, 70*time.Second)
 
-	if code != "search_timeout" {
-		t.Fatalf("код = %q, ожидался search_timeout", code)
+	if fail.Code != "search_timeout" {
+		t.Fatalf("код = %q, ожидался search_timeout", fail.Code)
 	}
-	if !strings.Contains(message, "70") {
-		t.Fatalf("в тексте должен быть бюджет в секундах: %q", message)
+	if !strings.Contains(fail.Message, "70") {
+		t.Fatalf("в тексте должен быть бюджет в секундах: %q", fail.Message)
 	}
-	if strings.Contains(strings.ToLower(message), "ии") {
-		t.Fatalf("таймаут ранжирования — не отказ ИИ: %q", message)
+	if strings.Contains(strings.ToLower(fail.Message), "ии") {
+		t.Fatalf("таймаут ранжирования — не отказ ИИ: %q", fail.Message)
+	}
+	if fail.Hint == "" {
+		t.Fatal("на таймауте пользователю нужно сказать, что делать")
 	}
 }
 
 func TestUnavailableSaysServiceIsUnreachable(t *testing.T) {
-	code, message := mapMLError(fmt.Errorf("%w: dial tcp: connection refused", client.ErrUnavailable), time.Minute)
+	fail := mapMLError(fmt.Errorf("%w: dial tcp: connection refused", client.ErrUnavailable), time.Minute)
 
-	if code != "ml_unavailable" {
-		t.Fatalf("код = %q, ожидался ml_unavailable", code)
+	if fail.Code != "ml_unavailable" {
+		t.Fatalf("код = %q, ожидался ml_unavailable", fail.Code)
 	}
-	if message == "" {
+	if fail.Message == "" {
 		t.Fatal("причина должна доезжать до пользователя текстом")
 	}
 }
@@ -44,31 +47,130 @@ func TestUnavailableSaysServiceIsUnreachable(t *testing.T) {
 func TestServerErrorIsNotReportedAsDatabaseFailure(t *testing.T) {
 	// До этой правки 5xx от ML отдавался кодом db_error — и разработчик шёл
 	// чинить базу, которая ни при чём.
-	code, _ := mapMLError(client.ErrServer, time.Minute)
+	fail := mapMLError(client.ErrServer, time.Minute)
 
-	if code != "ml_error" {
-		t.Fatalf("код = %q, ожидался ml_error", code)
+	if fail.Code != "ml_error" {
+		t.Fatalf("код = %q, ожидался ml_error", fail.Code)
 	}
 }
 
 func TestBadResponseCarriesTheStatus(t *testing.T) {
 	// Ровно этот случай стоил дня отладки: ML_SERVICE_URL смотрел на чужой
 	// процесс, тот отвечал 404, а пользователь видел «внутреннюю ошибку».
-	code, message := mapMLError(fmt.Errorf("%w: status 404", client.ErrBadResponse), time.Minute)
+	fail := mapMLError(&client.MLFailure{
+		Kind: client.ErrBadResponse, Endpoint: "/search", Status: 404,
+		Detail: "<html><body>404 Not Found</body></html>",
+	}, time.Minute)
 
-	if code != "ml_bad_response" {
-		t.Fatalf("код = %q, ожидался ml_bad_response", code)
+	if fail.Code != "ml_bad_response" {
+		t.Fatalf("код = %q, ожидался ml_bad_response", fail.Code)
 	}
-	if !strings.Contains(message, "404") {
-		t.Fatalf("статус ответа обязан быть в тексте: %q", message)
+	if !strings.Contains(fail.Cause, "404") {
+		t.Fatalf("статус ответа обязан быть в причине: %q", fail.Cause)
+	}
+	if !strings.Contains(fail.Cause, "/search") {
+		t.Fatalf("без ручки непонятно, куда ушёл запрос: %q", fail.Cause)
 	}
 }
 
 func TestUnknownErrorStaysInternal(t *testing.T) {
-	code, _ := mapMLError(errors.New("что-то новое"), time.Minute)
+	fail := mapMLError(errors.New("что-то новое"), time.Minute)
 
-	if code != "internal_error" {
-		t.Fatalf("код = %q, ожидался internal_error", code)
+	if fail.Code != "internal_error" {
+		t.Fatalf("код = %q, ожидался internal_error", fail.Code)
+	}
+	if !strings.Contains(fail.Cause, "что-то новое") {
+		t.Fatalf("текст незнакомой ошибки — единственная улика: %q", fail.Cause)
+	}
+}
+
+// --- диагноз, пришедший из ML ---
+
+func TestStructuredDiagnosisWins(t *testing.T) {
+	// ML назвала причину сама (habitus/online/errors.py). Пересказывать её
+	// общим «сервис поиска вернул ошибку» — значит выбросить диагноз, который
+	// уже посчитан.
+	fail := mapMLError(&client.MLFailure{
+		Kind: client.ErrServer, Endpoint: "/search", Status: 503,
+		Code: "db_unavailable", Stage: "retrieval",
+		Detail:  "Нет связи с базой: connection refused",
+		Hint:    "Postgres по адресу db:5432/habitus не отвечает",
+		Timings: map[string]float64{"parse": 812.5},
+		Elapsed: 3 * time.Second,
+	}, time.Minute)
+
+	if fail.Code != "db_unavailable" {
+		t.Fatalf("код = %q — код ML конкретнее классового ml_error", fail.Code)
+	}
+	if !strings.Contains(fail.Message, "connection refused") {
+		t.Fatalf("причина от ML = %q", fail.Message)
+	}
+	if !strings.Contains(fail.Hint, "db:5432") {
+		t.Fatalf("подсказка от ML = %q", fail.Hint)
+	}
+	if !strings.Contains(fail.Cause, "retrieval") {
+		t.Fatalf("стадия падения обязана быть в причине: %q", fail.Cause)
+	}
+}
+
+func TestCauseNamesTheSlowestStageThatManagedToRun(t *testing.T) {
+	fail := mapMLError(&client.MLFailure{
+		Kind: client.ErrServer, Endpoint: "/search", Status: 500,
+		Code: "internal_error", Detail: "RuntimeError: boom", Stage: "rerank",
+		Timings: map[string]float64{"parse": 900, "retrieval": 47300},
+	}, time.Minute)
+
+	if !strings.Contains(fail.Cause, "retrieval") {
+		t.Fatalf("самая долгая успевшая стадия — половина диагноза: %q", fail.Cause)
+	}
+	if !strings.Contains(fail.Cause, "47") {
+		t.Fatalf("её длительность обязана быть в причине: %q", fail.Cause)
+	}
+}
+
+func TestTimeoutCauseSaysHowLongItActuallyWaited(t *testing.T) {
+	fail := mapMLError(&client.MLFailure{
+		Kind: client.ErrTimeout, Endpoint: "/search",
+		Elapsed: 61200 * time.Millisecond,
+		Detail:  "context deadline exceeded",
+	}, 60*time.Second)
+
+	if fail.Code != "search_timeout" {
+		t.Fatalf("код = %q", fail.Code)
+	}
+	if !strings.Contains(fail.Cause, "61") {
+		t.Fatalf("сколько реально прождали = %q", fail.Cause)
+	}
+	if !strings.Contains(fail.Hint, "ML_SEARCH_TIMEOUT_S") &&
+		!strings.Contains(fail.Hint, "RERANK_POOL_N") {
+		t.Fatalf("подсказка обязана называть ручки, которыми это чинят: %q", fail.Hint)
+	}
+}
+
+func TestUnavailableCauseNamesTheAddressItCouldNotReach(t *testing.T) {
+	fail := mapMLError(&client.MLFailure{
+		Kind: client.ErrUnavailable, Endpoint: "/search",
+		Detail: `Post "http://ml:8000/search": dial tcp 172.18.0.3:8000: connect: connection refused`,
+	}, time.Minute)
+
+	if fail.Code != "ml_unavailable" {
+		t.Fatalf("код = %q", fail.Code)
+	}
+	if !strings.Contains(fail.Cause, "connection refused") {
+		t.Fatalf("текст сетевой ошибки несёт хост и порт: %q", fail.Cause)
+	}
+	if !strings.Contains(fail.Hint, "ML_SERVICE_URL") {
+		t.Fatalf("подсказка = %q", fail.Hint)
+	}
+}
+
+func TestNoInventedCauseWhenNothingIsKnown(t *testing.T) {
+	// Голый сентинел без MLFailure: технической улики нет. Придумывать
+	// правдоподобную причину нельзя — поле просто остаётся пустым.
+	fail := mapMLError(client.ErrServer, time.Minute)
+
+	if fail.Cause != "" {
+		t.Fatalf("причина выдумана из ничего: %q", fail.Cause)
 	}
 }
 

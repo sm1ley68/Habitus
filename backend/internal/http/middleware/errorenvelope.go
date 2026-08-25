@@ -21,13 +21,25 @@ import (
 // увидит его через c.Response() (см. observability.HTTPRequestsMiddleware).
 // Поэтому habitus_http_requests_total для ошибочных ответов считаем прямо
 // здесь, у каждой ветки — где он и вычисляется.
+// errorBody собирает тело конверта. Cause/Hint аддитивны и попадают в ответ
+// только когда они есть: пустое поле означало бы «причина известна и она
+// пустая», а это неправда — её просто нет.
+func errorBody(ae *apperr.Error) fiber.Map {
+	body := fiber.Map{"code": ae.Code, "message": ae.Message}
+	if ae.Cause != "" {
+		body["cause"] = ae.Cause
+	}
+	if ae.Hint != "" {
+		body["hint"] = ae.Hint
+	}
+	return body
+}
+
 func ErrorHandler(c *fiber.Ctx, err error) error {
 	var ae *apperr.Error
 	if errors.As(err, &ae) {
 		observability.Default.IncHTTPRequest(c.Route().Path, strconv.Itoa(ae.Status))
-		return c.Status(ae.Status).JSON(fiber.Map{
-			"error": fiber.Map{"code": ae.Code, "message": ae.Message},
-		})
+		return c.Status(ae.Status).JSON(fiber.Map{"error": errorBody(ae)})
 	}
 
 	var fe *fiber.Error

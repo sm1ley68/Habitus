@@ -144,17 +144,28 @@ func (s *OwnerImportService) draftFromCian(ctx context.Context, userID uuid.UUID
 			"Слишком много импортов за час. Попробуйте позже")
 	}
 	if !s.limiter.Allow() {
-		return domain.OwnerListing{}, apperr.CianUnavailable()
+		// Не Циан отказал, а мы сами придержали запрос — совет «попробуйте
+		// позже» тут точный, а «Циан не отдаёт данные» вводит в заблуждение.
+		return domain.OwnerListing{}, apperr.CianUnavailable().
+			WithCause("сработал общий лимитер запросов к Циану").
+			WithHint("Частота задаётся CIAN_FETCH_PER_MIN")
 	}
 
 	listing, err := s.fetcher.FetchByID(ctx, offerID)
 	switch {
 	case errors.Is(err, cian.ErrOfferNotFound):
-		return domain.OwnerListing{}, apperr.CianOfferNotFound()
+		return domain.OwnerListing{}, apperr.CianOfferNotFound().
+			WithCause(fmt.Sprintf("Циан не отдал объявление %d", offerID))
 	case errors.Is(err, cian.ErrBlocked):
-		return domain.OwnerListing{}, apperr.CianUnavailable()
+		// Антибот — это не «Циан лежит»: сервис жив и отвечает, но капчей.
+		// Ждать бесполезно, и совет обязан быть другим.
+		return domain.OwnerListing{}, apperr.CianUnavailable().
+			WithCause("Циан ответил капчей антибота").
+			WithHint("Заполните карточку вручную — повтор сейчас упрётся в ту же капчу")
 	case err != nil:
-		return domain.OwnerListing{}, apperr.CianUnavailable()
+		return domain.OwnerListing{}, apperr.CianUnavailable().
+			WithCause(err.Error()).
+			WithHint("Если повторяется — заполните карточку вручную")
 	}
 	return listingToDraft(listing, externalID), nil
 }

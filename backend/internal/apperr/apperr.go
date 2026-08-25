@@ -11,9 +11,30 @@ type Error struct {
 	Status  int
 	Code    string
 	Message string
+	// Cause/Hint — техническая улика и что с ней делать. Отдельно от Message,
+	// потому что читателей два: пользователю хватает Message, а разработчику
+	// без причины приходится восстанавливать её по логам двух контейнеров.
+	// Пустые поля означают «улики нет» и в конверт не попадают вовсе.
+	Cause string
+	Hint  string
 }
 
 func (e *Error) Error() string { return e.Message }
+
+// WithCause возвращает КОПИЮ с добавленной причиной: обогащение одного отказа
+// не должно протекать в соседний запрос через общее значение.
+func (e *Error) WithCause(cause string) *Error {
+	copied := *e
+	copied.Cause = cause
+	return &copied
+}
+
+// WithHint возвращает копию с подсказкой «что чинить».
+func (e *Error) WithHint(hint string) *Error {
+	copied := *e
+	copied.Hint = hint
+	return &copied
+}
 
 func New(status int, code, message string) *Error {
 	return &Error{Status: status, Code: code, Message: message}

@@ -7,7 +7,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -62,9 +61,19 @@ type ChatRenamedEvent struct {
 	Title  string `json:"title"`
 }
 
+// ErrorEvent — терминальное событие потока. Cause/Hint аддитивны и omitempty:
+// фронт, который их не ждёт, продолжает работать по code+message, а пустое
+// поле означает «улики нет», а не «улика — пустая строка».
 type ErrorEvent struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Cause   string `json:"cause,omitempty"`
+	Hint    string `json:"hint,omitempty"`
+}
+
+func errorEvent(fail userFacingError) ErrorEvent {
+	return ErrorEvent{Code: fail.Code, Message: fail.Message,
+		Cause: fail.Cause, Hint: fail.Hint}
 }
 
 type FinalResultEvent struct {
@@ -216,8 +225,7 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 			gotResult = true
 		case <-time.After(300 * time.Millisecond):
 		case <-ctx.Done():
-			code, msg := mapMLError(client.ErrTimeout, s.mlTimeout)
-			_ = w.WriteEvent("error", ErrorEvent{Code: code, Message: msg})
+			_ = w.WriteEvent("error", errorEvent(mapMLError(client.ErrTimeout, s.mlTimeout)))
 			return
 		}
 		if gotResult {
@@ -239,24 +247,24 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 					return // клиент отвалился
 				}
 			case <-ctx.Done():
-				code, msg := mapMLError(client.ErrTimeout, s.mlTimeout)
-				_ = w.WriteEvent("error", ErrorEvent{Code: code, Message: msg})
+				_ = w.WriteEvent("error", errorEvent(mapMLError(client.ErrTimeout, s.mlTimeout)))
 				return
 			}
 		}
 	}
 
 	if outcome.err != nil {
-		code, msg := mapMLError(outcome.err, s.mlTimeout)
+		fail := mapMLError(outcome.err, s.mlTimeout)
 		// Пользователю уходит человеческий текст, в лог — исходная ошибка со
 		// всеми потрохами: без неё «поиск не уложился» неотличимо от «ML отвечал
 		// не туда», и разбираться приходится вслепую.
 		log.Error().Err(outcome.err).
 			Str("chat_id", chat.ID.String()).
-			Str("code", code).
+			Str("code", fail.Code).
+			Str("cause", fail.Cause).
 			Dur("ml_budget", s.mlTimeout).
 			Msg("search failed")
-		_ = w.WriteEvent("error", ErrorEvent{Code: code, Message: msg})
+		_ = w.WriteEvent("error", errorEvent(fail))
 		return
 	}
 	resp := outcome.resp
@@ -343,35 +351,6 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 
 func (s *SearchStreamService) emit(w *sse.Writer, event string, data any) bool {
 	return w.WriteEvent(event, data) == nil
-}
-
-// mapMLError переводит отказ ML в код и текст для пользователя.
-//
-// Каждая ветка называет свою причину. Общий текст «не удалось получить ответ от
-// ИИ» на все четыре случая — это потерянный диагноз: он одинаково звучит и
-// когда модель ранжирования не уложилась в бюджет, и когда ML-сервис вообще не
-// поднят, и когда ML_SERVICE_URL смотрит не туда и оттуда прилетает 404.
-//
-// budget нужен ветке таймаута: без числа «попробуйте ещё раз» — совет наугад,
-// а с числом видно, что упёрлись именно в бюджет, а не в сбой.
-func mapMLError(err error, budget time.Duration) (code, message string) {
-	switch {
-	case errors.Is(err, client.ErrTimeout):
-		return "search_timeout", fmt.Sprintf(
-			"Поиск не уложился в %d с. Похоже, сервису не хватает мощности — "+
-				"попробуйте ещё раз или упростите запрос", int(budget.Seconds()))
-	case errors.Is(err, client.ErrUnavailable):
-		return "ml_unavailable", "Сервис поиска не отвечает — похоже, он не запущен"
-	case errors.Is(err, client.ErrServer):
-		return "ml_error", "Сервис поиска вернул ошибку. Загляните в его логи"
-	case errors.Is(err, client.ErrBadResponse):
-		// Текст ошибки клиента несёт HTTP-статус («status 404»), и он тут
-		// главная улика: 404 означает, что запрос ушёл не в тот сервис.
-		return "ml_bad_response", fmt.Sprintf("Сервис поиска ответил неожиданно: %s",
-			strings.TrimPrefix(err.Error(), "ml: bad response: "))
-	default:
-		return "internal_error", "Внутренняя ошибка сервера"
-	}
 }
 
 // searchRequestFor собирает запрос к ML. Explain выключен намеренно: объяснение

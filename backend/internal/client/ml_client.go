@@ -217,12 +217,16 @@ func NewMLClient(baseURL string, timeout time.Duration) *MLClient {
 }
 
 func (c *MLClient) Search(ctx context.Context, req SearchRequest) (*SearchResponse, error) {
+	const endpoint = "/search"
+	started := time.Now()
+
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: encode request: %v", ErrBadResponse, err)
+		return nil, transportFailure(ErrBadResponse, endpoint,
+			fmt.Errorf("encode request: %w", err), started)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/search", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -230,23 +234,18 @@ func (c *MLClient) Search(ctx context.Context, req SearchRequest) (*SearchRespon
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, ErrTimeout
-		}
-		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return nil, transportFailure(kindOfTransportError(ctx, err), endpoint, err, started)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 500 {
-		return nil, ErrServer
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("%w: status %d", ErrBadResponse, resp.StatusCode)
+	if kind := kindOfStatus(resp.StatusCode); kind != nil {
+		return nil, httpFailure(kind, endpoint, resp, started)
 	}
 
 	var out SearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("%w: decode: %v", ErrBadResponse, err)
+		return nil, transportFailure(ErrBadResponse, endpoint,
+			fmt.Errorf("decode: %w", err), started)
 	}
 	return &out, nil
 }
@@ -262,9 +261,12 @@ func (c *MLClient) postJSONWithValidation(ctx context.Context, path string, in, 
 }
 
 func (c *MLClient) post(ctx context.Context, path string, in, out any, parseValidation bool) error {
+	started := time.Now()
+
 	body, err := json.Marshal(in)
 	if err != nil {
-		return fmt.Errorf("%w: encode request: %v", ErrBadResponse, err)
+		return transportFailure(ErrBadResponse, path,
+			fmt.Errorf("encode request: %w", err), started)
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
@@ -273,10 +275,7 @@ func (c *MLClient) post(ctx context.Context, path string, in, out any, parseVali
 	httpReq.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return ErrTimeout
-		}
-		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return transportFailure(kindOfTransportError(ctx, err), path, err, started)
 	}
 	defer resp.Body.Close()
 	if parseValidation && resp.StatusCode == http.StatusUnprocessableEntity {
@@ -287,18 +286,17 @@ func (c *MLClient) post(ctx context.Context, path string, in, out any, parseVali
 			} `json:"detail"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
-			return fmt.Errorf("%w: decode 422: %v", ErrBadResponse, err)
+			return transportFailure(ErrBadResponse, path,
+				fmt.Errorf("decode 422: %w", err), started)
 		}
 		return &OwnerListingInvalidError{Field: detail.Detail.Field, Message: detail.Detail.Message}
 	}
-	if resp.StatusCode >= 500 {
-		return ErrServer
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%w: status %d", ErrBadResponse, resp.StatusCode)
+	if kind := kindOfStatus(resp.StatusCode); kind != nil {
+		return httpFailure(kind, path, resp, started)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("%w: decode: %v", ErrBadResponse, err)
+		return transportFailure(ErrBadResponse, path,
+			fmt.Errorf("decode: %w", err), started)
 	}
 	return nil
 }
@@ -343,13 +341,17 @@ func (c *MLClient) AskObject(ctx context.Context, req ObjectAskRequest) (*Object
 // passing it off as a complete answer would be a lie.
 func (c *MLClient) ExplainStream(ctx context.Context, req ExplainRequest,
 	onToken func(string) bool) (bool, error) {
+	const endpoint = "/explain/stream"
+	started := time.Now()
+
 	body, err := json.Marshal(req)
 	if err != nil {
-		return false, fmt.Errorf("%w: encode request: %v", ErrBadResponse, err)
+		return false, transportFailure(ErrBadResponse, endpoint,
+			fmt.Errorf("encode request: %w", err), started)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.baseURL+"/explain/stream", bytes.NewReader(body))
+		c.baseURL+endpoint, bytes.NewReader(body))
 	if err != nil {
 		return false, err
 	}
@@ -358,18 +360,12 @@ func (c *MLClient) ExplainStream(ctx context.Context, req ExplainRequest,
 
 	resp, err := c.stream.Do(httpReq)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return false, ErrTimeout
-		}
-		return false, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return false, transportFailure(kindOfTransportError(ctx, err), endpoint, err, started)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 500 {
-		return false, ErrServer
-	}
-	if resp.StatusCode >= 400 {
-		return false, fmt.Errorf("%w: status %d", ErrBadResponse, resp.StatusCode)
+	if kind := kindOfStatus(resp.StatusCode); kind != nil {
+		return false, httpFailure(kind, endpoint, resp, started)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -388,7 +384,8 @@ func (c *MLClient) ExplainStream(ctx context.Context, req ExplainRequest,
 					Token string `json:"token"`
 				}
 				if err := json.Unmarshal([]byte(data), &frame); err != nil {
-					return false, fmt.Errorf("%w: decode token: %v", ErrBadResponse, err)
+					return false, transportFailure(ErrBadResponse, endpoint,
+						fmt.Errorf("decode token: %w", err), started)
 				}
 				if !onToken(frame.Token) {
 					return false, nil
@@ -398,7 +395,8 @@ func (c *MLClient) ExplainStream(ctx context.Context, req ExplainRequest,
 					LLMOK bool `json:"llm_ok"`
 				}
 				if err := json.Unmarshal([]byte(data), &frame); err != nil {
-					return false, fmt.Errorf("%w: decode done: %v", ErrBadResponse, err)
+					return false, transportFailure(ErrBadResponse, endpoint,
+						fmt.Errorf("decode done: %w", err), started)
 				}
 				return frame.LLMOK, nil
 			}
@@ -406,12 +404,10 @@ func (c *MLClient) ExplainStream(ctx context.Context, req ExplainRequest,
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return false, ErrTimeout
-		}
-		return false, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return false, transportFailure(kindOfTransportError(ctx, err), endpoint, err, started)
 	}
-	return false, fmt.Errorf("%w: stream ended without a done frame", ErrBadResponse)
+	return false, transportFailure(ErrBadResponse, endpoint,
+		errors.New("поток объяснения оборвался без кадра done"), started)
 }
 
 // WarmUp fires a throwaway search so the ML process's lazily-loaded models

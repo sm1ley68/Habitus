@@ -123,8 +123,7 @@ func (s *ObjectAskService) Run(ctx context.Context, chatID uuid.UUID, objectID,
 		}
 	}
 	if outcome.err != nil {
-		code, message := mapMLError(outcome.err, s.timeout)
-		_ = writer.WriteEvent("error", ErrorEvent{Code: code, Message: message})
+		_ = writer.WriteEvent("error", errorEvent(mapMLError(outcome.err, s.timeout)))
 		return
 	}
 	parts := make([]string, 0, len(outcome.response.Sentences))

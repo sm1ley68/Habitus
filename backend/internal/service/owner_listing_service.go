@@ -146,7 +146,10 @@ func (s *OwnerListingService) Publish(ctx context.Context, userID, id uuid.UUID)
 		return domain.OwnerListing{}, apperr.OwnerListingInvalid(invalid.Field, invalid.Message)
 	case err != nil:
 		_ = s.store.SetStatus(ctx, id, "failed", err.Error())
-		return domain.OwnerListing{}, apperr.Internal("Витрина не приняла объявление. Попробуйте ещё раз")
+		cause, hint := mlDiagnosis(err)
+		return domain.OwnerListing{}, apperr.
+			Internal("Витрина не приняла объявление. Попробуйте ещё раз").
+			WithCause(cause).WithHint(hint)
 	case !resp.Indexed:
 		// Объект без вектора лежит в базе и не находится семантическим
 		// поиском — это хуже отсутствия, поэтому публикация считается провальной.
@@ -166,7 +169,10 @@ func (s *OwnerListingService) Unpublish(ctx context.Context, userID, id uuid.UUI
 		return domain.OwnerListing{}, err
 	}
 	if _, err := s.publisher.OwnerWithdraw(ctx, listing.ExternalID); err != nil {
-		return domain.OwnerListing{}, apperr.Internal("Не удалось снять объявление с публикации")
+		cause, hint := mlDiagnosis(err)
+		return domain.OwnerListing{}, apperr.
+			Internal("Не удалось снять объявление с публикации").
+			WithCause(cause).WithHint(hint)
 	}
 	if err := s.store.SetStatus(ctx, id, "unpublished", ""); err != nil {
 		return domain.OwnerListing{}, err
@@ -183,7 +189,9 @@ func (s *OwnerListingService) Delete(ctx context.Context, userID, id uuid.UUID) 
 	}
 	if listing.Status == "published" || listing.Status == "publishing" {
 		if _, err := s.publisher.OwnerWithdraw(ctx, listing.ExternalID); err != nil {
-			return apperr.Internal("Не удалось снять объявление с публикации")
+			cause, hint := mlDiagnosis(err)
+			return apperr.Internal("Не удалось снять объявление с публикации").
+				WithCause(cause).WithHint(hint)
 		}
 	}
 	err = s.store.Delete(ctx, id, userID)
