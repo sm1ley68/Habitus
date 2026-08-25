@@ -38,6 +38,24 @@ func (r *SessionRepo) GetUserID(ctx context.Context, tokenHash string) (uuid.UUI
 	return userID, err
 }
 
+// GetSession отдаёт владельца сессии вместе с признаком гостя — одним
+// запросом, а не двумя: этот вызов стоит на каждом запросе к API, и лишний
+// round-trip к БД тут заметен. ErrNotFound на отсутствующей или протухшей.
+func (r *SessionRepo) GetSession(ctx context.Context, tokenHash string) (uuid.UUID, bool, error) {
+	var userID uuid.UUID
+	var isGuest bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT s.user_id, u.is_guest
+		FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = $1 AND s.expires_at > now()`,
+		tokenHash,
+	).Scan(&userID, &isGuest)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, false, ErrNotFound
+	}
+	return userID, isGuest, err
+}
+
 func (r *SessionRepo) Delete(ctx context.Context, tokenHash string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash)
 	return err

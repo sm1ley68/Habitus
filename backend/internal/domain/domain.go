@@ -14,8 +14,12 @@ type User struct {
 	Email        string
 	PasswordHash string
 	Name         string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// IsGuest — аккаунт без учётных данных, заведённый ради первого поиска.
+	// Апгрейд при регистрации сохраняет id, поэтому чаты и результаты гостя
+	// остаются при нём.
+	IsGuest   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Chat struct {
