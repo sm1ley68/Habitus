@@ -1,5 +1,3 @@
-@import "maplibre-gl/dist/maplibre-gl.css";
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -42,8 +40,8 @@
   50%      { transform: scale(1.06); opacity: 1;    }
 }
 /* ---- Property pins -------------------------------------------------------
-   MapLibre positions the `.pin` wrapper with a translate transform, so every
-   visual transform lives on `.pin__dot`. Entrance uses `backwards` fill so it
+   Google Advanced Markers position the `.pin` content at its coordinate, so
+   visual transforms live on `.pin__dot`. Entrance uses `backwards` fill so it
    holds the hidden state during its stagger delay but releases afterward —
    leaving the hover/active transform free to take over (a `both`/`forwards`
    fill would pin the transform and break hover). */
@@ -91,6 +89,24 @@
 @media (prefers-reduced-motion: reduce) {
   .pin__dot { animation: none; opacity: 1; }
   .pin--top .pin__dot::after { animation: none; opacity: 0; }
+}
+
+.map-listing-dot {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  cursor: pointer;
+  border: 2px solid #fff;
+  border-radius: 9999px;
+  background: #6c718a;
+  box-shadow: 0 1px 5px rgba(20, 20, 34, 0.3);
+  transition: transform var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+.map-listing-dot:hover,
+.map-listing-dot:focus-visible {
+  transform: scale(1.35);
+  box-shadow: 0 0 0 4px rgba(108, 113, 138, 0.2), 0 2px 8px rgba(20, 20, 34, 0.34);
 }
 
 /* ---- Logistics map markers ----------------------------------------------

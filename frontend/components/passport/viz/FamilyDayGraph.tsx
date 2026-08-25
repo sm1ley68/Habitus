@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import maplibregl from "maplibre-gl";
 import { motion, useReducedMotion } from "framer-motion";
-import { useMaplibre } from "@/lib/map/useMaplibre";
+import { useGoogleMap } from "@/lib/map/useGoogleMap";
+import { removeAdvancedMarker, toLatLng } from "@/lib/map/google";
 import { DUR, EASE } from "@/lib/motion";
 import type { FamilyRoutingData, TravelMode } from "@/lib/agent/types";
 import type { VizProps } from "./index";
@@ -87,10 +87,6 @@ function sliceAt(p: Prepared, t: number): { line: LngLat[]; head: LngLat } {
   return { line: p.coords, head: p.coords[p.coords.length - 1] };
 }
 
-function lineFeature(coords: LngLat[]): GeoJSON.Feature {
-  return { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } };
-}
-
 // Stitch a member's legs into one continuous route, dropping the duplicated
 // junction point where one leg's end meets the next leg's start.
 function concatLegs(legs: FamilyRoutingData["members"][number]["legs"]): LngLat[] {
@@ -108,7 +104,12 @@ function concatLegs(legs: FamilyRoutingData["members"][number]["legs"]): LngLat[
 }
 
 type LegRun = { prep: Prepared; departH: number; arriveH: number };
-type MemberRun = { id: string; tint: string; legs: LegRun[]; marker: maplibregl.Marker | null };
+type MemberRun = {
+  id: string;
+  tint: string;
+  legs: LegRun[];
+  marker: google.maps.marker.AdvancedMarkerElement | null;
+};
 
 // Where a member is at time `hour`: interpolated along the active leg, parked at a
 // leg's end during any wait, home before departure, destination after arrival.
@@ -143,7 +144,7 @@ export default function FamilyDayGraph({ data }: VizProps) {
   const members = (routing?.members ?? []).slice(0, MEMBER_TINTS.length);
 
   const container = useRef<HTMLDivElement>(null);
-  const { map, ready, missingKey } = useMaplibre(container);
+  const { map, ready, unavailable } = useGoogleMap(container, { interactive: false, zoom: 13 });
 
   // Settled frame: everyone has already arrived (dots at journey end).
   const [hour, setHour] = useState(DAY_END);
@@ -153,7 +154,7 @@ export default function FamilyDayGraph({ data }: VizProps) {
   const hourRef = useRef(hour);
   hourRef.current = hour;
   const runtimeRef = useRef<MemberRun[]>([]);
-  const layerRef = useRef<Map<string, string>>(new Map());
+  const layerRef = useRef<Map<string, google.maps.Polyline>>(new Map());
   const raf = useRef<number | null>(null);
   const last = useRef(0);
 
@@ -163,17 +164,10 @@ export default function FamilyDayGraph({ data }: VizProps) {
     const reduced = prefersReducedMotion();
     const tints = members.map((_, i) => MEMBER_TINTS[i]);
 
-    // Calm viz: page scroll wins; a gentle pan is still allowed.
-    map.scrollZoom.disable();
-    map.doubleClickZoom.disable();
-    map.dragRotate.disable();
-    map.touchZoomRotate.disableRotation();
-
     let cancelled = false;
     const rafs: number[] = [];
-    const markers: maplibregl.Marker[] = [];
-    const layerIds: string[] = [];
-    const sourceIds: string[] = [];
+    const markers: google.maps.marker.AdvancedMarkerElement[] = [];
+    const polylines: google.maps.Polyline[] = [];
     layerRef.current = new Map();
 
     const runtime: MemberRun[] = members.map((m, i) => ({
@@ -189,14 +183,13 @@ export default function FamilyDayGraph({ data }: VizProps) {
     runtimeRef.current = runtime;
 
     // Frame the door plus every point of every route.
-    const bounds = new maplibregl.LngLatBounds(routing.home, routing.home);
-    bounds.extend(routing.home);
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(toLatLng(routing.home));
     members.forEach((m) => m.legs.forEach((leg) =>
-      (leg.geometry.coordinates as LngLat[]).forEach((c) => bounds.extend(c))));
-    map.fitBounds(bounds, {
-      padding: { top: 44, bottom: 44, left: 44, right: 44 },
-      duration: reduced ? 0 : DUR.slow * 1000,
-      maxZoom: 15,
+      (leg.geometry.coordinates as LngLat[]).forEach((coordinate) => bounds.extend(toLatLng(coordinate)))));
+    map.fitBounds(bounds, 44);
+    const capZoom = google.maps.event.addListenerOnce(map, "idle", () => {
+      if ((map.getZoom() ?? 0) > 15) map.setZoom(15);
     });
 
     // The door — the shared start of the whole day.
@@ -206,7 +199,12 @@ export default function FamilyDayGraph({ data }: VizProps) {
     homeEl.innerHTML =
       `<span class="lmap-pin__dot"><svg viewBox="0 0 12 12" aria-hidden="true">${HOME_ICON}</svg></span>` +
       `<span class="lmap-pin__label">Дом</span>`;
-    markers.push(new maplibregl.Marker({ element: homeEl, anchor: "center" }).setLngLat(routing.home).addTo(map));
+    markers.push(new google.maps.marker.AdvancedMarkerElement({
+      map,
+      position: toLatLng(routing.home),
+      content: homeEl,
+      title: "Дом",
+    }));
 
     const dur = DUR.cinematic * 1000;
     runtime.forEach((run, i) => {
@@ -214,24 +212,21 @@ export default function FamilyDayGraph({ data }: VizProps) {
       const coords = concatLegs(member.legs);
       if (coords.length < 2) return;
       const prepped = prepare(coords);
-      const sourceId = `fam-src-${i}`;
-      const layerId = `fam-line-${i}`;
-
-      map.addSource(sourceId, { type: "geojson", data: lineFeature([coords[0]]) });
-      map.addLayer({
-        id: layerId,
-        type: "line",
-        source: sourceId,
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": run.tint, "line-width": BASE_W, "line-blur": 0.3, "line-opacity": 0.85 },
+      const polyline = new google.maps.Polyline({
+        map,
+        path: [toLatLng(coords[0])],
+        strokeColor: run.tint,
+        strokeWeight: BASE_W,
+        strokeOpacity: 0.85,
+        clickable: false,
+        geodesic: true,
+        zIndex: 4,
       });
-      sourceIds.push(sourceId);
-      layerIds.push(layerId);
-      layerRef.current.set(run.id, layerId);
-      const source = map.getSource(sourceId) as maplibregl.GeoJSONSource;
+      polylines.push(polyline);
+      layerRef.current.set(run.id, polyline);
 
       if (reduced) {
-        source.setData(lineFeature(coords));
+        polyline.setPath(coords.map(toLatLng));
       } else {
         const delay = i * 220 + 180;
         const start = performance.now();
@@ -239,7 +234,7 @@ export default function FamilyDayGraph({ data }: VizProps) {
           if (cancelled) return;
           const t = clamp((now - start - delay) / dur, 0, 1);
           const { line } = sliceAt(prepped, easeOutCubic(t));
-          source.setData(lineFeature(line));
+          polyline.setPath(line.map(toLatLng));
           if (t < 1) rafs.push(requestAnimationFrame(step));
         };
         rafs.push(requestAnimationFrame(step));
@@ -250,42 +245,46 @@ export default function FamilyDayGraph({ data }: VizProps) {
       dotEl.className = "lmap-traveller";
       dotEl.style.background = run.tint;
       dotEl.style.boxShadow = `0 0 0 4px ${run.tint}33, 0 1px 4px rgba(20,20,34,0.3)`;
-      const marker = new maplibregl.Marker({ element: dotEl, anchor: "center" })
-        .setLngLat(posAt(run, hourRef.current))
-        .addTo(map);
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map,
+        position: toLatLng(posAt(run, hourRef.current)),
+        content: dotEl,
+        title: member.label,
+      });
       run.marker = marker;
       markers.push(marker);
     });
 
     return () => {
       cancelled = true;
+      capZoom.remove();
       rafs.forEach(cancelAnimationFrame);
-      markers.forEach((m) => m.remove());
+      markers.forEach(removeAdvancedMarker);
+      polylines.forEach((line) => line.setMap(null));
       runtimeRef.current = [];
       layerRef.current = new Map();
-      try {
-        layerIds.forEach((id) => { if (map.getLayer(id)) map.removeLayer(id); });
-        sourceIds.forEach((id) => { if (map.getSource(id)) map.removeSource(id); });
-      } catch { /* map already torn down */ }
     };
-    // members/routing are stable mock data; run once the GL style is ready.
+    // members/routing are stable while the dossier is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, ready]);
 
   // Move every traveller dot to the scrubbed time.
   useEffect(() => {
     if (!ready) return;
-    runtimeRef.current.forEach((m) => { if (m.marker) m.marker.setLngLat(posAt(m, hour)); });
+    runtimeRef.current.forEach((member) => {
+      if (member.marker) member.marker.position = toLatLng(posAt(member, hour));
+    });
   }, [hour, ready]);
 
   // Hover/focus on a lane segment widens & brightens that member's route.
   useEffect(() => {
     if (!map || !ready) return;
-    layerRef.current.forEach((layerId, id) => {
-      if (!map.getLayer(layerId)) return;
+    layerRef.current.forEach((polyline, id) => {
       const on = id === active;
-      map.setPaintProperty(layerId, "line-width", active !== null && on ? HI_W : BASE_W);
-      map.setPaintProperty(layerId, "line-opacity", active === null ? 0.85 : on ? 1 : 0.3);
+      polyline.setOptions({
+        strokeWeight: active !== null && on ? HI_W : BASE_W,
+        strokeOpacity: active === null ? 0.85 : on ? 1 : 0.3,
+      });
     });
   }, [active, map, ready]);
 
@@ -331,10 +330,10 @@ export default function FamilyDayGraph({ data }: VizProps) {
 
   return (
     <div data-testid="family-day-graph" className="overflow-hidden rounded-2xl ring-1 ring-inset ring-black/[0.06]">
-      {/* Live map — hidden gracefully when no MapTiler key is present. */}
-      {missingKey ? (
+      {/* Live map — hidden gracefully when Google Maps is unavailable. */}
+      {unavailable ? (
         <div className="grid h-56 w-full place-items-center bg-[#f6f7fb] px-6 text-center text-sm text-zinc-400">
-          Карта маршрутов появится с ключом MapTiler
+          Карта маршрутов появится после подключения Google Maps
         </div>
       ) : (
         <div className="relative h-56 w-full bg-[#f6f7fb]">

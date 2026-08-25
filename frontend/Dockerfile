@@ -7,10 +7,12 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Карта не обязательна для работы приложения: без ключа MapLibre-канвасы
-# честно показывают заглушку, остальной UI работает.
-ARG NEXT_PUBLIC_MAPTILER_KEY=""
-ENV NEXT_PUBLIC_MAPTILER_KEY=$NEXT_PUBLIC_MAPTILER_KEY
+# Без Google Maps API key и Map ID картографические блоки показывают
+# нейтральную заглушку, остальной UI продолжает работать.
+ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=""
+ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+ARG NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=""
+ENV NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=$NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
 # С output: "standalone" адрес прокси зашивается в билд, поэтому BACKEND_ORIGIN
 # нужен на этапе сборки, а не только в рантайме. В compose это http://backend:8080.
 ARG BACKEND_ORIGIN="http://backend:8080"

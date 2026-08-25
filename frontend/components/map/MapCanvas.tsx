@@ -1,509 +1,359 @@
 "use client";
+
 import { useCallback, useEffect, useRef, useState } from "react";
-import maplibregl from "maplibre-gl";
 import { AnimatePresence } from "framer-motion";
-import { useMaplibre } from "@/lib/map/useMaplibre";
-import { layerColor, layerPaintColor } from "@/lib/map/style";
-import { poiIconImageId, registerPoiIcons } from "@/lib/map/icons";
+import { MarkerClusterer } from "@googlemaps/markerclusterer";
+import { useGoogleMap } from "@/lib/map/useGoogleMap";
 import {
-  hasGlyphs, iconLayerId, iconLayout, iconPaint, metroLabelLayerId,
-  densityFillOpacity, metroLabelLayout, metroLabelPaint, pickLabelFont,
-  pointCirclePaint,
-} from "@/lib/map/layers";
+  boundsLiteralToViewport,
+  collectGeoJsonPositions,
+  createLatLngBounds,
+  createProjectionOverlay,
+  projectLngLat,
+  removeAdvancedMarker,
+  replaceDataLayer,
+  toLatLng,
+} from "@/lib/map/google";
+import { layerColor, layerPaintColor } from "@/lib/map/style";
 import { useSession } from "@/lib/store/session";
-import { RENDERED_LAYER_IDS, type GeoZone } from "@/lib/agent/types";
-import { DUR } from "@/lib/motion";
+import { RENDERED_LAYER_IDS, type GeoZone, type LayerId } from "@/lib/agent/types";
 import MapPreviewCard, { type PreviewData } from "./MapPreviewCard";
 
-// Periwinkle glow — the ONLY saturated brand color allowed on the neutral canvas.
 const ACCENT = "#7C8CFF";
-
-// ease-out-expo: a hard early acceleration that then settles, so the camera
-// "arrives" and comes to rest like a real crane shot rather than gliding at a
-// constant speed. Passed straight to MapLibre's animation loop.
-const easeOutExpo = (t: number): number =>
-  t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// [paint-property, visible-opacity] pairs for a geometry type. Toggling a layer
-// crossfades every listed property between its visible value and 0.
-function layerOpacityProps(geometryType: string): Array<[string, number]> {
-  if (geometryType === "Point")
-    return [["circle-opacity", 0.9], ["circle-stroke-opacity", 0.85]];
-  if (geometryType === "LineString") return [["line-opacity", 0.7]];
-  return [["fill-opacity", 0.25]];
-}
-
-/**
- * Every [lng, lat] position in a zone, flattened. Robust to Polygon AND
- * MultiPolygon (okrug unions come back as MultiPolygon) and to a collection
- * with several features — the camera should frame all of them, not just the
- * first. An absent, empty or malformed zone yields an empty array, which the
- * caller treats as "nothing to draw" instead of crashing on features[0].
- */
 export function collectZonePositions(
   zone: GeoZone | null | undefined,
 ): [number, number][] {
-  const positions: [number, number][] = [];
-  const collect = (node: unknown): void => {
-    if (!Array.isArray(node)) return;
-    if (typeof node[0] === "number" && typeof node[1] === "number") {
-      positions.push([node[0], node[1]]);
-      return;
-    }
-    node.forEach(collect);
-  };
-  for (const feature of zone?.features ?? []) collect(feature?.geometry?.coordinates);
-  return positions;
+  return collectGeoJsonPositions(zone as GeoJSON.FeatureCollection | null | undefined);
 }
 
-/**
- * Pure, unit-testable factory for a property pin's DOM. MapLibre positions the
- * returned wrapper with a translate transform, so every visual transform
- * (entrance, hover scale, pulse) lives on the inner `.pin__dot` and never
- * fights that positioning. `index` drives a staggered entrance via CSS var.
- */
 export function createPinElement(
-  p: { id: string; match_score: number },
+  property: { id: string; match_score: number },
   isTop: boolean,
   index = 0,
 ): HTMLDivElement {
-  const el = document.createElement("div");
-  el.className = `pin${isTop ? " pin--top" : ""}`;
-  el.dataset.pinId = p.id;
-  el.dataset.top = String(isTop);
-  el.style.setProperty("--pin-index", String(index));
-  el.setAttribute("role", "button");
-  el.setAttribute("tabindex", "0");
-  el.setAttribute("aria-label", `Объект, совпадение ${p.match_score}%`);
+  const element = document.createElement("div");
+  element.className = `pin${isTop ? " pin--top" : ""}`;
+  element.dataset.pinId = property.id;
+  element.dataset.top = String(isTop);
+  element.style.setProperty("--pin-index", String(index));
+  element.setAttribute("role", "button");
+  element.setAttribute("tabindex", "0");
+  element.setAttribute("aria-label", `Объект, совпадение ${property.match_score}%`);
   const dot = document.createElement("span");
   dot.className = "pin__dot";
-  el.appendChild(dot);
-  return el;
+  element.appendChild(dot);
+  return element;
+}
+
+function listingDot() {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = "map-listing-dot";
+  element.setAttribute("aria-label", "Открыть объект на карте");
+  return element;
+}
+
+function densityOpacity(zoom: number) {
+  if (zoom >= 15.5) return 0;
+  if (zoom <= 11) return 0.22;
+  return 0.22 * (15.5 - zoom) / 4.5;
+}
+
+function dataLayerStyle(
+  id: LayerId,
+  feature: google.maps.Data.Feature,
+  zoom: number,
+): google.maps.Data.StyleOptions {
+  const geometry = feature.getGeometry()?.getType() ?? "Polygon";
+  const color = layerColor(id) ?? layerPaintColor(geometry);
+  if (geometry === "Point" || geometry === "MultiPoint") {
+    const name = feature.getProperty("name");
+    return {
+      clickable: false,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        fillColor: color,
+        fillOpacity: 0.94,
+        strokeColor: "#ffffff",
+        strokeOpacity: 0.95,
+        strokeWeight: 1.5,
+        scale: id === "metro" ? 6 : 5,
+      },
+      label: id === "metro" && typeof name === "string" && zoom >= 14.5
+        ? { text: name, color: "#4b4f5f", fontSize: "10px", fontWeight: "500" }
+        : undefined,
+      zIndex: id === "metro" ? 30 : 20,
+    };
+  }
+  if (geometry === "LineString" || geometry === "MultiLineString") {
+    return {
+      clickable: false,
+      strokeColor: color,
+      strokeOpacity: 0.72,
+      strokeWeight: 4,
+      zIndex: 10,
+    };
+  }
+  return {
+    clickable: false,
+    fillColor: color,
+    fillOpacity: id === "crime" ? densityOpacity(zoom) : 0.25,
+    strokeColor: color,
+    strokeOpacity: id === "crime" ? 0.18 : 0.46,
+    strokeWeight: 1,
+    zIndex: id === "crime" ? 1 : 5,
+  };
 }
 
 export default function MapCanvas() {
   const container = useRef<HTMLDivElement>(null);
-  const { map, ready, missingKey } = useMaplibre(container);
-  const zone = useSession((s) => s.zoneGeoJSON);
-  const properties = useSession((s) => s.properties);
-  const hoveredId = useSession((s) => s.hoveredId);
-  const setHovered = useSession((s) => s.setHoveredProperty);
-  const activeLayers = useSession((s) => s.activeLayers);
-  const layerData = useSession((s) => s.layerData);
-  const selectProperty = useSession((s) => s.selectProperty);
-  const setViewport = useSession((s) => s.setViewport);
-  const mapListings = useSession((s) => s.mapListings);
-  // Превью объявления, выбранного на карте: сама фича + её точка на экране.
-  const [mapPick, setMapPick] = useState<{
-    data: PreviewData; lngLat: [number, number]; anchor: { x: number; y: number };
-  } | null>(null);
-  const markers = useRef<maplibregl.Marker[]>([]);
-  const pendingRemoval = useRef<Record<string, number>>({});
+  const { map, ready, unavailable, missingKey } = useGoogleMap(container);
+  const zone = useSession((state) => state.zoneGeoJSON);
+  const properties = useSession((state) => state.properties);
+  const hoveredId = useSession((state) => state.hoveredId);
+  const setHovered = useSession((state) => state.setHoveredProperty);
+  const activeLayers = useSession((state) => state.activeLayers);
+  const layerData = useSession((state) => state.layerData);
+  const selectProperty = useSession((state) => state.selectProperty);
+  const setViewport = useSession((state) => state.setViewport);
+  const mapListings = useSession((state) => state.mapListings);
 
+  const resultMarkers = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const listingMarkers = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const clusterer = useRef<MarkerClusterer | null>(null);
+  const projection = useRef<google.maps.OverlayView | null>(null);
+  const geoLayers = useRef<Partial<Record<LayerId, google.maps.Data>>>({});
 
-  // Hover preview: which property is previewed + its projected pixel anchor. A
-  // short close delay lets the cursor travel from the pin onto the card to click.
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [mapPick, setMapPick] = useState<{
+    data: PreviewData;
+    lngLat: [number, number];
+    anchor: { x: number; y: number };
+  } | null>(null);
   const closeTimer = useRef<number | undefined>(undefined);
 
-  const openPreview = useCallback((i: number) => {
+  const openPreview = useCallback((index: number) => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
-    setPreviewIndex(i);
+    setPreviewIndex(index);
   }, []);
   const scheduleClose = useCallback(() => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = window.setTimeout(() => setPreviewIndex(null), 160);
   }, []);
 
-  // Cinematic camera + investigation-style zone reveal.
-  useEffect(() => {
-    if (!map || !ready || !zone) return;
-    const reduced = prefersReducedMotion();
-    const revealMs = reduced ? 0 : 900;
-
-    // Пустая зона — валидный ответ бэка, а не ошибка: контракт (§3 «Обработка
-    // пустых результатов») велит слать suggested_areas_geojson всегда, а строить
-    // его не из чего, когда в запросе не было области и ничего не нашлось.
-    // Рисовать нечего и подгонять камеру не по чему — гасим прошлую зону
-    // и оставляем карту как есть.
-    const positions = collectZonePositions(zone);
-    if (!positions.length) {
-      if (map.getLayer("zone-fill")) map.setPaintProperty("zone-fill", "fill-opacity", 0);
-      if (map.getLayer("zone-line")) map.setPaintProperty("zone-line", "line-opacity", 0);
-      return;
-    }
-
-    if (!map.getSource("zone")) {
-      map.addSource("zone", { type: "geojson", data: zone as unknown as GeoJSON.FeatureCollection });
-      // Fill washes in first (the area is "uncovered")...
-      map.addLayer({
-        id: "zone-fill", type: "fill", source: "zone",
-        paint: {
-          "fill-color": ACCENT,
-          "fill-opacity": 0,
-          "fill-opacity-transition": { duration: revealMs, delay: 0 },
-        },
-      });
-      // ...then the outline firms up a beat later, framing what was found.
-      map.addLayer({
-        id: "zone-line", type: "line", source: "zone",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color": ACCENT,
-          "line-width": 2.5,
-          "line-blur": 0.4,
-          "line-opacity": 0,
-          "line-opacity-transition": { duration: revealMs, delay: reduced ? 0 : 260 },
-        },
-      });
-    } else {
-      (map.getSource("zone") as maplibregl.GeoJSONSource).setData(zone as unknown as GeoJSON.FeatureCollection);
-    }
-
-    const bounds = positions.reduce(
-      (b, c) => b.extend(c),
-      new maplibregl.LngLatBounds(positions[0], positions[0]),
-    );
-
-    const reveal = () => {
-      map.setPaintProperty("zone-fill", "fill-opacity", 0.18);
-      map.setPaintProperty("zone-line", "line-opacity", 1);
-    };
-
-    if (reduced) {
-      map.fitBounds(bounds, { padding: 90, duration: 0, pitch: 0, bearing: 0 });
-      reveal();
-      return;
-    }
-
-    map.fitBounds(bounds, {
-      padding: { top: 96, bottom: 96, left: 96, right: 96 },
-      duration: DUR.cinematic * 1000 + 500, // ~1.7s filmic settle
-      pitch: 0,           // top-down: зона читается как явная подсвеченная область
-      bearing: 0,         // север сверху — чистое обрамление найденной зоны
-      easing: easeOutExpo,
-    });
-    // Uncover the zone only once the camera has come to rest.
-    map.once("moveend", reveal);
-  }, [map, ready, zone]);
-
-  // Property pins — the top match (highest score) pulses; the rest cascade in.
   useEffect(() => {
     if (!map || !ready) return;
-    markers.current.forEach((m) => m.remove());
-    setPreviewIndex(null);
-    const topId = [...properties].sort((a, b) => b.match_score - a.match_score)[0]?.id;
-    markers.current = properties.map((p, i) => {
-      const el = createPinElement(p, p.id === topId, i);
-      el.addEventListener("mouseenter", () => { setHovered(p.id); openPreview(i); });
-      el.addEventListener("mouseleave", () => { setHovered(null); scheduleClose(); });
-      el.addEventListener("focus", () => { setHovered(p.id); openPreview(i); });
-      el.addEventListener("blur", () => { setHovered(null); scheduleClose(); });
-      el.addEventListener("click", () => selectProperty(i));
-      el.addEventListener("keydown", (e) => {
-        if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
-          e.preventDefault();
-          selectProperty(i);
-        }
-      });
-      return new maplibregl.Marker({ element: el }).setLngLat(p.coordinates).addTo(map);
-    });
-    return () => markers.current.forEach((m) => m.remove());
-  }, [map, ready, properties, setHovered, openPreview, scheduleClose, selectProperty]);
-
-  // Превью объекта карты держится за своей точкой при панораме и зуме.
-  useEffect(() => {
-    if (!map || !mapPick) return;
-    const update = () =>
-      setMapPick((cur) => (cur ? { ...cur, anchor: map.project(cur.lngLat) } : cur));
-    map.on("move", update);
-    return () => { map.off("move", update); };
-  }, [map, mapPick]);
-
-  // Keep the preview card pinned to its marker as the camera pans/zooms.
-  useEffect(() => {
-    if (!map || previewIndex == null) return;
-    const p = properties[previewIndex];
-    if (!p) return;
-    const update = () => setAnchor(map.project(p.coordinates));
-    update();
-    map.on("move", update);
-    return () => { map.off("move", update); };
-  }, [map, previewIndex, properties]);
-
-  // Границы вьюпорта уезжают в store: evidence-слои (communal/noise/crime)
-  // без bbox приходят пустыми, поэтому карта обязана сообщить, что видно.
-  useEffect(() => {
-    if (!map || !ready) return;
-    const publish = () => {
-      const b = map.getBounds();
-      setViewport([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+    projection.current = createProjectionOverlay(map);
+    return () => {
+      projection.current?.setMap(null);
+      projection.current = null;
     };
-    publish();
-    map.on("moveend", publish);
-    return () => { map.off("moveend", publish); };
-  }, [map, ready, setViewport]);
-
-  // Слой ВСЕХ объявлений под вьюпортом — отдельно от маркеров выдачи. Кликом по
-  // точке открывается паспорт любого объекта, а не только попавшего в подбор.
-  // Кластеризация нативная: под вьюпорт приходит до 2000 точек, россыпью они
-  // кладут кадры и перекрывают маркеры результатов.
-  //
-  // Источник и обработчики создаются ОДИН раз, данные обновляются отдельным
-  // эффектом: mapListings меняется на каждом moveend, и будь всё в одном эффекте,
-  // cleanup снимал бы обработчики, а повторный проход уходил бы в ранний return
-  // по уже существующему источнику — клики переставали бы работать после первого
-  // же сдвига карты.
-  useEffect(() => {
-    if (!map || !ready) return;
-    const SRC = "all-listings";
-    if (map.getSource(SRC)) return;
-
-    map.addSource(SRC, {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-      cluster: true, clusterRadius: 55, clusterMaxZoom: 15,
-    });
-    map.addLayer({
-      id: `${SRC}-clusters`, type: "circle", source: SRC, filter: ["has", "point_count"],
-      paint: {
-        // Плотность кодируется и размером, и насыщенностью — на светлой подложке
-        // dataviz-light одного размера мало.
-        "circle-color": ["step", ["get", "point_count"], "#8b8fa3", 25, "#6c718a", 100, "#4b5069"],
-        "circle-opacity": 0.9,
-        "circle-radius": ["step", ["get", "point_count"], 13, 25, 17, 100, 22],
-        "circle-stroke-width": 2,
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-opacity": 0.9,
-      },
-    });
-    // Подписи числа в кластере намеренно нет: symbol-слой требует glyphs в
-    // стиле карты, а dataviz-light их не обязан отдавать — упавший слой рушит
-    // весь эффект и с ним остальные слои. Размер круга и так кодирует объём.
-    map.addLayer({
-      id: `${SRC}-point`, type: "circle", source: SRC, filter: ["!", ["has", "point_count"]],
-      paint: {
-        // Тот же язык, что у пинов выдачи (.pin__dot): светлое ядро в белом
-        // гало. Приглушённее результатов подбора — это фон карты, и он не
-        // должен спорить с выдачей за внимание.
-        "circle-color": "#6c718a",
-        "circle-opacity": 0.85,
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 14, 6, 17, 9],
-        "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 14, 2],
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-opacity": 0.95,
-      },
-    });
-
-    const openPassport = (e: maplibregl.MapLayerMouseEvent) => {
-      const f = e.features?.[0];
-      if (!f) return;
-      const p = f.properties as Record<string, unknown>;
-      const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
-      // Клик открывает превью прямо на карте, а не уводит на страницу паспорта:
-      // на страницу ведёт уже кнопка внутри карточки.
-      setMapPick({
-        data: {
-          id: String(p.id), name: String(p.name ?? ""),
-          address: typeof p.address === "string" ? p.address : "",
-          cover_image: String(p.cover_image ?? ""),
-          price_from: typeof p.price === "number" ? p.price : null,
-          // match_score НЕ передаём: вне подбора его не существует.
-        },
-        lngLat: [lng, lat],
-        anchor: map.project([lng, lat]),
-      });
-    };
-    const zoomCluster = (e: maplibregl.MapLayerMouseEvent) => {
-      const f = e.features?.[0];
-      if (!f) return;
-      map.easeTo({
-        center: (f.geometry as GeoJSON.Point).coordinates as [number, number],
-        zoom: map.getZoom() + 2,
-      });
-    };
-    const cursor = (v: string) => () => { map.getCanvas().style.cursor = v; };
-
-    map.on("click", `${SRC}-point`, openPassport);
-    // Клик мимо точки — закрыть превью. Слой-специфичный обработчик отработает
-    // раньше и успеет поставить новое, поэтому порядок безопасен.
-    map.on("click", (e: maplibregl.MapMouseEvent) => {
-      const hit = map.queryRenderedFeatures(e.point, { layers: [`${SRC}-point`] });
-      if (!hit.length) setMapPick(null);
-    });
-    map.on("click", `${SRC}-clusters`, zoomCluster);
-    map.on("mouseenter", `${SRC}-point`, cursor("pointer"));
-    map.on("mouseleave", `${SRC}-point`, cursor(""));
-    map.on("mouseenter", `${SRC}-clusters`, cursor("pointer"));
-    map.on("mouseleave", `${SRC}-clusters`, cursor(""));
   }, [map, ready]);
 
-  // Данные слоя объявлений — отдельно от его создания (см. комментарий выше).
   useEffect(() => {
-    if (!map || !ready || !mapListings) return;
-    const src = map.getSource("all-listings") as maplibregl.GeoJSONSource | undefined;
-    src?.setData(mapListings);
-  }, [map, ready, mapListings]);
+    if (!map || !ready || !zone) return;
+    const positions = collectZonePositions(zone);
+    if (!positions.length) return;
 
-  // Card <-> pin cross-highlight: scale up whichever pin the store says is hovered.
+    const layer = new google.maps.Data({ map });
+    replaceDataLayer(layer, zone as unknown as GeoJSON.FeatureCollection);
+    const reduced = prefersReducedMotion();
+    const hidden: google.maps.Data.StyleOptions = {
+      fillColor: ACCENT,
+      fillOpacity: reduced ? 0.18 : 0,
+      strokeColor: ACCENT,
+      strokeOpacity: reduced ? 1 : 0,
+      strokeWeight: 2.5,
+      clickable: false,
+      zIndex: 2,
+    };
+    layer.setStyle(hidden);
+    map.setHeading(0);
+    map.setTilt(0);
+    map.fitBounds(createLatLngBounds(positions), 90);
+
+    const reveal = () => layer.setStyle({ ...hidden, fillOpacity: 0.18, strokeOpacity: 1 });
+    const listener = reduced ? null : google.maps.event.addListenerOnce(map, "idle", reveal);
+    if (reduced) reveal();
+
+    return () => {
+      listener?.remove();
+      layer.setMap(null);
+    };
+  }, [map, ready, zone]);
+
   useEffect(() => {
-    markers.current.forEach((m) => {
-      const el = m.getElement();
-      el.classList.toggle("pin--active", el.dataset.pinId === hoveredId);
+    if (!map || !ready) return;
+    resultMarkers.current.forEach(removeAdvancedMarker);
+    setPreviewIndex(null);
+    const topId = [...properties].sort((a, b) => b.match_score - a.match_score)[0]?.id;
+
+    resultMarkers.current = properties.map((property, index) => {
+      const element = createPinElement(property, property.id === topId, index);
+      element.addEventListener("mouseenter", () => { setHovered(property.id); openPreview(index); });
+      element.addEventListener("mouseleave", () => { setHovered(null); scheduleClose(); });
+      element.addEventListener("focus", () => { setHovered(property.id); openPreview(index); });
+      element.addEventListener("blur", () => { setHovered(null); scheduleClose(); });
+      element.addEventListener("click", (event) => { event.stopPropagation(); selectProperty(index); });
+      element.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectProperty(index);
+        }
+      });
+      return new google.maps.marker.AdvancedMarkerElement({
+        map,
+        position: toLatLng(property.coordinates),
+        content: element,
+        title: property.address || property.name,
+      });
+    });
+
+    return () => {
+      resultMarkers.current.forEach(removeAdvancedMarker);
+      resultMarkers.current = [];
+    };
+  }, [map, ready, properties, setHovered, openPreview, scheduleClose, selectProperty]);
+
+  useEffect(() => {
+    resultMarkers.current.forEach((marker) => {
+      const element = marker.content as HTMLElement | null;
+      element?.classList.toggle("pin--active", element.dataset.pinId === hoveredId);
     });
   }, [hoveredId]);
 
-  // Toggleable geo layers — each renders as its own source/layer and crossfades
-  // its opacity both in and out (fade to 0, then drop the source once faded).
   useEffect(() => {
     if (!map || !ready) return;
-    const reduced = prefersReducedMotion();
-    const xfade = reduced ? 0 : DUR.base * 1000; // 240ms
+    const publish = () => {
+      const bounds = map.getBounds()?.toJSON();
+      if (bounds) setViewport(boundsLiteralToViewport(bounds));
+    };
+    const listener = map.addListener("idle", publish);
+    publish();
+    return () => listener.remove();
+  }, [map, ready, setViewport]);
 
-    RENDERED_LAYER_IDS.forEach((id) => {
-      const srcId = `layer-${id}`;
-      const data = layerData[id];
-      // Слой ещё не приехал (или бэк отдал по нему пусто — evidence-слои без
-      // bbox и слои без данных приходят пустыми) — рисовать нечего.
-      const on = !!activeLayers[id] && !!data?.features.length;
-      const geom = data?.features[0]?.geometry.type ?? "Polygon";
-      // Скопления (crime) — часть слоя «Бары», поэтому красятся в тот же синий,
-      // что и точки заведений, а не в нейтральный серый: иначе на светлой
-      // подложке это выглядит отдельной непонятной сущностью. Прозрачность
-      // низкая намеренно — буферы соседних баров накладываются, и плотность
-      // читается по накоплению цвета.
-      const isDensity = id === "crime";
-      const color = layerColor(id) ?? layerPaintColor(geom);
-      // Заливка скоплений включается не константой, а выражением по масштабу:
-      // на плане города фон, у земли — ноль. Тумблер по-прежнему гасит её в 0.
-      const props: Array<[string, unknown]> = isDensity
-        ? [["fill-opacity", densityFillOpacity()]]
-        : layerOpacityProps(geom);
-      // Значок и подпись живут отдельными слоями поверх кружка: их прозрачность
-      // ведёт масштаб, а не тумблер, поэтому в кроссфейд они не входят.
-      const iconId = iconLayerId(id);
-      const labelId = metroLabelLayerId();
+  useEffect(() => {
+    if (!map || !ready) return;
+    const close = map.addListener("click", () => setMapPick(null));
+    return () => close.remove();
+  }, [map, ready]);
 
-      if (on) {
-        // Cancel a queued removal if the user re-enabled mid-fade.
-        if (pendingRemoval.current[srcId]) {
-          clearTimeout(pendingRemoval.current[srcId]);
-          delete pendingRemoval.current[srcId];
-        }
-        if (!map.getSource(srcId)) {
-          map.addSource(srcId, { type: "geojson", data });
-          if (geom === "Point") {
-            registerPoiIcons(map);
-            map.addLayer({
-              id: srcId, type: "circle", source: srcId,
-              paint: {
-                ...pointCirclePaint(id),
-                "circle-opacity-transition": { duration: xfade, delay: 0 },
-                "circle-stroke-opacity-transition": { duration: xfade, delay: 0 },
-              } as maplibregl.CircleLayerSpecification["paint"],
-            });
-            // Значок рисуем только если картинка действительно зарегистрирована:
-            // без canvas (серверный рендер, тесты) её нет, и слой-символ тогда
-            // светил бы в консоль отсутствующим изображением на каждом тайле.
-            if (map.hasImage(poiIconImageId(id))) {
-              map.addLayer({
-                id: iconId, type: "symbol", source: srcId,
-                layout: iconLayout(id) as maplibregl.SymbolLayerSpecification["layout"],
-                paint: iconPaint() as maplibregl.SymbolLayerSpecification["paint"],
-              });
-            }
-            // Подписи станций — только для метро и только если стиль отдаёт
-            // шрифты. Начертание берём из самого стиля: оно заведомо есть в
-            // наборе глифов и покрывает кириллицу.
-            const style = map.getStyle();
-            if (id === "metro" && hasGlyphs(style) && !map.getLayer(labelId)) {
-              map.addLayer({
-                id: labelId, type: "symbol", source: srcId,
-                layout: metroLabelLayout(pickLabelFont(style)) as
-                  maplibregl.SymbolLayerSpecification["layout"],
-                paint: metroLabelPaint() as maplibregl.SymbolLayerSpecification["paint"],
-              });
-            }
-          } else if (geom === "LineString") {
-            map.addLayer({
-              id: srcId, type: "line", source: srcId,
-              layout: { "line-join": "round", "line-cap": "round" },
-              paint: {
-                "line-color": color,
-                "line-width": 4,
-                "line-blur": 0.6,
-                "line-opacity": 0,
-                "line-opacity-transition": { duration: xfade, delay: 0 },
-              },
-            });
-          } else {
-            map.addLayer({
-              id: srcId, type: "fill", source: srcId,
-              paint: {
-                "fill-color": color,
-                "fill-opacity": 0,
-                "fill-opacity-transition": { duration: xfade, delay: 0 },
-              },
-            });
-          }
-        }
-        // Next frame so the 0 -> target change animates rather than snapping.
-        requestAnimationFrame(() => {
-          if (!map.getLayer(srcId)) return;
-          props.forEach(([prop, val]) => map.setPaintProperty(srcId, prop, val));
+  useEffect(() => {
+    if (!map || !ready) return;
+    clusterer.current?.clearMarkers();
+    listingMarkers.current.forEach(removeAdvancedMarker);
+    listingMarkers.current = [];
+
+    for (const feature of mapListings?.features ?? []) {
+      if (feature.geometry?.type !== "Point") continue;
+      const coordinates = feature.geometry.coordinates as [number, number];
+      const properties = (feature.properties ?? {}) as Record<string, unknown>;
+      const element = listingDot();
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        position: toLatLng(coordinates),
+        content: element,
+        title: String(properties.address ?? properties.name ?? "Объект"),
+      });
+      element.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const projected = projection.current ? projectLngLat(projection.current, coordinates) : null;
+        if (!projected) return;
+        setMapPick({
+          data: {
+            id: String(properties.id),
+            name: String(properties.name ?? ""),
+            address: typeof properties.address === "string" ? properties.address : "",
+            cover_image: String(properties.cover_image ?? ""),
+            price_from: typeof properties.price === "number" ? properties.price : null,
+          },
+          lngLat: coordinates,
+          anchor: projected,
         });
-      } else if (map.getLayer(srcId)) {
-        props.forEach(([prop]) => map.setPaintProperty(srcId, prop, 0));
-        pendingRemoval.current[srcId] = window.setTimeout(() => {
-          try {
-            // Значок и подпись сидят на том же источнике — снимать их надо
-            // ДО него, иначе maplibre падает на слое без источника.
-            if (map.getLayer(labelId) && id === "metro") map.removeLayer(labelId);
-            if (map.getLayer(iconId)) map.removeLayer(iconId);
-            if (map.getLayer(srcId)) map.removeLayer(srcId);
-            if (map.getSource(srcId)) map.removeSource(srcId);
-          } catch {
-            /* map may already be torn down */
-          }
-          delete pendingRemoval.current[srcId];
-        }, xfade + 40);
+      });
+      listingMarkers.current.push(marker);
+    }
+
+    clusterer.current = new MarkerClusterer({ map, markers: listingMarkers.current });
+    return () => {
+      clusterer.current?.clearMarkers();
+      clusterer.current = null;
+      listingMarkers.current.forEach(removeAdvancedMarker);
+      listingMarkers.current = [];
+    };
+  }, [map, ready, mapListings]);
+
+  useEffect(() => {
+    if (!map || !ready) return;
+    Object.values(geoLayers.current).forEach((layer) => layer?.setMap(null));
+    geoLayers.current = {};
+
+    for (const id of RENDERED_LAYER_IDS) {
+      const data = layerData[id];
+      if (!activeLayers[id] || !data?.features.length) continue;
+      const layer = new google.maps.Data({ map });
+      layer.addGeoJson(data as GeoJSON.GeoJsonObject);
+      layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
+      geoLayers.current[id] = layer;
+    }
+
+    const zoom = map.addListener("zoom_changed", () => {
+      for (const id of RENDERED_LAYER_IDS) {
+        const layer = geoLayers.current[id];
+        if (layer) layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
       }
     });
+    return () => {
+      zoom.remove();
+      Object.values(geoLayers.current).forEach((layer) => layer?.setMap(null));
+      geoLayers.current = {};
+    };
   }, [map, ready, activeLayers, layerData]);
 
-  if (missingKey) {
+  useEffect(() => {
+    if (!map || !ready || !projection.current) return;
+    const update = () => {
+      if (previewIndex != null) {
+        const property = properties[previewIndex];
+        if (property) setAnchor(projectLngLat(projection.current!, property.coordinates));
+      }
+      setMapPick((current) => {
+        if (!current) return null;
+        const next = projectLngLat(projection.current!, current.lngLat);
+        return next ? { ...current, anchor: next } : current;
+      });
+    };
+    update();
+    const listener = map.addListener("bounds_changed", update);
+    return () => listener.remove();
+  }, [map, ready, previewIndex, properties]);
+
+  if (unavailable) {
     return (
       <div
         data-testid="map-missing-key"
-        className="w-full h-full rounded-3xl bg-[#f6f7fb] grid place-items-center text-sm text-zinc-400 px-6 text-center"
+        className="grid h-full w-full place-items-center rounded-3xl bg-[#f6f7fb] px-6 text-center text-sm text-zinc-400"
       >
-        Добавьте NEXT_PUBLIC_MAPTILER_KEY в .env.local, чтобы увидеть карту
+        {missingKey
+          ? "Добавьте Google Maps API key и Map ID в .env"
+          : "Google Maps не удалось загрузить"}
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-full">
-      <div
-        ref={container}
-        data-testid="map-canvas"
-        className="absolute inset-0 rounded-3xl overflow-hidden"
-      />
-      {/* Static inner-edge refraction — frames the map in its container. No
-          animation, no glow: purely structural depth. */}
+    <div className="relative h-full w-full">
+      <div ref={container} data-testid="map-canvas" className="absolute inset-0 overflow-hidden rounded-3xl" />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 rounded-3xl shadow-[inset_0_0_0_1px_rgba(20,20,34,0.06),inset_0_1px_0_rgba(255,255,255,0.4)]"
       />
-
-      {/* Hover preview — anchored above the pin. The wrapper ignores pointer
-          events so the map stays draggable; only the card is interactive, which
-          lets the cursor bridge from pin to card without the popup closing. */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
         <AnimatePresence>
           {previewIndex != null && anchor && properties[previewIndex] && (
@@ -524,19 +374,22 @@ export default function MapCanvas() {
               onClose={() => setPreviewIndex(null)}
             />
           )}
-
-          {/* Превью объявления, выбранного на слое карты (вне подбора). */}
           {mapPick && (
             <MapPreviewCard
               data={mapPick.data}
               anchor={mapPick.anchor}
               onOpen={() => {
                 useSession.getState().openListingFromMap({
-                  id: mapPick.data.id, name: mapPick.data.name,
+                  id: mapPick.data.id,
+                  name: mapPick.data.name,
                   address: mapPick.data.address ?? "",
                   cover_image: mapPick.data.cover_image,
-                  match_score: 0, price_from: mapPick.data.price_from,
-                  rooms: null, area_sqm: null, floor: "", tags: [],
+                  match_score: 0,
+                  price_from: mapPick.data.price_from,
+                  rooms: null,
+                  area_sqm: null,
+                  floor: "",
+                  tags: [],
                   coordinates: mapPick.lngLat,
                 });
               }}

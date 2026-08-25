@@ -1,11 +1,4 @@
 import type { LayerId } from "@/lib/agent/types";
-// dataviz-light is a desaturated MapTiler style — reads as a neutral canvas so
-// the periwinkle accent is the only saturated layer on the map.
-export function mapStyleUrl(): string | null {
-  const key = process.env.NEXT_PUBLIC_MAPTILER_KEY;
-  if (!key) return null;
-  return `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`;
-}
 
 /**
  * Цвет СЛОЯ, а не типа геометрии. Раньше цвет выбирался по геометрии, и все
