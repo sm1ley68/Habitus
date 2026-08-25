@@ -1,8 +1,8 @@
 "use client";
-import maplibregl from "maplibre-gl";
 import { useEffect, useRef } from "react";
 import { CITY_CENTER } from "@/lib/map/constants";
-import { useMaplibre } from "@/lib/map/useMaplibre";
+import { removeAdvancedMarker, toLatLng } from "@/lib/map/google";
+import { useGoogleMap } from "@/lib/map/useGoogleMap";
 
 /**
  * Карта с одной точкой. Точка вместо геокодера — сознательный выбор: она
@@ -10,7 +10,9 @@ import { useMaplibre } from "@/lib/map/useMaplibre";
  * внешнего сервиса с лимитами. Адрес продавец пишет рядом — он идёт в текст
  * объявления, а не в определение места.
  *
- * Наружу координаты уходят строго как [lng, lat] — контракт всего проекта.
+ * Наружу координаты уходят строго как [lng, lat] — контракт всего проекта,
+ * хотя Google внутри работает с {lat, lng}. Разворот держим в одном месте:
+ * в toLatLng на входе и вручную на выходе из клика.
  */
 export default function PinMap({
   value, onPick, city = "msk",
@@ -20,54 +22,78 @@ export default function PinMap({
   city?: "msk" | "spb";
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const { map, ready, missingKey } = useMaplibre(container);
-  const marker = useRef<maplibregl.Marker | null>(null);
+  // cityAware отключён: камерой кабинета управляет поставленная точка, а не
+  // город из сессии поиска — иначе карта улетала бы при смене города в шапке.
+  const { map, ready, unavailable, missingKey } = useGoogleMap(container, {
+    zoom: 15,
+    cityAware: false,
+  });
+  const marker = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
   const pick = useRef(onPick);
   pick.current = onPick;
+  const centered = useRef(false);
 
   useEffect(() => {
     if (!map || !ready) return;
-    const onClick = (e: maplibregl.MapMouseEvent) => {
-      pick.current([e.lngLat.lng, e.lngLat.lat]);
-    };
-    map.on("click", onClick);
-    return () => {
-      map.off("click", onClick);
-    };
+    const listener = map.addListener("click", (event: google.maps.MapMouseEvent) => {
+      if (event.latLng) pick.current([event.latLng.lng(), event.latLng.lat()]);
+    });
+    return () => listener.remove();
   }, [map, ready]);
 
   useEffect(() => {
     if (!map || !ready) return;
+
     if (!value) {
-      marker.current?.remove();
+      removeAdvancedMarker(marker.current);
       marker.current = null;
       return;
     }
+
     if (!marker.current) {
-      marker.current = new maplibregl.Marker({ color: "#6f7cc8", draggable: true })
-        .setLngLat(value)
-        .addTo(map);
-      marker.current.on("dragend", () => {
-        const { lng, lat } = marker.current!.getLngLat();
-        pick.current([lng, lat]);
+      // Метка та же, что у объектов выдачи (.pin/.pin__dot в globals.css):
+      // продавец видит свою квартиру ровно такой, какой её увидит покупатель.
+      const dot = document.createElement("div");
+      dot.className = "pin";
+      const inner = document.createElement("span");
+      inner.className = "pin__dot";
+      dot.appendChild(inner);
+      marker.current = new google.maps.marker.AdvancedMarkerElement({
+        map,
+        position: toLatLng(value),
+        content: dot,
+        gmpDraggable: true,
+        title: "Точка объявления",
+      });
+      marker.current.addListener("dragend", (event: google.maps.MapMouseEvent) => {
+        if (event.latLng) pick.current([event.latLng.lng(), event.latLng.lat()]);
       });
     } else {
-      marker.current.setLngLat(value);
+      marker.current.position = toLatLng(value);
+    }
+
+    // Центрируем один раз, на первой точке: дальше продавец двигает карту сам,
+    // и перехватывать у него камеру на каждый перетаск было бы вознёй.
+    if (!centered.current) {
+      map.panTo(toLatLng(value));
+      centered.current = true;
     }
   }, [map, ready, value]);
 
   useEffect(
     () => () => {
-      marker.current?.remove();
+      removeAdvancedMarker(marker.current);
+      marker.current = null;
     },
     [],
   );
 
-  if (missingKey) {
+  if (unavailable) {
     return (
-      <div className="grid h-72 place-items-center rounded-xl border border-zinc-200 bg-zinc-50 px-6 text-center text-sm text-zinc-500">
-        Карта недоступна: не задан ключ картографического сервиса. Координаты можно
-        будет поставить позже, из карточки объявления.
+      <div className="grid h-72 place-items-center rounded-xl border border-zinc-200 bg-[#f6f7fb] px-6 text-center text-sm text-zinc-500">
+        {missingKey
+          ? "Добавьте Google Maps API key и Map ID в .env — без них точку на карте не поставить"
+          : "Google Maps не удалось загрузить. Координаты можно поставить позже, из карточки объявления"}
       </div>
     );
   }
