@@ -21,6 +21,35 @@ _active_sink: ContextVar["dict[str, float] | None"] = ContextVar(
     "_active_sink", default=None)
 
 
+# Диагностика отказа едет на самом исключении, а не в ContextVar: collector()
+# сбрасывается на выходе из run_search, то есть РАНЬШЕ, чем исключение доезжает
+# до обработчика эндпоинта — читать оттуда стадию было бы уже нечего.
+_TRACE_ATTR = "habitus_trace"
+
+
+def _remember(exc: BaseException, **fields) -> None:
+    """Дописать в диагностику исключения то, чего там ещё нет.
+
+    setdefault, а не присваивание: раскрутка стека идёт изнутри наружу, и
+    первым про стадию говорит самый внутренний span — виноват именно он, а не
+    обернувший его шаг.
+    """
+    try:
+        ctx = getattr(exc, _TRACE_ATTR, None)
+        if ctx is None:
+            ctx = {}
+            setattr(exc, _TRACE_ATTR, ctx)
+    except AttributeError:
+        return  # исключение со __slots__ — молча без диагностики
+    for key, value in fields.items():
+        ctx.setdefault(key, value)
+
+
+def failure_context(exc: BaseException) -> dict:
+    """Что трейсинг знает про это падение: stage и timings успевших стадий."""
+    return getattr(exc, _TRACE_ATTR, None) or {}
+
+
 @contextmanager
 def collector():
     """Открыть окно сбора: вложенные span() в этом контексте пишут мс сюда же.
@@ -46,7 +75,14 @@ def with_timings(fn):
     @functools.wraps(fn)
     def _wrapped(*args, **kwargs):
         with collector() as sink:
-            result = fn(*args, **kwargs)
+            try:
+                result = fn(*args, **kwargs)
+            except BaseException as exc:
+                # Последний момент, когда sink ещё жив: дальше collector()
+                # сбросит ContextVar, и «что успело отработать до падения»
+                # будет неоткуда взять.
+                _remember(exc, timings=dict(sink))
+                raise
         if hasattr(result, "timings"):
             result.timings = sink
         return result
@@ -73,6 +109,9 @@ def span(name: str, **attrs):
     t0 = time.perf_counter()
     try:
         yield
+    except BaseException as exc:
+        _remember(exc, stage=name)
+        raise
     finally:
         ms = (time.perf_counter() - t0) * 1000
         log.info("span=%s ms=%.1f %s", name, ms, attrs or "")
