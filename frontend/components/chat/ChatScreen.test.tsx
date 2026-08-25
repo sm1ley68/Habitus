@@ -48,7 +48,7 @@ test("запрос гонит стадии и стримит ответ из SSE
 
 test("событие error переводит сессию в состояние ошибки", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => sseResponse([
-    'event: error\ndata: {"code":"llm_timeout","message":"Не удалось получить ответ от ИИ"}',
+    'event: error\ndata: {"code":"search_timeout","message":"Поиск не уложился в 120 с"}',
   ])));
 
   render(<ChatScreen />);
@@ -56,7 +56,9 @@ test("событие error переводит сессию в состояние
   await userEvent.click(screen.getByRole("button", { name: "Отправить запрос" }));
 
   await waitFor(() => expect(useSession.getState().stage).toBe("error"));
-  expect(useSession.getState().errorMessage).toBe("Не удалось получить ответ от ИИ");
+  // Показываем текст шлюза дословно: он называет причину, а общая фраза
+  // «ошибка ИИ» её прятала.
+  expect(useSession.getState().errorMessage).toBe("Поиск не уложился в 120 с");
 });
 
 test("stage=error renders ErrorState", () => {

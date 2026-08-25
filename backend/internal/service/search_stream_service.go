@@ -29,6 +29,24 @@ import (
 // сохранённого пула поднимает «показать ещё», GET /chats/{id}/results (Task 7).
 const resultPageSize = 10
 
+// slowStageWarnMS — с какой стадии начинается предупреждение в лог. 15 с при
+// типичном бюджете в 60–120 с: ещё не отказ, но уже сигнал, что на машине
+// послабее тот же запрос упрётся в таймаут.
+const slowStageWarnMS = 15_000
+
+// slowestStage возвращает самую долгую стадию ответа ML и её длительность.
+// Пустые timings дают ("", 0) — ML прислала ответ без разбивки, и сказать про
+// стадии нечего.
+func slowestStage(timings map[string]float64) (string, float64) {
+	name, worst := "", 0.0
+	for stage, ms := range timings {
+		if ms > worst {
+			name, worst = stage, ms
+		}
+	}
+	return name, worst
+}
+
 type AgentStatusEvent struct {
 	Agent   string `json:"agent"`
 	Status  string `json:"status"`
@@ -198,7 +216,8 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 			gotResult = true
 		case <-time.After(300 * time.Millisecond):
 		case <-ctx.Done():
-			_ = w.WriteEvent("error", ErrorEvent{Code: "llm_timeout", Message: "Не удалось получить ответ от ИИ, попробуйте ещё раз"})
+			code, msg := mapMLError(client.ErrTimeout, s.mlTimeout)
+			_ = w.WriteEvent("error", ErrorEvent{Code: code, Message: msg})
 			return
 		}
 		if gotResult {
@@ -220,18 +239,39 @@ func (s *SearchStreamService) Run(ctx context.Context, chat domain.Chat, text st
 					return // клиент отвалился
 				}
 			case <-ctx.Done():
-				_ = w.WriteEvent("error", ErrorEvent{Code: "llm_timeout", Message: "Не удалось получить ответ от ИИ, попробуйте ещё раз"})
+				code, msg := mapMLError(client.ErrTimeout, s.mlTimeout)
+				_ = w.WriteEvent("error", ErrorEvent{Code: code, Message: msg})
 				return
 			}
 		}
 	}
 
 	if outcome.err != nil {
-		code, msg := mapMLError(outcome.err)
+		code, msg := mapMLError(outcome.err, s.mlTimeout)
+		// Пользователю уходит человеческий текст, в лог — исходная ошибка со
+		// всеми потрохами: без неё «поиск не уложился» неотличимо от «ML отвечал
+		// не туда», и разбираться приходится вслепую.
+		log.Error().Err(outcome.err).
+			Str("chat_id", chat.ID.String()).
+			Str("code", code).
+			Dur("ml_budget", s.mlTimeout).
+			Msg("search failed")
 		_ = w.WriteEvent("error", ErrorEvent{Code: code, Message: msg})
 		return
 	}
 	resp := outcome.resp
+
+	// Медленный, но успешный ответ — предвестник таймаута у того, чья машина
+	// слабее. Пишем разбивку по стадиям, пока она есть: после обрыва по
+	// таймауту её уже никто не увидит, а именно она называет виновника.
+	if slowest, ms := slowestStage(resp.Timings); ms >= slowStageWarnMS {
+		log.Warn().
+			Str("chat_id", chat.ID.String()).
+			Str("stage", slowest).
+			Float64("stage_ms", ms).
+			Interface("timings_ms", resp.Timings).
+			Msg("ML stage is slow — a weaker machine will hit the search timeout")
+	}
 
 	// habitus_ml_stage_seconds / habitus_ml_degraded_total (Task 8): считаем
 	// ровно то, что реально прислала ML в этом ответе — timings отдаёт мс
@@ -305,14 +345,30 @@ func (s *SearchStreamService) emit(w *sse.Writer, event string, data any) bool {
 	return w.WriteEvent(event, data) == nil
 }
 
-func mapMLError(err error) (code, message string) {
+// mapMLError переводит отказ ML в код и текст для пользователя.
+//
+// Каждая ветка называет свою причину. Общий текст «не удалось получить ответ от
+// ИИ» на все четыре случая — это потерянный диагноз: он одинаково звучит и
+// когда модель ранжирования не уложилась в бюджет, и когда ML-сервис вообще не
+// поднят, и когда ML_SERVICE_URL смотрит не туда и оттуда прилетает 404.
+//
+// budget нужен ветке таймаута: без числа «попробуйте ещё раз» — совет наугад,
+// а с числом видно, что упёрлись именно в бюджет, а не в сбой.
+func mapMLError(err error, budget time.Duration) (code, message string) {
 	switch {
 	case errors.Is(err, client.ErrTimeout):
-		return "llm_timeout", "Не удалось получить ответ от ИИ, попробуйте ещё раз"
+		return "search_timeout", fmt.Sprintf(
+			"Поиск не уложился в %d с. Похоже, сервису не хватает мощности — "+
+				"попробуйте ещё раз или упростите запрос", int(budget.Seconds()))
 	case errors.Is(err, client.ErrUnavailable):
-		return "llm_unavailable", "Сервис поиска временно недоступен"
+		return "ml_unavailable", "Сервис поиска не отвечает — похоже, он не запущен"
 	case errors.Is(err, client.ErrServer):
-		return "db_error", "Ошибка на стороне сервиса поиска"
+		return "ml_error", "Сервис поиска вернул ошибку. Загляните в его логи"
+	case errors.Is(err, client.ErrBadResponse):
+		// Текст ошибки клиента несёт HTTP-статус («status 404»), и он тут
+		// главная улика: 404 означает, что запрос ушёл не в тот сервис.
+		return "ml_bad_response", fmt.Sprintf("Сервис поиска ответил неожиданно: %s",
+			strings.TrimPrefix(err.Error(), "ml: bad response: "))
 	default:
 		return "internal_error", "Внутренняя ошибка сервера"
 	}
