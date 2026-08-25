@@ -13,6 +13,32 @@ import (
 	"time"
 )
 
+func TestMLClientHealthOK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Errorf("путь = %q, ожидался /health", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer srv.Close()
+
+	if err := NewMLClient(srv.URL, time.Second).Health(context.Background()); err != nil {
+		t.Fatalf("Health вернул ошибку на живом сервисе: %v", err)
+	}
+}
+
+func TestMLClientHealthFailsOnBadStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	if err := NewMLClient(srv.URL, time.Second).Health(context.Background()); err == nil {
+		t.Fatal("Health = nil на 503, ожидалась ошибка")
+	}
+}
+
 func testMLServer(t *testing.T, requests chan<- SearchRequest) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

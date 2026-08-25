@@ -12,6 +12,7 @@ import (
 )
 
 type Handlers struct {
+	Health    *handlers.HealthHandler
 	Auth      *handlers.AuthHandler
 	Chat      *handlers.ChatHandler
 	Stream    *handlers.StreamHandler
@@ -26,7 +27,8 @@ type Handlers struct {
 // LLM (messages/stream, ask/stream) — остальной API рейт-лимит не трогает
 // (прямое требование брифа Task 8).
 func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, rateLimitLLM fiber.Handler) {
-	app.Get("/health", handlers.Health)
+	app.Get("/health", h.Health.Live)
+	app.Get("/health/ready", h.Health.Ready)
 	app.Get("/metrics", observability.MetricsHandler(observability.Default))
 
 	api := app.Group("/api/v1")

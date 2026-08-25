@@ -396,6 +396,19 @@ Golden-set привязан к снимку данных, а сбор идёт �
 
 ## Диагностика проблем
 
+### Проверить, что шлюз действительно готов
+
+```bash
+# liveness — жив ли процесс (перезапускать или нет)
+curl -s localhost:8080/health
+
+# readiness — есть ли под ним Postgres и ML-сервис
+curl -s localhost:8080/health/ready | jq
+# {"status":"ready","checks":{"db":"ok","ml":"ok"}}
+# при мёртвой зависимости — 503 и причина:
+# {"status":"degraded","checks":{"db":"ok","ml":"ml /health: 503 Service Unavailable"}}
+```
+
 **Backend «unhealthy», в логах `ML warm-up failed ... timeout`.**
 Прогревочный `/search` не уложился в `ML_SEARCH_TIMEOUT_S` — типично на CPU.
 Уменьшите `RERANK_POOL_N` и `RERANK_MAX_LENGTH`, поднимите `ML_SEARCH_TIMEOUT_S`,

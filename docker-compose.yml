@@ -101,9 +101,12 @@ services:
       ml-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      # /health/ready, а не /health: фронт зависит от бэкенда по
+      # service_healthy, и пускать его к шлюзу, под которым нет ML, незачем —
+      # он получит «ошибку ИИ» на первом же поиске.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
 
   frontend:

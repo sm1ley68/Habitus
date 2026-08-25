@@ -18,6 +18,7 @@ import (
 )
 
 type Services struct {
+	Ready     *service.ReadinessService
 	Auth      *service.AuthService
 	Chat      *service.ChatService
 	Stream    *service.SearchStreamService
@@ -40,6 +41,10 @@ const (
 	idleTimeout         = 75 * time.Second
 	bodyLimitDef        = 1 << 20
 	rateLimitPerHourDef = 30
+	// readyTimeout — сколько ждём зависимости в readiness. Заметно меньше
+	// интервала healthcheck'а в compose (10 с), чтобы проба не наслаивалась
+	// сама на себя.
+	readyTimeout = 3 * time.Second
 )
 
 // uploadBodyLimit — сколько байт нужно на одну загрузку фотографий объявления.
@@ -96,7 +101,16 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 	}
 	rateLimiter := middleware.NewRateLimiter(rateLimitPerHour, time.Hour)
 
+	// svc.Ready == nil — конфиг не задан (например, app_test.go собирает
+	// app.Services{} напрямую, минуя main.go) — тот же приём fallback'а, что у
+	// bodyLimit и rateLimitPerHour выше: пустой сервис вместо паники на nil.
+	ready := svc.Ready
+	if ready == nil {
+		ready = service.NewReadinessService(readyTimeout, nil)
+	}
+
 	httpapi.RegisterRoutes(app, httpapi.Handlers{
+		Health:    handlers.NewHealthHandler(ready),
 		Auth:      handlers.NewAuthHandler(svc.Auth, cfg.SessionCookieSecure),
 		Chat:      handlers.NewChatHandler(svc.Chat),
 		Stream:    handlers.NewStreamHandler(svc.Chat, svc.Stream),

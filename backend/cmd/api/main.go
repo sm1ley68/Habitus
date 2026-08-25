@@ -72,6 +72,12 @@ func main() {
 	streamService := service.NewSearchStreamService(chatRepo, messageRepo, chatSearchRepo, listingRepo, mlClient, mlTimeout, explainTimeout)
 	resultsService := service.NewResultsService(chatService, chatSearchRepo, listingRepo)
 
+	// Пробы readiness: обе зависимости, без которых шлюз бесполезен.
+	readinessService := service.NewReadinessService(3*time.Second, map[string]service.Probe{
+		"db": pool.Ping,
+		"ml": mlClient.Health,
+	})
+
 	ownerRepo := repository.NewOwnerListingRepo(pool)
 	ownerListingService := service.NewOwnerListingService(
 		ownerRepo,
@@ -91,6 +97,7 @@ func main() {
 	)
 
 	fiberApp := app.New(cfg, app.Services{
+		Ready:     readinessService,
 		Auth:      authService,
 		Chat:      chatService,
 		Stream:    streamService,

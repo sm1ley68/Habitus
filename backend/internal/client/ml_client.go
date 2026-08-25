@@ -417,3 +417,22 @@ func (c *MLClient) WarmUp(ctx context.Context) error {
 	_, err := c.Search(ctx, SearchRequest{Query: "квартира"})
 	return err
 }
+
+// Health — дешёвый пинг ML-сервиса для readiness: GET /health, без тела.
+// Намеренно НЕ переиспользует WarmUp — тот делает настоящий /search и стоит
+// секунд, а проба готовности обязана укладываться в интервал healthcheck'а.
+func (c *MLClient) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ml /health: %s", resp.Status)
+	}
+	return nil
+}
