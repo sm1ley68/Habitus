@@ -23,6 +23,7 @@ type Handlers struct {
 	Owner     *handlers.OwnerHandler
 	Lead      *handlers.LeadHandler
 	Favorite  *handlers.FavoriteHandler
+	Feedback  *handlers.FeedbackHandler
 }
 
 // rateLimitLLM применяется только к двум ручкам, которые реально жгут бюджет
@@ -54,6 +55,9 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 	api.Get("/chats/:chat_id/messages", authMw, h.Chat.Messages)
 	api.Post("/chats/:chat_id/messages/stream", authMw, rateLimitLLM, h.Stream.PostMessagesStream)
 	api.Get("/chats/:chat_id/results", authMw, h.Results.List)
+	// Оценка доступна и гостю: это единственный продакшн-сигнал о качестве
+	// подбора, отсекать по регистрации его нельзя.
+	api.Post("/chats/:chat_id/results/:object_id/feedback", authMw, h.Feedback.Save)
 
 	api.Get("/objects/:object_id", authMw, h.Object.Get)
 	api.Post("/objects/:object_id/ask/stream", authMw, rateLimitLLM, h.ObjectAsk.PostStream)

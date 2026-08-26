@@ -148,3 +148,13 @@ type Favorite struct {
 	ChatID     *uuid.UUID
 	CreatedAt  time.Time
 }
+
+// ResultFeedback — оценка объекта в выдаче. Всегда в контексте чата: вне
+// запроса «подходит / не подходит» ничего не значит.
+type ResultFeedback struct {
+	UserID     uuid.UUID
+	ChatID     uuid.UUID
+	ExternalID string
+	Verdict    string
+	Reason     string
+}

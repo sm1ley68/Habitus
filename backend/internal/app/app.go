@@ -36,6 +36,9 @@ type Services struct {
 	Leads *service.LeadService
 	// Favorites — сохранённые объекты, переживают чат и доступны гостю.
 	Favorites *service.FavoriteService
+	// Feedback — оценка объекта в выдаче, единственный продакшн-сигнал о
+	// качестве подбора.
+	Feedback *service.FeedbackService
 }
 
 // Границы HTTP-слоя. ReadTimeout не режет SSE (он про чтение запроса, а не
@@ -137,6 +140,7 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		Owner:     handlers.NewOwnerHandler(svc.OwnerListings, svc.OwnerImports, svc.OwnerPhotos),
 		Lead:      handlers.NewLeadHandler(svc.Leads, svc.Auth, cfg.SessionCookieSecure),
 		Favorite:  handlers.NewFavoriteHandler(svc.Favorites),
+		Feedback:  handlers.NewFeedbackHandler(svc.Feedback),
 	}, svc.Auth, middleware.RateLimitLLM(rateLimiter, guestLimiter))
 
 	return app

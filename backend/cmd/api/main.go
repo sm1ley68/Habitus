@@ -105,6 +105,9 @@ func main() {
 
 	favoriteService := service.NewFavoriteService(repository.NewFavoriteRepo(pool), listingRepo)
 
+	feedbackService := service.NewFeedbackService(chatService, chatSearchRepo,
+		repository.NewFeedbackRepo(pool))
+
 	fiberApp := app.New(cfg, app.Services{
 		Ready:     readinessService,
 		Auth:      authService,
@@ -120,6 +123,7 @@ func main() {
 		OwnerPhotos:   photoStore,
 		Leads:         leadService,
 		Favorites:     favoriteService,
+		Feedback:      feedbackService,
 	})
 
 	go func() {
