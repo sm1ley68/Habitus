@@ -96,14 +96,6 @@ func (s *AuthService) Logout(ctx context.Context, token string) error {
 	return s.sessions.Delete(ctx, hashToken(token))
 }
 
-func (s *AuthService) Authenticate(ctx context.Context, token string) (uuid.UUID, error) {
-	userID, err := s.sessions.GetUserID(ctx, hashToken(token))
-	if errors.Is(err, repository.ErrNotFound) {
-		return uuid.Nil, apperr.Unauthorized()
-	}
-	return userID, err
-}
-
 func (s *AuthService) GetUser(ctx context.Context, userID uuid.UUID) (domain.User, error) {
 	return s.users.GetByID(ctx, userID)
 }

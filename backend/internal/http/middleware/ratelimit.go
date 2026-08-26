@@ -126,13 +126,24 @@ func (r *RateLimiter) Sweep() {
 	r.sweepLocked(r.now())
 }
 
+// Limit — предел лимитера, нужен сообщению об отказе: пользователь должен
+// видеть тот потолок, в который упёрся именно он, а не общий.
+func (r *RateLimiter) Limit() int { return r.limit }
+
 // RateLimitLLM — middleware для LLM-ручек (POST .../messages/stream и
-// POST .../ask/stream). Ставится ПОСЛЕ Auth: читает user_id из
-// fiber.Locals, который заполняет Auth. При превышении — 429 и честное
-// сообщение по-русски о том, через сколько минут лимит восстановится, плюс
+// .../ask/stream). Лимитов два: гостевой аккаунт заводится одним запросом,
+// поэтому общий потолок по user_id его не сдерживает — анонимный трафик жёг
+// бы бюджет OpenRouter кратно. guest == nil означает «гостям тот же лимит».
+// Ставится ПОСЛЕ Auth: читает user_id и признак гостя из fiber.Locals,
+// который заполняет Auth. При превышении — 429 и честное сообщение
+// по-русски о том, через сколько минут лимит восстановится, плюс
 // стандартный заголовок Retry-After в секундах.
-func RateLimitLLM(limiter *RateLimiter) fiber.Handler {
+func RateLimitLLM(registered, guest *RateLimiter) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		limiter := registered
+		if guest != nil && IsGuest(c) {
+			limiter = guest
+		}
 		userID := UserID(c)
 		allowed, retryAfter := limiter.Allow(userID)
 		if !allowed {
@@ -144,7 +155,7 @@ func RateLimitLLM(limiter *RateLimiter) fiber.Handler {
 			}
 			return apperr.RateLimited(fmt.Sprintf(
 				"Превышен лимит запросов к ИИ (%d в час). Попробуйте снова через %d мин.",
-				limiter.limit, minutes,
+				limiter.Limit(), minutes,
 			))
 		}
 		return c.Next()

@@ -4,8 +4,10 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"habitus-backend/internal/apperr"
+	"habitus-backend/internal/domain"
 	"habitus-backend/internal/http/middleware"
 	"habitus-backend/internal/service"
 )
@@ -42,19 +44,66 @@ func (h *AuthHandler) setSessionCookie(c *fiber.Ctx, token string, expiresAt tim
 	})
 }
 
+// userResponseBody — общая форма ответа auth-ручек. is_guest отдаётся всегда,
+// а не только гостю: фронту нужно знать тип аккаунта на каждом входе, чтобы
+// решать, показывать ли призыв зарегистрироваться.
+func userResponseBody(id any, email, name string, isGuest bool) fiber.Map {
+	return fiber.Map{"id": id, "email": email, "name": name, "is_guest": isGuest}
+}
+
+func guestResponseBody(id any, name string) fiber.Map {
+	return userResponseBody(id, "", name, true)
+}
+
+// Guest implements POST /auth/guest — сессия без регистрации под первый поиск.
+// Если сессия уже есть и она живая, новый гость НЕ заводится: иначе перезагрузка
+// вкладки плодила бы пользователей и теряла историю поиска.
+func (h *AuthHandler) Guest(c *fiber.Ctx) error {
+	if token := c.Cookies(middleware.SessionCookieName); token != "" {
+		if u, err := h.auth.SessionUser(c.Context(), token); err == nil {
+			return c.JSON(userResponseBody(u.ID, u.Email, u.Name, u.IsGuest))
+		}
+	}
+	u, token, expiresAt, err := h.auth.Guest(c.Context())
+	if err != nil {
+		return err
+	}
+	h.setSessionCookie(c, token, expiresAt)
+	return c.Status(fiber.StatusCreated).JSON(guestResponseBody(u.ID, u.Name))
+}
+
 func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	var req registerRequest
 	if err := c.BodyParser(&req); err != nil || req.Email == "" || req.Password == "" {
 		return apperr.Validation("email и password обязательны")
 	}
-	u, token, expiresAt, err := h.auth.Register(c.Context(), req.Email, req.Password, req.Name)
+
+	// Регистрация из-под гостевой сессии — это АПГРЕЙД той же строки users,
+	// а не новый пользователь: иначе всё, что человек успел найти и сохранить
+	// до регистрации, осталось бы на брошенном аккаунте.
+	var guestID uuid.UUID
+	if token := c.Cookies(middleware.SessionCookieName); token != "" {
+		if u, err := h.auth.SessionUser(c.Context(), token); err == nil && u.IsGuest {
+			guestID = u.ID
+		}
+	}
+
+	var (
+		u         domain.User
+		token     string
+		expiresAt time.Time
+		err       error
+	)
+	if guestID != uuid.Nil {
+		u, token, expiresAt, err = h.auth.UpgradeGuest(c.Context(), guestID, req.Email, req.Password, req.Name)
+	} else {
+		u, token, expiresAt, err = h.auth.Register(c.Context(), req.Email, req.Password, req.Name)
+	}
 	if err != nil {
 		return err
 	}
 	h.setSessionCookie(c, token, expiresAt)
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"id": u.ID, "email": u.Email, "name": u.Name,
-	})
+	return c.Status(fiber.StatusCreated).JSON(userResponseBody(u.ID, u.Email, u.Name, false))
 }
 
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
@@ -67,7 +116,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return err
 	}
 	h.setSessionCookie(c, token, expiresAt)
-	return c.JSON(fiber.Map{"id": u.ID, "email": u.Email, "name": u.Name})
+	return c.JSON(userResponseBody(u.ID, u.Email, u.Name, u.IsGuest))
 }
 
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
@@ -88,5 +137,5 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	if err != nil {
 		return apperr.Unauthorized()
 	}
-	return c.JSON(fiber.Map{"id": u.ID, "email": u.Email, "name": u.Name})
+	return c.JSON(userResponseBody(u.ID, u.Email, u.Name, u.IsGuest))
 }

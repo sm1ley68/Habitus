@@ -136,7 +136,7 @@ func TestRateLimitMiddlewareReturns429WithRussianMessage(t *testing.T) {
 		c.Locals(UserIDLocalsKey, fixedUser)
 		return c.Next()
 	})
-	app.Post("/probe", RateLimitLLM(rl), func(c *fiber.Ctx) error {
+	app.Post("/probe", RateLimitLLM(rl, nil), func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
@@ -242,6 +242,38 @@ func TestSweepKeepsUsersStillInsideWindow(t *testing.T) {
 	limiter.Allow(user)
 	if allowed, _ := limiter.Allow(user); allowed {
 		t.Fatal("третий запрос при лимите 2 прошёл — квота обнулилась чисткой")
+	}
+}
+
+func TestRateLimitLLMAppliesGuestBudget(t *testing.T) {
+	registered := NewRateLimiter(10, time.Hour)
+	guest := NewRateLimiter(1, time.Hour)
+
+	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
+	userID := uuid.New()
+	app.Get("/llm", func(c *fiber.Ctx) error {
+		c.Locals(UserIDLocalsKey, userID)
+		c.Locals(IsGuestLocalsKey, true)
+		return c.Next()
+	}, RateLimitLLM(registered, guest), func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	first, err := app.Test(httptest.NewRequest("GET", "/llm", nil))
+	if err != nil {
+		t.Fatalf("первый запрос: %v", err)
+	}
+	if first.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("первый статус = %d, ожидался 204", first.StatusCode)
+	}
+
+	// Второй должен упереться в гостевой лимит (1), а не в общий (10).
+	second, err := app.Test(httptest.NewRequest("GET", "/llm", nil))
+	if err != nil {
+		t.Fatalf("второй запрос: %v", err)
+	}
+	if second.StatusCode != fiber.StatusTooManyRequests {
+		t.Fatalf("второй статус = %d, ожидался 429", second.StatusCode)
 	}
 }
 

@@ -41,6 +41,9 @@ const (
 	idleTimeout         = 75 * time.Second
 	bodyLimitDef        = 1 << 20
 	rateLimitPerHourDef = 30
+	// rateLimitGuestPerHourDef — дефолт гостевого потолка LLM, срабатывает
+	// тем же приёмом fallback'а, что и rateLimitPerHourDef.
+	rateLimitGuestPerHourDef = 5
 	// readyTimeout — сколько ждём зависимости в readiness. Заметно меньше
 	// интервала healthcheck'а в compose (10 с), чтобы проба не наслаивалась
 	// сама на себя.
@@ -99,7 +102,15 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 	if rateLimitPerHour <= 0 {
 		rateLimitPerHour = rateLimitPerHourDef
 	}
+	// Гостевой потолок: тот же приём fallback'а. Ноль/отрицательное значение
+	// в конфиге означает «конфиг не задан» (например, тест собирает
+	// config.Settings{} напрямую) — берём дефолт, а не «ничего не пропускать».
+	guestPerHour := cfg.RateLimitLLMGuestPerHour
+	if guestPerHour <= 0 {
+		guestPerHour = rateLimitGuestPerHourDef
+	}
 	rateLimiter := middleware.NewRateLimiter(rateLimitPerHour, time.Hour)
+	guestLimiter := middleware.NewRateLimiter(guestPerHour, time.Hour)
 
 	// svc.Ready == nil — конфиг не задан (например, app_test.go собирает
 	// app.Services{} напрямую, минуя main.go) — тот же приём fallback'а, что у
@@ -119,7 +130,7 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		Geo:       handlers.NewGeoHandler(svc.GeoLayers),
 		Results:   handlers.NewResultsHandler(svc.Results),
 		Owner:     handlers.NewOwnerHandler(svc.OwnerListings, svc.OwnerImports, svc.OwnerPhotos),
-	}, svc.Auth, middleware.RateLimitLLM(rateLimiter))
+	}, svc.Auth, middleware.RateLimitLLM(rateLimiter, guestLimiter))
 
 	return app
 }

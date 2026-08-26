@@ -72,6 +72,12 @@ func RateLimited(message string) *Error {
 	return New(http.StatusTooManyRequests, "rate_limited", message)
 }
 
+// GuestForbidden — гостю сюда нельзя. Не 401: сессия у него настоящая, дело
+// в том, что действие требует аккаунта, на который можно ответить.
+func GuestForbidden(message string) *Error {
+	return New(http.StatusForbidden, "guest_forbidden", message)
+}
+
 func CianURLInvalid() *Error {
 	return New(http.StatusBadRequest, "cian_url_invalid",
 		"Это не похоже на ссылку на объявление Циана. Скопируйте адрес страницы объявления целиком")

@@ -62,6 +62,9 @@ func main() {
 	authService := service.NewAuthService(userRepo, sessionRepo)
 	service.StartSessionSweeper(ctx, sessionRepo,
 		time.Duration(cfg.SessionSweepMinutes)*time.Minute)
+	service.StartGuestSweeper(ctx, userRepo,
+		time.Duration(cfg.GuestSweepMinutes)*time.Minute,
+		time.Duration(cfg.GuestRetentionDays)*24*time.Hour)
 	chatService := service.NewChatService(chatRepo, messageRepo)
 	dossierTimeout := time.Duration(cfg.MLDossierTimeoutS) * time.Second
 	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo, mlClient, dossierTimeout, cfg.DossierTTLHours)

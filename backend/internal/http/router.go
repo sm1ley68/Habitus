@@ -35,6 +35,10 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 
 	api.Post("/auth/register", h.Auth.Register)
 	api.Post("/auth/login", h.Auth.Login)
+	// Гостевая сессия: первый поиск без регистрации. Стена перед первым
+	// поиском стояла ровно там, где у продукта единственный шанс показать
+	// ценность, — поэтому её здесь нет.
+	api.Post("/auth/guest", h.Auth.Guest)
 
 	authMw := middleware.Auth(authSvc)
 
@@ -57,9 +61,11 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 
 	// Личный кабинет продавца. Всё за authMw: объявление всегда принадлежит
 	// конкретному пользователю, анонимного доступа здесь нет по определению.
+	// Кабинет закрыт для гостей: объявление должно принадлежать аккаунту,
+	// который переживёт чистку брошенных гостей.
 	// Порядок важен: /listings/import объявляется до /listings/:listing_id,
 	// иначе Fiber примет import за uuid и вернёт 404.
-	ownerGroup := api.Group("/owner", authMw)
+	ownerGroup := api.Group("/owner", authMw, middleware.RequireRegistered())
 	ownerGroup.Get("/listings", h.Owner.List)
 	ownerGroup.Post("/listings", h.Owner.Create)
 	ownerGroup.Post("/listings/import/preview", h.Owner.ImportPreview)
