@@ -41,13 +41,26 @@ type leadStore interface {
 	Create(ctx context.Context, l domain.Lead) (domain.Lead, error)
 }
 
+// leadLister — часть LeadRepo для кабинета продавца.
+type leadLister interface {
+	ListForSeller(ctx context.Context, sellerID uuid.UUID, limit, offset int) ([]domain.Lead, int, error)
+}
+
 type LeadService struct {
 	targets leadTarget
 	leads   leadStore
+	lists   leadLister
 }
 
 func NewLeadService(targets *repository.OwnerListingRepo, leads *repository.LeadRepo) *LeadService {
-	return &LeadService{targets: targets, leads: leads}
+	return &LeadService{targets: targets, leads: leads, lists: leads}
+}
+
+// ListForSeller. sellerID берётся ИЗ СЕССИИ вызывающим хендлером и никогда из
+// параметров запроса — иначе чужие заявки читались бы подстановкой id в URL.
+func (s *LeadService) ListForSeller(ctx context.Context, sellerID uuid.UUID,
+	limit, offset int) ([]domain.Lead, int, error) {
+	return s.lists.ListForSeller(ctx, sellerID, limit, offset)
 }
 
 // ValidateLeadInput нормализует и проверяет поля заявки. Вынесена из Send

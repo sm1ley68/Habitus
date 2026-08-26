@@ -61,6 +61,30 @@ func LeadDTO(l domain.Lead) fiber.Map {
 	}
 }
 
+const (
+	leadsDefaultLimit = 20
+	leadsMaxLimit     = 100
+)
+
+// List implements GET /api/v1/owner/leads?limit=&offset= — входящие заявки
+// продавца, свежие сверху. Продавец берётся из сессии, а не из параметров.
+func (h *LeadHandler) List(c *fiber.Ctx) error {
+	limit, offset := parseLimitOffset(c, leadsDefaultLimit)
+	if limit > leadsMaxLimit {
+		limit = leadsMaxLimit
+	}
+
+	rows, total, err := h.leads.ListForSeller(c.Context(), middleware.UserID(c), limit, offset)
+	if err != nil {
+		return err
+	}
+	leads := make([]fiber.Map, 0, len(rows))
+	for _, l := range rows {
+		leads = append(leads, LeadDTO(l))
+	}
+	return c.JSON(fiber.Map{"leads": leads, "count": len(leads), "total": total})
+}
+
 // Send implements POST /objects/{object_id}/lead.
 //
 // Заявка от гостя, которого через месяц вычистит свипер, продавцу бесполезна —

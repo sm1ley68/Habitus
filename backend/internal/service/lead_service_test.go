@@ -124,6 +124,42 @@ func TestLeadSendMapsDuplicateTo409(t *testing.T) {
 	assertAppErrCode(t, err, "lead_already_sent")
 }
 
+type fakeLeadLister struct {
+	rows      []domain.Lead
+	total     int
+	gotSeller uuid.UUID
+	gotLimit  int
+	gotOffset int
+}
+
+func (f *fakeLeadLister) ListForSeller(_ context.Context, sellerID uuid.UUID,
+	limit, offset int) ([]domain.Lead, int, error) {
+	f.gotSeller, f.gotLimit, f.gotOffset = sellerID, limit, offset
+	return f.rows, f.total, nil
+}
+
+// Продавец из сессии, а не из параметра запроса: иначе чужие заявки читались
+// бы подстановкой id в URL.
+func TestLeadListScopesToSessionSeller(t *testing.T) {
+	lister := &fakeLeadLister{rows: []domain.Lead{{Name: "Иван"}}, total: 1}
+	svc := &LeadService{lists: lister}
+	sellerID := uuid.New()
+
+	rows, total, err := svc.ListForSeller(context.Background(), sellerID, 20, 40)
+	if err != nil {
+		t.Fatalf("ListForSeller: %v", err)
+	}
+	if lister.gotSeller != sellerID {
+		t.Fatalf("seller_id = %s, ожидался %s", lister.gotSeller, sellerID)
+	}
+	if lister.gotLimit != 20 || lister.gotOffset != 40 {
+		t.Fatalf("пагинация не доехала: limit=%d offset=%d", lister.gotLimit, lister.gotOffset)
+	}
+	if total != 1 || len(rows) != 1 {
+		t.Fatalf("total = %d, строк = %d", total, len(rows))
+	}
+}
+
 func assertAppErrCode(t *testing.T, err error, code string) {
 	t.Helper()
 	if err == nil {

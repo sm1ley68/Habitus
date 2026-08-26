@@ -70,6 +70,8 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 	// Порядок важен: /listings/import объявляется до /listings/:listing_id,
 	// иначе Fiber примет import за uuid и вернёт 404.
 	ownerGroup := api.Group("/owner", authMw, middleware.RequireRegistered())
+	// /leads — до /listings/:listing_id: иначе Fiber примет "leads" за uuid.
+	ownerGroup.Get("/leads", h.Lead.List)
 	ownerGroup.Get("/listings", h.Owner.List)
 	ownerGroup.Post("/listings", h.Owner.Create)
 	ownerGroup.Post("/listings/import/preview", h.Owner.ImportPreview)
