@@ -11,10 +11,11 @@ import (
 
 type FeedbackHandler struct {
 	feedback *service.FeedbackService
+	events   *service.EventRecorder
 }
 
-func NewFeedbackHandler(feedback *service.FeedbackService) *FeedbackHandler {
-	return &FeedbackHandler{feedback: feedback}
+func NewFeedbackHandler(feedback *service.FeedbackService, events *service.EventRecorder) *FeedbackHandler {
+	return &FeedbackHandler{feedback: feedback, events: events}
 }
 
 type feedbackRequest struct {
@@ -41,5 +42,7 @@ func (h *FeedbackHandler) Save(c *fiber.Ctx) error {
 		objectID, req.Verdict, req.Reason); err != nil {
 		return err
 	}
+	recordEvent(c, h.events, service.EventFeedbackGiven, &chatID, objectID,
+		map[string]any{"verdict": req.Verdict, "has_reason": req.Reason != ""})
 	return c.SendStatus(fiber.StatusNoContent)
 }

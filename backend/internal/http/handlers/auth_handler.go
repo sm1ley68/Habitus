@@ -15,10 +15,11 @@ import (
 type AuthHandler struct {
 	auth         *service.AuthService
 	cookieSecure bool
+	events       *service.EventRecorder
 }
 
-func NewAuthHandler(auth *service.AuthService, cookieSecure bool) *AuthHandler {
-	return &AuthHandler{auth: auth, cookieSecure: cookieSecure}
+func NewAuthHandler(auth *service.AuthService, cookieSecure bool, events *service.EventRecorder) *AuthHandler {
+	return &AuthHandler{auth: auth, cookieSecure: cookieSecure, events: events}
 }
 
 type registerRequest struct {
@@ -61,6 +62,9 @@ func (h *AuthHandler) Guest(c *fiber.Ctx) error {
 		return err
 	}
 	h.setSessionCookie(c, token, expiresAt)
+	// Событие пишется до ответа, но не блокирует его: Record кладёт в буфер.
+	// UserID из Locals тут ещё нет (запрос шёл без сессии), поэтому явно.
+	h.events.Record(domain.ProductEvent{UserID: u.ID, IsGuest: true, Kind: service.EventGuestCreated})
 	return c.Status(fiber.StatusCreated).JSON(guestResponseBody(u.ID, u.Name))
 }
 
@@ -95,6 +99,9 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return err
 	}
 	h.setSessionCookie(c, token, expiresAt)
+	if guestID != uuid.Nil {
+		h.events.Record(domain.ProductEvent{UserID: u.ID, Kind: service.EventGuestUpgraded})
+	}
 	return c.Status(fiber.StatusCreated).JSON(userResponseBody(u.ID, u.Email, u.Name, false))
 }
 

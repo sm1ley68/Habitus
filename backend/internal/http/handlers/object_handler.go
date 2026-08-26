@@ -11,10 +11,11 @@ import (
 
 type ObjectHandler struct {
 	objects *service.ObjectService
+	events  *service.EventRecorder
 }
 
-func NewObjectHandler(objects *service.ObjectService) *ObjectHandler {
-	return &ObjectHandler{objects: objects}
+func NewObjectHandler(objects *service.ObjectService, events *service.EventRecorder) *ObjectHandler {
+	return &ObjectHandler{objects: objects, events: events}
 }
 
 // Get implements GET /objects/{object_id}?chat_id=. ObjectService attaches a
@@ -37,5 +38,15 @@ func (h *ObjectHandler) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+
+	var chatIDPtr *uuid.UUID
+	if chatID != uuid.Nil {
+		chatIDPtr = &chatID
+	}
+	// contact.kind в свойствах — по нему видно, у скольких открытых объектов
+	// вообще был путь к продавцу: без этого падение конверсии в заявку не
+	// отличить от «заявку было некуда отправить».
+	recordEvent(c, h.events, service.EventPassportOpened, chatIDPtr, objectID,
+		map[string]any{"contact_kind": passport.Contact.Kind})
 	return c.JSON(passport)
 }

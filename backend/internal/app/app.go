@@ -39,6 +39,9 @@ type Services struct {
 	// Feedback — оценка объекта в выдаче, единственный продакшн-сигнал о
 	// качестве подбора.
 	Feedback *service.FeedbackService
+	// Events может быть nil — телеметрия выключена (так собраны тесты,
+	// строящие app.Services{} напрямую).
+	Events *service.EventRecorder
 }
 
 // Границы HTTP-слоя. ReadTimeout не режет SSE (он про чтение запроса, а не
@@ -130,17 +133,17 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 
 	httpapi.RegisterRoutes(app, httpapi.Handlers{
 		Health:    handlers.NewHealthHandler(ready),
-		Auth:      handlers.NewAuthHandler(svc.Auth, cfg.SessionCookieSecure),
+		Auth:      handlers.NewAuthHandler(svc.Auth, cfg.SessionCookieSecure, svc.Events),
 		Chat:      handlers.NewChatHandler(svc.Chat),
-		Stream:    handlers.NewStreamHandler(svc.Chat, svc.Stream),
-		Object:    handlers.NewObjectHandler(svc.Object),
+		Stream:    handlers.NewStreamHandler(svc.Chat, svc.Stream, svc.Events),
+		Object:    handlers.NewObjectHandler(svc.Object, svc.Events),
 		ObjectAsk: handlers.NewObjectAskHandler(svc.Object, svc.ObjectAsk),
 		Geo:       handlers.NewGeoHandler(svc.GeoLayers),
 		Results:   handlers.NewResultsHandler(svc.Results),
 		Owner:     handlers.NewOwnerHandler(svc.OwnerListings, svc.OwnerImports, svc.OwnerPhotos),
-		Lead:      handlers.NewLeadHandler(svc.Leads, svc.Auth, cfg.SessionCookieSecure),
-		Favorite:  handlers.NewFavoriteHandler(svc.Favorites),
-		Feedback:  handlers.NewFeedbackHandler(svc.Feedback),
+		Lead:      handlers.NewLeadHandler(svc.Leads, svc.Auth, cfg.SessionCookieSecure, svc.Events),
+		Favorite:  handlers.NewFavoriteHandler(svc.Favorites, svc.Events),
+		Feedback:  handlers.NewFeedbackHandler(svc.Feedback, svc.Events),
 	}, svc.Auth, middleware.RateLimitLLM(rateLimiter, guestLimiter))
 
 	return app

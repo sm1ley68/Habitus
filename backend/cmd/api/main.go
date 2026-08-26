@@ -108,6 +108,9 @@ func main() {
 	feedbackService := service.NewFeedbackService(chatService, chatSearchRepo,
 		repository.NewFeedbackRepo(pool))
 
+	eventRecorder := service.NewEventRecorder(repository.NewEventRepo(pool), 1024)
+	eventRecorder.Start(ctx)
+
 	fiberApp := app.New(cfg, app.Services{
 		Ready:     readinessService,
 		Auth:      authService,
@@ -124,6 +127,7 @@ func main() {
 		Leads:         leadService,
 		Favorites:     favoriteService,
 		Feedback:      feedbackService,
+		Events:        eventRecorder,
 	})
 
 	go func() {

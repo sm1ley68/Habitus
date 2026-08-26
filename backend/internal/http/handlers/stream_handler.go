@@ -20,10 +20,11 @@ import (
 type StreamHandler struct {
 	chats  *service.ChatService
 	stream *service.SearchStreamService
+	events *service.EventRecorder
 }
 
-func NewStreamHandler(chats *service.ChatService, stream *service.SearchStreamService) *StreamHandler {
-	return &StreamHandler{chats: chats, stream: stream}
+func NewStreamHandler(chats *service.ChatService, stream *service.SearchStreamService, events *service.EventRecorder) *StreamHandler {
+	return &StreamHandler{chats: chats, stream: stream, events: events}
 }
 
 type streamRequest struct {
@@ -108,6 +109,10 @@ func (h *StreamHandler) PostMessagesStream(c *fiber.Ctx) error {
 	if !h.stream.TryLock(chatID) {
 		return apperr.StreamInProgress()
 	}
+
+	chatIDCopy := chat.ID
+	recordEvent(c, h.events, service.EventSearchStarted, &chatIDCopy, "",
+		map[string]any{"has_point": point != nil, "text_len": len(text)})
 
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")

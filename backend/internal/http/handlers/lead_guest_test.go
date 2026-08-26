@@ -19,7 +19,7 @@ import (
 // проверка порядка.
 func newGuestLeadApp() *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: middleware.ErrorHandler})
-	h := NewLeadHandler(nil, nil, false)
+	h := NewLeadHandler(nil, nil, false, nil)
 	app.Post("/objects/:object_id/lead", func(c *fiber.Ctx) error {
 		c.Locals(middleware.UserIDLocalsKey, uuid.New())
 		c.Locals(middleware.IsGuestLocalsKey, true)

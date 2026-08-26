@@ -11,10 +11,11 @@ import (
 
 type FavoriteHandler struct {
 	favorites *service.FavoriteService
+	events    *service.EventRecorder
 }
 
-func NewFavoriteHandler(favorites *service.FavoriteService) *FavoriteHandler {
-	return &FavoriteHandler{favorites: favorites}
+func NewFavoriteHandler(favorites *service.FavoriteService, events *service.EventRecorder) *FavoriteHandler {
+	return &FavoriteHandler{favorites: favorites, events: events}
 }
 
 const (
@@ -50,6 +51,7 @@ func (h *FavoriteHandler) Add(c *fiber.Ctx) error {
 	if err := h.favorites.Add(c.Context(), middleware.UserID(c), objectID, chatID); err != nil {
 		return err
 	}
+	recordEvent(c, h.events, service.EventFavoriteAdded, chatID, objectID, nil)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

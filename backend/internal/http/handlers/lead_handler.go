@@ -24,10 +24,11 @@ type LeadHandler struct {
 	leads        *service.LeadService
 	auth         guestUpgrader
 	cookieSecure bool
+	events       *service.EventRecorder
 }
 
-func NewLeadHandler(leads *service.LeadService, auth guestUpgrader, cookieSecure bool) *LeadHandler {
-	return &LeadHandler{leads: leads, auth: auth, cookieSecure: cookieSecure}
+func NewLeadHandler(leads *service.LeadService, auth guestUpgrader, cookieSecure bool, events *service.EventRecorder) *LeadHandler {
+	return &LeadHandler{leads: leads, auth: auth, cookieSecure: cookieSecure, events: events}
 }
 
 // leadRegisterRequest — регистрация прямо в форме заявки. Пароль здесь тот же,
@@ -135,6 +136,17 @@ func (h *LeadHandler) Send(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+
+	// Регистрация из формы заявки — тот же шаг воронки, что и обычный апгрейд
+	// гостя, и считаться должен вместе с ним, иначе конверсия гостей в аккаунты
+	// окажется занижена ровно на самых ценных.
+	if registered {
+		h.events.Record(domain.ProductEvent{UserID: userID, Kind: service.EventGuestUpgraded,
+			Props: map[string]any{"source": "lead_form"}})
+	}
+	recordEvent(c, h.events, service.EventLeadSent, nil, objectID,
+		map[string]any{"has_message": req.Message != "", "registered_inline": registered})
+
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"lead": LeadDTO(lead),
 		// registered говорит фронту, что сессия сменилась и гость стал
