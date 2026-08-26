@@ -158,3 +158,14 @@ type ResultFeedback struct {
 	Verdict    string
 	Reason     string
 }
+
+// ProductEvent — шаг воронки. UserID == uuid.Nil означает «актор неизвестен»
+// и записывается как NULL: телеметрия не имеет права падать из-за этого.
+type ProductEvent struct {
+	UserID     uuid.UUID
+	IsGuest    bool
+	Kind       string
+	ChatID     *uuid.UUID
+	ExternalID string
+	Props      map[string]any
+}
