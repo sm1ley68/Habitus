@@ -120,3 +120,28 @@ func PhotoLimitExceeded(max int) *Error {
 	return New(http.StatusBadRequest, "photo_limit_exceeded",
 		fmt.Sprintf("К объявлению можно приложить не больше %d фотографий", max))
 }
+
+func LeadTargetNotFound() *Error {
+	return New(http.StatusNotFound, "lead_target_not_found",
+		"По этому объекту заявку оставить нельзя — свяжитесь с продавцом у источника")
+}
+
+func LeadAlreadySent() *Error {
+	return New(http.StatusConflict, "lead_already_sent",
+		"Вы уже отправляли заявку по этому объявлению — продавец её видит")
+}
+
+func LeadToSelf() *Error {
+	return New(http.StatusBadRequest, "lead_to_self",
+		"Это ваше собственное объявление")
+}
+
+// RegistrationRequired — не отказ, а приглашение. Гость дошёл до заявки, и
+// именно здесь аккаунт впервые нужен по делу: продавцу нужно, кому ответить.
+// По этому коду фронт открывает регистрацию ПРЯМО В ФОРМЕ заявки, не теряя
+// заполненного, и повторяет запрос с блоком register.
+func RegistrationRequired() *Error {
+	return New(http.StatusForbidden, "registration_required",
+		"Заведите аккаунт, чтобы отправить заявку — продавцу нужно, кому ответить. "+
+			"Всё, что вы уже нашли и сохранили, останется при вас")
+}

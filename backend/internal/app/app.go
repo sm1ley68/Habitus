@@ -31,6 +31,9 @@ type Services struct {
 	OwnerListings *service.OwnerListingService
 	OwnerImports  *service.OwnerImportService
 	OwnerPhotos   *service.PhotoStore
+	// Leads — заявки покупателей продавцам: единственная точка, где гость
+	// заводит аккаунт тем же запросом, а не идёт отдельно на регистрацию.
+	Leads *service.LeadService
 }
 
 // Границы HTTP-слоя. ReadTimeout не режет SSE (он про чтение запроса, а не
@@ -130,6 +133,7 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		Geo:       handlers.NewGeoHandler(svc.GeoLayers),
 		Results:   handlers.NewResultsHandler(svc.Results),
 		Owner:     handlers.NewOwnerHandler(svc.OwnerListings, svc.OwnerImports, svc.OwnerPhotos),
+		Lead:      handlers.NewLeadHandler(svc.Leads, svc.Auth, cfg.SessionCookieSecure),
 	}, svc.Auth, middleware.RateLimitLLM(rateLimiter, guestLimiter))
 
 	return app

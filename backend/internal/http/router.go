@@ -21,6 +21,7 @@ type Handlers struct {
 	Geo       *handlers.GeoHandler
 	Results   *handlers.ResultsHandler
 	Owner     *handlers.OwnerHandler
+	Lead      *handlers.LeadHandler
 }
 
 // rateLimitLLM применяется только к двум ручкам, которые реально жгут бюджет
@@ -55,6 +56,9 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 
 	api.Get("/objects/:object_id", authMw, h.Object.Get)
 	api.Post("/objects/:object_id/ask/stream", authMw, rateLimitLLM, h.ObjectAsk.PostStream)
+	// Без RequireRegistered: гостя здесь не отвергают, а регистрируют тем же
+	// запросом — решение принимает сам хендлер.
+	api.Post("/objects/:object_id/lead", authMw, h.Lead.Send)
 
 	api.Get("/geo/layers", authMw, h.Geo.Layers)
 	api.Get("/geo/listings", authMw, h.Geo.Listings)

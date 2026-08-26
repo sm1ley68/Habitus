@@ -121,3 +121,20 @@ type POI struct {
 	Lon  float64
 	Lat  float64
 }
+
+// Lead — заявка покупателя по объявлению продавца. Name/Contact — то, что
+// покупатель сообщил о себе; контакт продавца в обратную сторону не уходит.
+// Address дублируется из объявления при чтении списка — заявка должна
+// оставаться читаемой, даже если объявление уже сняли.
+type Lead struct {
+	ID         uuid.UUID
+	ListingID  uuid.UUID
+	SellerID   uuid.UUID
+	BuyerID    uuid.UUID
+	ExternalID string
+	Address    string
+	Name       string
+	Contact    string
+	Message    string
+	CreatedAt  time.Time
+}

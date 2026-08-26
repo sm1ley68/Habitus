@@ -100,6 +100,9 @@ func main() {
 		cian.NewUserQuota(cfg.OwnerImportPerHour, nil),
 	)
 
+	leadRepo := repository.NewLeadRepo(pool)
+	leadService := service.NewLeadService(ownerRepo, leadRepo)
+
 	fiberApp := app.New(cfg, app.Services{
 		Ready:     readinessService,
 		Auth:      authService,
@@ -113,6 +116,7 @@ func main() {
 		OwnerListings: ownerListingService,
 		OwnerImports:  ownerImportService,
 		OwnerPhotos:   photoStore,
+		Leads:         leadService,
 	})
 
 	go func() {

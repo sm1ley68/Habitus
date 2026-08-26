@@ -33,15 +33,7 @@ type loginRequest struct {
 }
 
 func (h *AuthHandler) setSessionCookie(c *fiber.Ctx, token string, expiresAt time.Time) {
-	c.Cookie(&fiber.Cookie{
-		Name:     middleware.SessionCookieName,
-		Value:    token,
-		Expires:  expiresAt,
-		HTTPOnly: true,
-		Secure:   h.cookieSecure,
-		SameSite: "Lax",
-		Path:     "/",
-	})
+	setSessionCookie(c, token, expiresAt, h.cookieSecure)
 }
 
 // userResponseBody — общая форма ответа auth-ручек. is_guest отдаётся всегда,
