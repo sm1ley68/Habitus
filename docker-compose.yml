@@ -93,6 +93,13 @@ services:
       HTTP_PORT: "8080"
       SESSION_COOKIE_SECURE: "false"
       CORS_ALLOWED_ORIGIN: "http://localhost:3000"
+      # Гость: первый поиск без регистрации (см. .env.example). Без этих
+      # переменных их нельзя ни поднять, ни опустить в контейнере — сервис
+      # использует явный whitelist ниже, а не env_file.
+      GUEST_RETENTION_DAYS: "${GUEST_RETENTION_DAYS:-30}"
+      GUEST_SWEEP_MINUTES: "${GUEST_SWEEP_MINUTES:-720}"
+      RATE_LIMIT_LLM_GUEST_PER_HOUR: "${RATE_LIMIT_LLM_GUEST_PER_HOUR:-5}"
+      RATE_LIMIT_LLM_PER_HOUR: "${RATE_LIMIT_LLM_PER_HOUR:-30}"
     ports:
       - "8080:8080"
     depends_on:
