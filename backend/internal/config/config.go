@@ -48,6 +48,15 @@ type Settings struct {
 	// CianProxies — пул прокси для импорта; та же переменная, что у батч-парсера.
 	CianProxies []string
 	CianRegion  int
+	// GuestRetentionDays — через сколько дней брошенный гость (без живой
+	// сессии) вычищается вместе со своими чатами.
+	GuestRetentionDays int
+	// GuestSweepMinutes — как часто крутить чистку гостей.
+	GuestSweepMinutes int
+	// RateLimitLLMGuestPerHour — отдельный, более скупой потолок LLM-ручек для
+	// гостя: гостевой аккаунт заводится в один запрос, поэтому общий лимит по
+	// user_id его не сдерживает.
+	RateLimitLLMGuestPerHour int
 }
 
 func Load() Settings {
@@ -77,6 +86,10 @@ func Load() Settings {
 		OwnerPhotoMaxCount:  getenvInt("OWNER_PHOTO_MAX_COUNT", 20),
 		CianProxies:         getenvList("CIAN_PROXIES"),
 		CianRegion:          getenvInt("CIAN_REGION", 1),
+
+		GuestRetentionDays:       getenvInt("GUEST_RETENTION_DAYS", 30),
+		GuestSweepMinutes:        getenvInt("GUEST_SWEEP_MINUTES", 720),
+		RateLimitLLMGuestPerHour: getenvInt("RATE_LIMIT_LLM_GUEST_PER_HOUR", 5),
 	}
 }
 

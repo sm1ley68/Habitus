@@ -56,3 +56,20 @@ func TestDossierTTLHoursDefaultAndOverride(t *testing.T) {
 		t.Fatalf("DossierTTLHours = %d; want 6", got)
 	}
 }
+
+func TestLoadGuestDefaults(t *testing.T) {
+	cfg := Load()
+
+	if cfg.GuestRetentionDays != 30 {
+		t.Fatalf("GuestRetentionDays = %d, ожидалось 30", cfg.GuestRetentionDays)
+	}
+	if cfg.GuestSweepMinutes != 720 {
+		t.Fatalf("GuestSweepMinutes = %d, ожидалось 720", cfg.GuestSweepMinutes)
+	}
+	// Лимит гостя обязан быть строго меньше общего: иначе анонимный трафик
+	// жжёт бюджет LLM наравне с зарегистрированным.
+	if cfg.RateLimitLLMGuestPerHour >= cfg.RateLimitLLMPerHour {
+		t.Fatalf("лимит гостя (%d) не меньше общего (%d)",
+			cfg.RateLimitLLMGuestPerHour, cfg.RateLimitLLMPerHour)
+	}
+}
