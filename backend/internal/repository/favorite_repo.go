@@ -38,10 +38,21 @@ func (r *FavoriteRepo) Remove(ctx context.Context, userID uuid.UUID, externalID 
 	return err
 }
 
+// List отдаёт избранное, свежее сверху. total считается отдельным COUNT(*),
+// а не оконной функцией над той же выборкой: на странице за концом списка
+// окно не вернёт ни одной строки, и total ложно схлопнется в 0 (см.
+// ChatSearchRepo.ListResults — тот же приём).
 func (r *FavoriteRepo) List(ctx context.Context, userID uuid.UUID,
 	limit, offset int) ([]domain.Favorite, int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT count(*) FROM favorites WHERE user_id = $1`, userID,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	rows, err := r.pool.Query(ctx, `
-		SELECT user_id, external_id, chat_id, created_at, COUNT(*) OVER () AS total
+		SELECT user_id, external_id, chat_id, created_at
 		FROM favorites
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -52,10 +63,9 @@ func (r *FavoriteRepo) List(ctx context.Context, userID uuid.UUID,
 	defer rows.Close()
 
 	out := make([]domain.Favorite, 0, limit)
-	total := 0
 	for rows.Next() {
 		var f domain.Favorite
-		if err := rows.Scan(&f.UserID, &f.ExternalID, &f.ChatID, &f.CreatedAt, &total); err != nil {
+		if err := rows.Scan(&f.UserID, &f.ExternalID, &f.ChatID, &f.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, f)

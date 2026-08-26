@@ -107,3 +107,29 @@ func TestFavoriteListIsScopedToUser(t *testing.T) {
 		t.Fatalf("чужому видно %d сохранённых", total)
 	}
 }
+
+// «Показать ещё» дошёл до конца списка: пустая страница не должна занижать
+// total. Оконная функция COUNT(*) OVER () именно так себя и вела — на офсете
+// за пределами списка окно не возвращает ни одной строки.
+func TestFavoriteListReportsTotalPastLastPage(t *testing.T) {
+	pool := testPool(t)
+	users := NewUserRepo(pool)
+	favs := NewFavoriteRepo(pool)
+	ctx := context.Background()
+
+	userID := newTestUser(t, users)
+	if err := favs.Add(ctx, userID, newExternalID(), nil); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	rows, total, err := favs.List(ctx, userID, 10, 50)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("строк = %d, ожидалось 0 (офсет за пределами списка)", len(rows))
+	}
+	if total != 1 {
+		t.Fatalf("total = %d, ожидался честный 1, а не занижен пустой страницей", total)
+	}
+}
