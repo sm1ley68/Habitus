@@ -58,8 +58,8 @@ func TestLeadSendFillsSellerFromListing(t *testing.T) {
 	if store.created.SellerID != sellerID {
 		t.Fatalf("seller_id = %s, ожидался %s", store.created.SellerID, sellerID)
 	}
-	if store.created.ListingID != listingID {
-		t.Fatalf("listing_id = %s, ожидался %s", store.created.ListingID, listingID)
+	if store.created.ListingID == nil || *store.created.ListingID != listingID {
+		t.Fatalf("listing_id = %v, ожидался %s", store.created.ListingID, listingID)
 	}
 	if store.created.BuyerID != buyerID {
 		t.Fatalf("buyer_id = %s, ожидался %s", store.created.BuyerID, buyerID)

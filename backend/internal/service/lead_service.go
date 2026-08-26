@@ -86,6 +86,33 @@ func ValidateLeadInput(in LeadInput) (LeadInput, error) {
 	return out, nil
 }
 
+// ResolveTarget проверяет, что заявке есть куда идти: объявление существует,
+// опубликовано и не принадлежит самому отправителю. Вынесена из Send отдельным
+// экспортированным методом, чтобы хендлер мог проверить пригодность цели ДО
+// того, как заведёт гостю аккаунт, — иначе гость получал бы новый пароль ради
+// заявки, которая тут же откажет 404. Send вызывает её же: сервис не должен
+// полагаться на то, что вызывающий уже проверил цель сам.
+func (s *LeadService) ResolveTarget(ctx context.Context, buyerID uuid.UUID,
+	externalID string) (domain.OwnerListing, error) {
+	listing, err := s.targets.GetByExternalID(ctx, externalID)
+	if errors.Is(err, repository.ErrNotFound) {
+		// Объект витринный — продавца в системе нет, заявке некуда идти.
+		return domain.OwnerListing{}, apperr.LeadTargetNotFound()
+	}
+	if err != nil {
+		return domain.OwnerListing{}, err
+	}
+	// Заявки принимает только опубликованное: черновик и снятое с витрины
+	// продавец скрыл сознательно. Тот же критерий, что у contact.kind в паспорте.
+	if listing.Status != "published" {
+		return domain.OwnerListing{}, apperr.LeadTargetNotFound()
+	}
+	if listing.UserID == buyerID {
+		return domain.OwnerListing{}, apperr.LeadToSelf()
+	}
+	return listing, nil
+}
+
 func (s *LeadService) Send(ctx context.Context, buyerID uuid.UUID, externalID string,
 	in LeadInput) (domain.Lead, error) {
 	// Повторная проверка, даже если хендлер уже вызывал ValidateLeadInput:
@@ -96,26 +123,16 @@ func (s *LeadService) Send(ctx context.Context, buyerID uuid.UUID, externalID st
 	}
 	name, contact, message := in.Name, in.Contact, in.Message
 
-	listing, err := s.targets.GetByExternalID(ctx, externalID)
-	if errors.Is(err, repository.ErrNotFound) {
-		// Объект витринный — продавца в системе нет, заявке некуда идти.
-		return domain.Lead{}, apperr.LeadTargetNotFound()
-	}
+	listing, err := s.ResolveTarget(ctx, buyerID, externalID)
 	if err != nil {
 		return domain.Lead{}, err
 	}
-	// Заявки принимает только опубликованное: черновик и снятое с витрины
-	// продавец скрыл сознательно. Тот же критерий, что у contact.kind в паспорте.
-	if listing.Status != "published" {
-		return domain.Lead{}, apperr.LeadTargetNotFound()
-	}
-	if listing.UserID == buyerID {
-		return domain.Lead{}, apperr.LeadToSelf()
-	}
 
+	listingID := listing.ID
 	lead, err := s.leads.Create(ctx, domain.Lead{
-		ListingID: listing.ID, SellerID: listing.UserID, BuyerID: buyerID,
-		ExternalID: listing.ExternalID, Name: name, Contact: contact, Message: message,
+		ListingID: &listingID, SellerID: listing.UserID, BuyerID: buyerID,
+		ExternalID: listing.ExternalID, Address: listing.Address,
+		Name: name, Contact: contact, Message: message,
 	})
 	if errors.Is(err, repository.ErrDuplicateLead) {
 		return domain.Lead{}, apperr.LeadAlreadySent()

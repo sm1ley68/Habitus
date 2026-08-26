@@ -20,14 +20,23 @@ type guestUpgrader interface {
 	UpgradeGuest(ctx context.Context, guestID uuid.UUID, email, password, name string) (domain.User, string, time.Time, error)
 }
 
+// leadSender — часть LeadService, нужная хендлеру. Обособленный интерфейс по
+// той же причине, что и guestUpgrader: без него порядок «сначала цель, потом
+// апгрейд гостя» нельзя было бы проверить без поднятой БД.
+type leadSender interface {
+	ResolveTarget(ctx context.Context, buyerID uuid.UUID, externalID string) (domain.OwnerListing, error)
+	Send(ctx context.Context, buyerID uuid.UUID, externalID string, in service.LeadInput) (domain.Lead, error)
+	ListForSeller(ctx context.Context, sellerID uuid.UUID, limit, offset int) ([]domain.Lead, int, error)
+}
+
 type LeadHandler struct {
-	leads        *service.LeadService
+	leads        leadSender
 	auth         guestUpgrader
 	cookieSecure bool
 	events       *service.EventRecorder
 }
 
-func NewLeadHandler(leads *service.LeadService, auth guestUpgrader, cookieSecure bool, events *service.EventRecorder) *LeadHandler {
+func NewLeadHandler(leads leadSender, auth guestUpgrader, cookieSecure bool, events *service.EventRecorder) *LeadHandler {
 	return &LeadHandler{leads: leads, auth: auth, cookieSecure: cookieSecure, events: events}
 }
 
@@ -113,6 +122,15 @@ func (h *LeadHandler) Send(c *fiber.Ctx) error {
 	}
 
 	userID := middleware.UserID(c)
+
+	// Цель проверяется ДО апгрейда гостя: объект могли снять с публикации
+	// между открытием паспорта и отправкой формы, и заводить аккаунт ради
+	// заявки, которая тут же откажет 404, не нужно. id покупателя апгрейд не
+	// меняет, так что проверка тем же userID остаётся верной и после него.
+	if _, err := h.leads.ResolveTarget(c.Context(), userID, objectID); err != nil {
+		return err
+	}
+
 	registered := false
 	if middleware.IsGuest(c) {
 		if req.Register == nil || req.Register.Email == "" || req.Register.Password == "" {
@@ -130,6 +148,9 @@ func (h *LeadHandler) Send(c *fiber.Ctx) error {
 		setSessionCookie(c, token, expiresAt, h.cookieSecure)
 		userID = u.ID
 		registered = true
+		// Locals не обновляются после апгрейда в том же запросе: без этого
+		// recordEvent ниже прочитал бы is_guest=true у уже зарегистрированного.
+		c.Locals(middleware.IsGuestLocalsKey, false)
 	}
 
 	lead, err := h.leads.Send(c.Context(), userID, objectID, input)
