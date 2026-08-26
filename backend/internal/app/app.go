@@ -34,6 +34,8 @@ type Services struct {
 	// Leads — заявки покупателей продавцам: единственная точка, где гость
 	// заводит аккаунт тем же запросом, а не идёт отдельно на регистрацию.
 	Leads *service.LeadService
+	// Favorites — сохранённые объекты, переживают чат и доступны гостю.
+	Favorites *service.FavoriteService
 }
 
 // Границы HTTP-слоя. ReadTimeout не режет SSE (он про чтение запроса, а не
@@ -89,7 +91,7 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		AllowOrigins:     cfg.CORSAllowedOrigin,
 		AllowCredentials: true,
 		AllowHeaders:     "Content-Type",
-		AllowMethods:     "GET,POST,PATCH,DELETE,OPTIONS",
+		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	}))
 	// habitus_http_requests_total (Task 8): считает завершившиеся без ошибки
 	// ответы; ошибочные (429/404/500/…) считает middleware.ErrorHandler — там
@@ -134,6 +136,7 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		Results:   handlers.NewResultsHandler(svc.Results),
 		Owner:     handlers.NewOwnerHandler(svc.OwnerListings, svc.OwnerImports, svc.OwnerPhotos),
 		Lead:      handlers.NewLeadHandler(svc.Leads, svc.Auth, cfg.SessionCookieSecure),
+		Favorite:  handlers.NewFavoriteHandler(svc.Favorites),
 	}, svc.Auth, middleware.RateLimitLLM(rateLimiter, guestLimiter))
 
 	return app

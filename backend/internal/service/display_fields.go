@@ -9,6 +9,9 @@ package service
 import (
 	"fmt"
 	"math"
+	"time"
+
+	"github.com/google/uuid"
 
 	"habitus-backend/internal/client"
 	"habitus-backend/internal/domain"
@@ -179,5 +182,53 @@ func BuildStoredResultObject(res domain.ChatSearchResult, listings map[string]do
 		AreaSqm:     l.Area,
 		Floor:       FormatFloor(l.Level, l.Levels),
 		Tags:        BuildTags(res.AddressFacts),
+	}, true
+}
+
+// FavoriteObject — карточка сохранённого объекта. Намеренно БЕЗ match_score и
+// tags: и то и другое — свойства конкретного запроса, а не объекта, и ноль
+// вместо них был бы выдуманным «0% совпадения». ChatID отдаётся, чтобы
+// паспорт открылся с досье того подбора, из которого объект сохранён.
+type FavoriteObject struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Address     string     `json:"address"`
+	CoverImage  string     `json:"cover_image"`
+	Coordinates []float64  `json:"coordinates"`
+	PriceFrom   *int64     `json:"price_from"`
+	Rooms       *int       `json:"rooms"`
+	AreaSqm     *float64   `json:"area_sqm"`
+	Floor       string     `json:"floor"`
+	ChatID      *uuid.UUID `json:"chat_id"`
+	SavedAt     time.Time  `json:"saved_at"`
+}
+
+// BuildFavoriteObject возвращает false, если объекта нет в витрине или у него
+// нет координат — ровно как BuildStoredResultObject: пропавший объект тихо
+// выпадает из списка, а не роняет запрос.
+func BuildFavoriteObject(f domain.Favorite, l domain.Listing) (FavoriteObject, bool) {
+	if l.ExternalID == "" || l.Lon == nil || l.Lat == nil {
+		return FavoriteObject{}, false
+	}
+	address := ""
+	if l.Address != nil {
+		address = *l.Address
+	}
+	cover := PlaceholderCoverImage
+	if len(l.Photos) > 0 && l.Photos[0] != "" {
+		cover = l.Photos[0]
+	}
+	return FavoriteObject{
+		ID:          f.ExternalID,
+		Name:        SynthName(l.Rooms, l.Area),
+		Address:     address,
+		CoverImage:  cover,
+		Coordinates: []float64{*l.Lon, *l.Lat},
+		PriceFrom:   l.Price,
+		Rooms:       l.Rooms,
+		AreaSqm:     l.Area,
+		Floor:       FormatFloor(l.Level, l.Levels),
+		ChatID:      f.ChatID,
+		SavedAt:     f.CreatedAt,
 	}, true
 }

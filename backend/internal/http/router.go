@@ -22,6 +22,7 @@ type Handlers struct {
 	Results   *handlers.ResultsHandler
 	Owner     *handlers.OwnerHandler
 	Lead      *handlers.LeadHandler
+	Favorite  *handlers.FavoriteHandler
 }
 
 // rateLimitLLM применяется только к двум ручкам, которые реально жгут бюджет
@@ -62,6 +63,12 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 
 	api.Get("/geo/layers", authMw, h.Geo.Layers)
 	api.Get("/geo/listings", authMw, h.Geo.Listings)
+
+	// Избранное доступно и гостю: сохранённое переживёт регистрацию — id
+	// пользователя при апгрейде не меняется.
+	api.Get("/favorites", authMw, h.Favorite.List)
+	api.Put("/favorites/:object_id", authMw, h.Favorite.Add)
+	api.Delete("/favorites/:object_id", authMw, h.Favorite.Remove)
 
 	// Личный кабинет продавца. Всё за authMw: объявление всегда принадлежит
 	// конкретному пользователю, анонимного доступа здесь нет по определению.

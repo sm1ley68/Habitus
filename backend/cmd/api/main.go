@@ -103,6 +103,8 @@ func main() {
 	leadRepo := repository.NewLeadRepo(pool)
 	leadService := service.NewLeadService(ownerRepo, leadRepo)
 
+	favoriteService := service.NewFavoriteService(repository.NewFavoriteRepo(pool), listingRepo)
+
 	fiberApp := app.New(cfg, app.Services{
 		Ready:     readinessService,
 		Auth:      authService,
@@ -117,6 +119,7 @@ func main() {
 		OwnerImports:  ownerImportService,
 		OwnerPhotos:   photoStore,
 		Leads:         leadService,
+		Favorites:     favoriteService,
 	})
 
 	go func() {

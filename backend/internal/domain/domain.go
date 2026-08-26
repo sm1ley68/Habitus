@@ -138,3 +138,13 @@ type Lead struct {
 	Message    string
 	CreatedAt  time.Time
 }
+
+// Favorite — сохранённый объект. ChatID помнит, из какого подбора он сохранён:
+// с ним паспорт откроется с досье, без него — как «с карты». nil — законное
+// значение (объект сохранён с карты или чат удалён).
+type Favorite struct {
+	UserID     uuid.UUID
+	ExternalID string
+	ChatID     *uuid.UUID
+	CreatedAt  time.Time
+}
