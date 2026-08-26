@@ -100,8 +100,10 @@ func (r *UserRepo) UpgradeGuest(ctx context.Context, id uuid.UUID,
 		return domain.User{}, ErrNotFound
 	}
 	if err != nil {
+		// Сужено по имени ограничения (как в owner_listing_repo.go): широкая
+		// ловля 23505 в пакете уже приводила к путанице между стилями.
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "users_email_key" {
 			return domain.User{}, ErrDuplicateEmail
 		}
 		return domain.User{}, err
