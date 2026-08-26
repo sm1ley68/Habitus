@@ -20,7 +20,7 @@ func seedUser(t *testing.T, repo *UserRepo) uuid.UUID {
 }
 
 func TestDeleteExpiredRemovesOnlyStaleSessions(t *testing.T) {
-	// Протухшие сессии не удалял никто: GetUserID их просто не отдаёт, а строки
+	// Протухшие сессии не удалял никто: GetSession их просто не отдаёт, а строки
 	// копятся в таблице вечно.
 	pool := testPool(t)
 	ctx := context.Background()
@@ -44,7 +44,7 @@ func TestDeleteExpiredRemovesOnlyStaleSessions(t *testing.T) {
 		t.Fatalf("removed = %d; протухшая сессия должна быть удалена", removed)
 	}
 
-	if _, err := sessions.GetUserID(ctx, live); err != nil {
+	if _, _, err := sessions.GetSession(ctx, live); err != nil {
 		t.Fatalf("живая сессия пропала после чистки: %v", err)
 	}
 

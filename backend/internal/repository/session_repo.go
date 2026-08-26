@@ -25,19 +25,6 @@ func (r *SessionRepo) Create(ctx context.Context, tokenHash string, userID uuid.
 	return err
 }
 
-// GetUserID returns ErrNotFound if the token is missing or expired.
-func (r *SessionRepo) GetUserID(ctx context.Context, tokenHash string) (uuid.UUID, error) {
-	var userID uuid.UUID
-	err := r.pool.QueryRow(ctx, `
-		SELECT user_id FROM sessions WHERE token_hash = $1 AND expires_at > now()`,
-		tokenHash,
-	).Scan(&userID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, ErrNotFound
-	}
-	return userID, err
-}
-
 // GetSession отдаёт владельца сессии вместе с признаком гостя — одним
 // запросом, а не двумя: этот вызов стоит на каждом запросе к API, и лишний
 // round-trip к БД тут заметен. ErrNotFound на отсутствующей или протухшей.
@@ -62,7 +49,7 @@ func (r *SessionRepo) Delete(ctx context.Context, tokenHash string) error {
 }
 
 // DeleteExpired вычищает протухшие сессии и возвращает число удалённых строк.
-// GetUserID их и так не отдаёт (фильтр по expires_at), но без чистки таблица
+// GetSession их и так не отдаёт (фильтр по expires_at), но без чистки таблица
 // растёт вечно — за месяц TTL там оседают все логины, что были.
 func (r *SessionRepo) DeleteExpired(ctx context.Context) (int64, error) {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at <= now()`)

@@ -81,7 +81,10 @@ func RegisterRoutes(app *fiber.App, h Handlers, authSvc *service.AuthService, ra
 	// Порядок важен: /listings/import объявляется до /listings/:listing_id,
 	// иначе Fiber примет import за uuid и вернёт 404.
 	ownerGroup := api.Group("/owner", authMw, middleware.RequireRegistered())
-	// /leads — до /listings/:listing_id: иначе Fiber примет "leads" за uuid.
+	// /leads расходится с /listings/:listing_id уже на первом сегменте пути
+	// ("leads" против "listings") — коллизии с :listing_id тут нет ни при
+	// каком порядке. Строка стоит первой просто по смыслу: заявки — то, ради
+	// чего продавец в первую очередь заходит в кабинет.
 	ownerGroup.Get("/leads", h.Lead.List)
 	ownerGroup.Get("/listings", h.Owner.List)
 	ownerGroup.Post("/listings", h.Owner.Create)
