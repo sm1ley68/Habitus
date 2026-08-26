@@ -25,7 +25,7 @@ func NewListingRepo(pool *pgxpool.Pool) *ListingRepo {
 func scanListing(rows pgx.Rows) (domain.Listing, error) {
 	var l domain.Listing
 	err := rows.Scan(&l.ExternalID, &l.Price, &l.Area, &l.Rooms, &l.Level, &l.Levels,
-		&l.Lon, &l.Lat, &l.Address, &l.MetroStation, &l.Photos,
+		&l.Lon, &l.Lat, &l.Address, &l.MetroStation, &l.SourceURL, &l.Photos,
 		&l.WalkMinSchool, &l.WalkMinMetro, &l.WalkMinPark, &l.BarDensity500m, &l.NoiseLevel)
 	return l, err
 }
@@ -40,7 +40,7 @@ func (r *ListingRepo) GetByExternalIDs(ctx context.Context, ids []string) (map[s
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT external_id, price, area, rooms, level, levels,
-		       ST_X(geom), ST_Y(geom), address, metro_station, photos,
+		       ST_X(geom), ST_Y(geom), address, metro_station, source_url, photos,
 		       walk_min_school, walk_min_metro, walk_min_park,
 		       bar_density_500m, noise_level
 		FROM listings WHERE external_id = ANY($1)`, ids)
@@ -97,7 +97,7 @@ func (r *ListingRepo) ListInBBox(ctx context.Context, city string, bbox [4]float
 	limit int) ([]domain.Listing, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT external_id, price, area, rooms, level, levels,
-		       ST_X(geom), ST_Y(geom), address, metro_station, photos,
+		       ST_X(geom), ST_Y(geom), address, metro_station, source_url, photos,
 		       walk_min_school, walk_min_metro, walk_min_park,
 		       bar_density_500m, noise_level
 		FROM listings

@@ -67,7 +67,9 @@ func main() {
 		time.Duration(cfg.GuestRetentionDays)*24*time.Hour)
 	chatService := service.NewChatService(chatRepo, messageRepo)
 	dossierTimeout := time.Duration(cfg.MLDossierTimeoutS) * time.Second
-	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo, mlClient, dossierTimeout, cfg.DossierTTLHours)
+	ownerRepo := repository.NewOwnerListingRepo(pool)
+	objectService := service.NewObjectService(chatService, chatSearchRepo, listingRepo,
+		ownerRepo, mlClient, dossierTimeout, cfg.DossierTTLHours)
 	objectAskTimeout := time.Duration(cfg.MLObjectAskTimeoutS) * time.Second
 	objectAskService := service.NewObjectAskService(chatSearchRepo, mlClient, objectAskTimeout)
 	geoLayersService := service.NewGeoLayersService(poiRepo, evidenceRepo, listingRepo)
@@ -81,7 +83,6 @@ func main() {
 		"ml": mlClient.Health,
 	})
 
-	ownerRepo := repository.NewOwnerListingRepo(pool)
 	ownerListingService := service.NewOwnerListingService(
 		ownerRepo,
 		client.NewMLClient(cfg.MLServiceURL, time.Duration(cfg.MLOwnerTimeoutS)*time.Second),

@@ -248,7 +248,38 @@ type ObjectPassport struct {
 	Floor             string            `json:"floor"`
 	Images            []string          `json:"images"`
 	Coordinates       []float64         `json:"coordinates"`
+	Contact           PassportContact   `json:"contact"`
 	LifestyleAnalysis LifestyleAnalysis `json:"lifestyle_analysis"`
+}
+
+// Способы связаться с объектом. Ровно один из трёх — фронт по нему решает,
+// какую кнопку рисовать, и не гадает по косвенным признакам.
+const (
+	ContactKindLead     = "lead"     // объявление продавца в кабинете — форма заявки
+	ContactKindExternal = "external" // витринный объект — уход на источник
+	ContactKindNone     = "none"     // связаться нечем
+)
+
+// PassportContact — единственное действие, которое паспорт предлагает
+// пользователю. До его появления путь обрывался на «вот красивое досье».
+type PassportContact struct {
+	Kind string `json:"kind"`
+	// SourceURL заполняется только при kind == external.
+	SourceURL string `json:"source_url,omitempty"`
+}
+
+// BuildPassportContact. Приоритет у продавца в системе: если объявление ведут
+// в кабинете, уводить покупателя на Циан мимо него — прямой вред. Заявки
+// принимает только опубликованное объявление: черновик и снятое с витрины
+// продавец скрыл сознательно.
+func BuildPassportContact(owner domain.OwnerListing, ownerFound bool, l domain.Listing) PassportContact {
+	if ownerFound && owner.Status == "published" {
+		return PassportContact{Kind: ContactKindLead}
+	}
+	if l.SourceURL != nil && *l.SourceURL != "" {
+		return PassportContact{Kind: ContactKindExternal, SourceURL: *l.SourceURL}
+	}
+	return PassportContact{Kind: ContactKindNone}
 }
 
 // dossierStore и listingSource — части ChatSearchRepo и ListingRepo, нужные
@@ -267,10 +298,18 @@ type listingSource interface {
 	GetUpdatedAt(ctx context.Context, externalID string) (*time.Time, error)
 }
 
+// ownerLookup — часть OwnerListingRepo, нужная паспорту: узнать, ведёт ли
+// объект продавец в кабинете. Обособленный интерфейс — чтобы тест мог
+// подставить «продавца нет» без реальной БД.
+type ownerLookup interface {
+	GetByExternalID(ctx context.Context, externalID string) (domain.OwnerListing, error)
+}
+
 type ObjectService struct {
 	chats     *ChatService
 	results   dossierStore
 	listings  listingSource
+	owners    ownerLookup
 	ml        *client.MLClient
 	mlTimeout time.Duration
 	// ttlHours — срок жизни кэша chat_search_results.dossier (Task 7, config
@@ -287,10 +326,11 @@ type dossierCall struct {
 }
 
 func NewObjectService(chats *ChatService, results *repository.ChatSearchRepo,
-	listings *repository.ListingRepo, ml *client.MLClient, mlTimeout time.Duration,
-	ttlHours int) *ObjectService {
+	listings *repository.ListingRepo, owners *repository.OwnerListingRepo,
+	ml *client.MLClient, mlTimeout time.Duration, ttlHours int) *ObjectService {
 	return &ObjectService{chats: chats, results: results, listings: listings,
-		ml: ml, mlTimeout: mlTimeout, ttlHours: ttlHours, inFlight: make(map[string]*dossierCall)}
+		owners: owners, ml: ml, mlTimeout: mlTimeout, ttlHours: ttlHours,
+		inFlight: make(map[string]*dossierCall)}
 }
 
 func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUID, objectID string) (ObjectPassport, error) {
@@ -303,7 +343,7 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 		if err != nil {
 			return ObjectPassport{}, apperr.ObjectNotFound()
 		}
-		return buildStandalonePassport(listing), nil
+		return s.attachContact(ctx, buildStandalonePassport(listing), listing), nil
 	}
 
 	chat, err := s.chats.GetOwned(ctx, userID, chatID)
@@ -319,7 +359,7 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 		if lerr != nil {
 			return ObjectPassport{}, apperr.ObjectNotFound()
 		}
-		return buildStandalonePassport(listing), nil
+		return s.attachContact(ctx, buildStandalonePassport(listing), listing), nil
 	}
 	if err != nil {
 		return ObjectPassport{}, err
@@ -346,7 +386,23 @@ func (s *ObjectService) GetPassport(ctx context.Context, userID, chatID uuid.UUI
 
 	p := staticPassport(listing)
 	p.LifestyleAnalysis = analysis
-	return p, nil
+	return s.attachContact(ctx, p, listing), nil
+}
+
+// attachContact дописывает способ связи. Ошибка поиска продавца НЕ роняет
+// паспорт: объект показать всё ещё можно, просто без кнопки заявки —
+// деградация, а не отказ, как везде в этом сервисе.
+func (s *ObjectService) attachContact(ctx context.Context, p ObjectPassport, l domain.Listing) ObjectPassport {
+	var owner domain.OwnerListing
+	found := false
+	if s.owners != nil {
+		o, err := s.owners.GetByExternalID(ctx, l.ExternalID)
+		if err == nil {
+			owner, found = o, true
+		}
+	}
+	p.Contact = BuildPassportContact(owner, found, l)
+	return p
 }
 
 // staticPassport — часть паспорта, которая не зависит от запроса: всё берётся
