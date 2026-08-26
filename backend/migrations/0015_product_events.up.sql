@@ -9,6 +9,10 @@ CREATE TABLE product_events (
     -- его по джойну будет уже не с чем.
     is_guest    boolean NOT NULL DEFAULT false,
     kind        text NOT NULL,
+    -- Без FK на chats нарочно: chat_id тут — историческая метка, а не связь,
+    -- которую нужно поддерживать (в отличие от favorites, где FK есть и
+    -- сохранённое должно жить только пока жив чат). Удаление чата не должно
+    -- ни обнулять, ни каскадом рвать строки append-only журнала.
     chat_id     uuid,
     external_id text,
     props       jsonb NOT NULL DEFAULT '{}',

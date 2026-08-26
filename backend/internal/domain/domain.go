@@ -124,11 +124,12 @@ type POI struct {
 
 // Lead — заявка покупателя по объявлению продавца. Name/Contact — то, что
 // покупатель сообщил о себе; контакт продавца в обратную сторону не уходит.
-// Address дублируется из объявления при чтении списка — заявка должна
-// оставаться читаемой, даже если объявление уже сняли.
+// Продавец может снять и удалить объявление — заявка в его истории должна
+// остаться читаемой, поэтому ListingID nullable (FK ON DELETE SET NULL), а
+// ExternalID/Address хранятся копией на момент отправки, а не джойном.
 type Lead struct {
 	ID         uuid.UUID
-	ListingID  uuid.UUID
+	ListingID  *uuid.UUID
 	SellerID   uuid.UUID
 	BuyerID    uuid.UUID
 	ExternalID string

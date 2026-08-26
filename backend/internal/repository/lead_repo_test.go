@@ -46,8 +46,9 @@ func TestLeadCreateAndListForSeller(t *testing.T) {
 	listing := newTestOwnerListing(t, owners, sellerID)
 
 	created, err := leads.Create(ctx, domain.Lead{
-		ListingID: listing.ID, SellerID: sellerID, BuyerID: buyerID,
-		ExternalID: listing.ExternalID, Name: "Иван", Contact: "+7 999 000-00-00",
+		ListingID: &listing.ID, SellerID: sellerID, BuyerID: buyerID,
+		ExternalID: listing.ExternalID, Address: listing.Address,
+		Name: "Иван", Contact: "+7 999 000-00-00",
 		Message: "Можно посмотреть в субботу?",
 	})
 	if err != nil {
@@ -88,7 +89,7 @@ func TestLeadCreateRejectsDuplicate(t *testing.T) {
 	buyerID := newTestUser(t, users)
 	listing := newTestOwnerListing(t, owners, sellerID)
 	lead := domain.Lead{
-		ListingID: listing.ID, SellerID: sellerID, BuyerID: buyerID,
+		ListingID: &listing.ID, SellerID: sellerID, BuyerID: buyerID,
 		ExternalID: listing.ExternalID, Name: "Иван", Contact: "+7 999 000-00-00",
 	}
 
@@ -116,7 +117,7 @@ func TestLeadListForSellerIsScoped(t *testing.T) {
 	listing := newTestOwnerListing(t, owners, sellerID)
 
 	if _, err := leads.Create(ctx, domain.Lead{
-		ListingID: listing.ID, SellerID: sellerID, BuyerID: buyerID,
+		ListingID: &listing.ID, SellerID: sellerID, BuyerID: buyerID,
 		ExternalID: listing.ExternalID, Name: "Иван", Contact: "+7 999 000-00-00",
 	}); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -128,5 +129,85 @@ func TestLeadListForSellerIsScoped(t *testing.T) {
 	}
 	if total != 0 || len(rows) != 0 {
 		t.Fatalf("чужому продавцу видно %d заявок", len(rows))
+	}
+}
+
+// Продавец снимает и удаляет объявление — заявка не должна пропасть вместе с
+// ним: 0012 обещала это комментарием, но FK был CASCADE. 0016 чинит FK на
+// SET NULL — эта проверка и есть регресс-тест на то обещание.
+func TestLeadSurvivesListingDeletion(t *testing.T) {
+	pool := testPool(t)
+	users := NewUserRepo(pool)
+	owners := NewOwnerListingRepo(pool)
+	leads := NewLeadRepo(pool)
+	ctx := context.Background()
+
+	sellerID := newTestUser(t, users)
+	buyerID := newTestUser(t, users)
+	listing := newTestOwnerListing(t, owners, sellerID)
+
+	created, err := leads.Create(ctx, domain.Lead{
+		ListingID: &listing.ID, SellerID: sellerID, BuyerID: buyerID,
+		ExternalID: listing.ExternalID, Address: listing.Address,
+		Name: "Иван", Contact: "+7 999 000-00-00",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := owners.Delete(ctx, listing.ID, sellerID); err != nil {
+		t.Fatalf("удалить объявление: %v", err)
+	}
+
+	rows, total, err := leads.ListForSeller(ctx, sellerID, 10, 0)
+	if err != nil {
+		t.Fatalf("ListForSeller: %v", err)
+	}
+	if total != 1 || len(rows) != 1 {
+		t.Fatalf("total = %d, строк = %d; заявка должна остаться видимой", total, len(rows))
+	}
+	if rows[0].ID != created.ID {
+		t.Fatalf("id = %s, ожидался %s", rows[0].ID, created.ID)
+	}
+	if rows[0].ListingID != nil {
+		t.Fatalf("listing_id = %v, ожидался nil (объявление удалено)", *rows[0].ListingID)
+	}
+	if rows[0].Address != listing.Address {
+		t.Fatalf("address = %q, ожидался сохранённый %q (объявления уже нет — брать неоткуда)",
+			rows[0].Address, listing.Address)
+	}
+}
+
+// «Показать ещё» дошёл до конца списка: пустая страница не должна занижать
+// total. Оконная функция COUNT(*) OVER () именно так себя и вела — на офсете
+// за пределами списка окно не возвращает ни одной строки.
+func TestLeadListForSellerReportsTotalPastLastPage(t *testing.T) {
+	pool := testPool(t)
+	users := NewUserRepo(pool)
+	owners := NewOwnerListingRepo(pool)
+	leads := NewLeadRepo(pool)
+	ctx := context.Background()
+
+	sellerID := newTestUser(t, users)
+	buyerID := newTestUser(t, users)
+	listing := newTestOwnerListing(t, owners, sellerID)
+
+	if _, err := leads.Create(ctx, domain.Lead{
+		ListingID: &listing.ID, SellerID: sellerID, BuyerID: buyerID,
+		ExternalID: listing.ExternalID, Address: listing.Address,
+		Name: "Иван", Contact: "+7 999 000-00-00",
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	rows, total, err := leads.ListForSeller(ctx, sellerID, 10, 50)
+	if err != nil {
+		t.Fatalf("ListForSeller: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("строк = %d, ожидалось 0 (офсет за пределами списка)", len(rows))
+	}
+	if total != 1 {
+		t.Fatalf("total = %d, ожидался честный 1, а не занижен пустой страницей", total)
 	}
 }

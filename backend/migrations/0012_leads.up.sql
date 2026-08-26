@@ -2,6 +2,9 @@
 -- наружу уходит только то, что покупатель сам о себе сообщил.
 CREATE TABLE leads (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- CASCADE здесь исторический: 0016_leads_survive_listing делает колонку
+    -- nullable и меняет FK на SET NULL — снятое объявление не должно уносить
+    -- заявку из истории продавца. Тут оставлено как было применено.
     listing_id  uuid NOT NULL REFERENCES owner_listings(id) ON DELETE CASCADE,
     -- seller_id денормализован из owner_listings.user_id: список заявок
     -- продавца — самый частый запрос кабинета, и join ради него на каждой
@@ -9,7 +12,8 @@ CREATE TABLE leads (
     seller_id   uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     buyer_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     -- external_id хранится копией: объявление могут снять и удалить, а заявка
-    -- в истории продавца должна остаться читаемой.
+    -- в истории продавца должна остаться читаемой. address (0016) хранится
+    -- копией по той же причине.
     external_id text NOT NULL,
     name        text NOT NULL,
     contact     text NOT NULL,
