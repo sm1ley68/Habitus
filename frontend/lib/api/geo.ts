@@ -12,12 +12,13 @@ export async function fetchLayers(
   city: string,
   layers: LayerId[],
   bbox?: [number, number, number, number],
+  signal?: AbortSignal,
 ): Promise<LayerCollections> {
   if (!layers.length) return {};
   const bboxParam = bbox ? `&bbox=${bbox.join(",")}` : "";
   const res = await fetch(
     `${API_BASE}/geo/layers?city=${encodeURIComponent(city)}&layers=${layers.join(",")}${bboxParam}`,
-    { credentials: "include" },
+    { credentials: "include", signal },
   );
   if (!res.ok) throw new Error(`fetchLayers failed: ${res.status}`);
   const body = await res.json();
@@ -35,11 +36,12 @@ export type ListingFeature = GeoJSON.Feature<GeoJSON.Point, {
 export async function fetchListings(
   city: string,
   bbox?: [number, number, number, number],
+  signal?: AbortSignal,
 ): Promise<GeoJSON.FeatureCollection> {
   if (!bbox) return { type: "FeatureCollection", features: [] };
   const res = await fetch(
     `${API_BASE}/geo/listings?city=${encodeURIComponent(city)}&bbox=${bbox.join(",")}`,
-    { credentials: "include" },
+    { credentials: "include", signal },
   );
   if (!res.ok) throw new Error(`fetchListings failed: ${res.status}`);
   const body = await res.json();

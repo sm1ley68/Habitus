@@ -45,7 +45,10 @@
    holds the hidden state during its stagger delay but releases afterward —
    leaving the hover/active transform free to take over (a `both`/`forwards`
    fill would pin the transform and break hover). */
-.pin { cursor: pointer; }
+.pin {
+  cursor: pointer;
+  transition: opacity 180ms var(--ease-standard);
+}
 .pin__dot {
   position: relative;
   display: block;
@@ -100,8 +103,13 @@
   border-radius: 9999px;
   background: #6c718a;
   box-shadow: 0 1px 5px rgba(20, 20, 34, 0.3);
+  animation: mapMarkerFadeIn 220ms var(--ease-standard) both;
   transition: transform var(--dur-fast) var(--ease-standard),
               box-shadow var(--dur-fast) var(--ease-standard);
+}
+@keyframes mapMarkerFadeIn {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
 }
 .map-listing-dot:hover,
 .map-listing-dot:focus-visible {

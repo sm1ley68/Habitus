@@ -13,11 +13,11 @@ export interface ResultsPage {
  *  Повторный поиск не запускается: весь пул лежит в chat_search_results,
  *  ручка только листает его. */
 export async function fetchMoreResults(
-  chatId: string, offset: number, limit = 10,
+  chatId: string, offset: number, limit = 10, signal?: AbortSignal,
 ): Promise<ResultsPage> {
   const res = await fetch(
     `${API_BASE}/chats/${chatId}/results?offset=${offset}&limit=${limit}`,
-    { credentials: "include" },
+    { credentials: "include", signal },
   );
   if (!res.ok) throw new Error(`fetchMoreResults failed: ${res.status}`);
   const body = await res.json();

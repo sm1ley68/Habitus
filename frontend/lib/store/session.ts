@@ -2,18 +2,29 @@ import { create } from "zustand";
 import type {
   Stage, AgentEvent, Property, City, GeoZone, LayerId, ConstraintDiagnostic,
 } from "@/lib/agent/types";
+import { RENDERED_LAYER_IDS } from "@/lib/agent/types";
 import { nextStage } from "@/lib/agent/stageMachine";
 import type { AgentClient, RunResult } from "@/lib/agent/AgentClient";
 import { fetchLayers, fetchListings, type LayerCollections } from "@/lib/api/geo";
 import { fetchMoreResults } from "@/lib/api/results";
 import type { StreamFailure } from "@/lib/api/streamError";
+import { CITY_CENTER } from "@/lib/map/constants";
+import { expandViewport, type Viewport } from "@/lib/map/viewport";
 
 export type Screen = "chat" | "result" | "map" | "passport";
+
+export interface SearchMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+}
 
 interface SessionState {
   stage: Stage;
   screen: Screen;
   answer: string;
+  searchMessages: SearchMessage[];
+  searchUpdating: boolean;
   properties: Property[];
   selectedIndex: number;
   city: City;
@@ -29,6 +40,8 @@ interface SessionState {
   viewport: [number, number, number, number] | null;
   /** Все объявления под вьюпортом — чтобы открыть любое, а не только из выдачи. */
   mapListings: GeoJSON.FeatureCollection | null;
+  /** Карта движется или получает данные для только что выбранной области. */
+  mapUpdating: boolean;
   /** Объект, открытый КЛИКОМ ПО КАРТЕ: он вне выдачи, поэтому лежит отдельно. */
   mapProperty: Property | null;
   /** chat_id текущего поиска — контекст для паспорта, чата по объекту и
@@ -52,9 +65,12 @@ interface SessionState {
   _cancel?: () => void;
 
   startQuery: (client: AgentClient, query: string) => void;
+  refineQuery: (client: AgentClient, query: string) => void;
   loadMore: () => Promise<void>;
+  hydrateAllResults: (chatId: string) => Promise<void>;
   applyEvent: (e: AgentEvent) => void;
   finish: (result: RunResult) => void;
+  finishRefinement: (result: RunResult) => void;
   fail: (failure: StreamFailure) => void;
   reset: () => void;
   setScreen: (s: Screen) => void;
@@ -64,7 +80,9 @@ interface SessionState {
   toggleLayer: (id: LayerId) => void;
   loadLayer: (id: LayerId) => Promise<void>;
   setHoveredProperty: (id: string | null) => void;
-  setViewport: (b: [number, number, number, number]) => void;
+  setMapUpdating: (value: boolean) => void;
+  setViewport: (b: Viewport) => void;
+  refreshViewport: (b: Viewport) => Promise<void>;
   loadMapListings: () => Promise<void>;
   openListingFromMap: (p: Property) => void;
 }
@@ -73,6 +91,8 @@ const initial = {
   stage: "idle" as Stage,
   screen: "chat" as Screen,
   answer: "",
+  searchMessages: [] as SearchMessage[],
+  searchUpdating: false,
   properties: [] as Property[],
   selectedIndex: 0,
   city: "msk" as City,
@@ -84,6 +104,7 @@ const initial = {
   hoveredId: null as string | null,
   viewport: null as [number, number, number, number] | null,
   mapListings: null as GeoJSON.FeatureCollection | null,
+  mapUpdating: false,
   mapProperty: null as Property | null,
   chatId: null as string | null,
   totalResults: 0,
@@ -96,23 +117,100 @@ const initial = {
   errorHint: null as string | null,
 };
 
+let viewportController: AbortController | null = null;
+let viewportRequestId = 0;
+let resultsController: AbortController | null = null;
+let resultsRequestId = 0;
+let searchMessageSequence = 0;
+
+function searchMessage(role: SearchMessage["role"], text: string): SearchMessage {
+  searchMessageSequence += 1;
+  return { id: `search-message-${searchMessageSequence}`, role, text };
+}
+
+function fallbackViewport(city: City): Viewport {
+  const [lng, lat] = CITY_CENTER[city];
+  return [lng - 0.12, lat - 0.075, lng + 0.12, lat + 0.075];
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function sameViewport(a: Viewport | null, b: Viewport | null) {
+  return a === b || (!!a && !!b && a.every((value, index) => value === b[index]));
+}
+
+function cancelViewportRequest() {
+  viewportRequestId += 1;
+  viewportController?.abort();
+  viewportController = null;
+}
+
+function cancelResultsRequest() {
+  resultsRequestId += 1;
+  resultsController?.abort();
+  resultsController = null;
+}
+
 export const useSession = create<SessionState>((set, get) => ({
   ...initial,
 
   startQuery: (client, query) => {
     get()._cancel?.();
+    cancelViewportRequest();
+    cancelResultsRequest();
     // chatId НЕ сбрасываем: реплика уходит в тот же чат, и шлюз подмешает
     // разбор предыдущего шага. Диалог начинается заново только через
     // newDialog() или смену города.
     const chatId = get().chatId;
+    const messages = chatId ? get().searchMessages : [];
     set({ stage: "idle", answer: "", screen: "chat", properties: [],
           diagnostics: [], hasMore: false, totalResults: 0,
-          errorMessage: null, errorCode: null, errorCause: null, errorHint: null });
+          errorMessage: null, errorCode: null, errorCause: null, errorHint: null,
+          layerData: {}, mapListings: null, viewport: null, mapUpdating: false,
+          searchUpdating: false,
+          searchMessages: [...messages, searchMessage("user", query)] });
     const cancel = client.run(query, {
       onEvent: (e) => get().applyEvent(e),
       onDone: (r) => get().finish(r),
       onError: (failure) => get().fail(failure),
     }, chatId ? { chatId } : undefined);
+    set({ _cancel: cancel });
+  },
+
+  refineQuery: (client, query) => {
+    const { chatId, searchMessages, searchUpdating, screen } = get();
+    if (!chatId || searchUpdating) return;
+    get()._cancel?.();
+    cancelResultsRequest();
+    set({
+      stage: "idle",
+      answer: "",
+      errorMessage: null,
+      errorCode: null,
+      errorCause: null,
+      errorHint: null,
+      searchUpdating: true,
+      screen: screen === "map" ? "map" : "result",
+      searchMessages: [...searchMessages, searchMessage("user", query)],
+    });
+    const cancel = client.run(query, {
+      onEvent: (event) => get().applyEvent(event),
+      onDone: (result) => get().finishRefinement(result),
+      onError: (failure) => set((state) => ({
+        stage: "error",
+        errorMessage: failure.message || null,
+        errorCode: failure.code || null,
+        errorCause: failure.cause ?? null,
+        errorHint: failure.hint ?? null,
+        searchUpdating: false,
+        searchMessages: [
+          ...state.searchMessages,
+          searchMessage("assistant", failure.message || "Не удалось обновить подборку."),
+        ],
+      })),
+    }, { chatId });
     set({ _cancel: cancel });
   },
 
@@ -140,15 +238,91 @@ export const useSession = create<SessionState>((set, get) => ({
     }
   },
 
+  hydrateAllResults: async (chatId) => {
+    const snapshot = get();
+    if (snapshot.chatId !== chatId || !snapshot.hasMore) return;
+    cancelResultsRequest();
+    const requestId = resultsRequestId;
+    const controller = new AbortController();
+    resultsController = controller;
+    set({ loadingMore: true });
+    try {
+      const page = await fetchMoreResults(
+        chatId,
+        snapshot.properties.length,
+        50,
+        controller.signal,
+      );
+      if (requestId !== resultsRequestId || get().chatId !== chatId) return;
+      set((state) => {
+        const knownIds = new Set(state.properties.map((property) => property.id));
+        const additions = page.objects.filter((property) => !knownIds.has(property.id));
+        const properties = [...state.properties, ...additions];
+        return {
+          properties,
+          totalResults: page.total,
+          hasMore: properties.length < page.total && page.objects.length > 0,
+          loadingMore: false,
+        };
+      });
+    } catch (error) {
+      if (!isAbortError(error) && requestId === resultsRequestId) {
+        set({ loadingMore: false });
+      }
+    } finally {
+      if (requestId === resultsRequestId) resultsController = null;
+    }
+  },
+
   applyEvent: (e) =>
     set((st) => ({
       stage: nextStage(st.stage, e),
       answer: e.token ? st.answer + e.token : st.answer,
     })),
 
-  finish: ({ properties, zoneGeoJSON, areaLabel, chatId, total, hasMore, diagnostics }) =>
-    set({ properties, stage: "done", screen: "result", zoneGeoJSON, areaLabel, chatId,
-          totalResults: total, hasMore, diagnostics }),
+  finish: ({ properties, zoneGeoJSON, areaLabel, chatId, total, hasMore, diagnostics }) => {
+    const response = get().answer.trim();
+    set((state) => ({
+      properties,
+      stage: "done",
+      screen: "result",
+      zoneGeoJSON,
+      areaLabel,
+      chatId,
+      totalResults: total,
+      hasMore,
+      diagnostics,
+      searchUpdating: false,
+      searchMessages: response
+        ? [...state.searchMessages, searchMessage("assistant", response)]
+        : state.searchMessages,
+    }));
+    if (chatId && hasMore) void get().hydrateAllResults(chatId);
+  },
+
+  finishRefinement: ({ properties, zoneGeoJSON, areaLabel, chatId, total, hasMore, diagnostics }) => {
+    const response = get().answer.trim();
+    set((state) => ({
+      properties,
+      zoneGeoJSON,
+      areaLabel,
+      chatId,
+      totalResults: total,
+      hasMore,
+      diagnostics,
+      viewport: null,
+      stage: "done",
+      searchUpdating: false,
+      errorMessage: null,
+      errorCode: null,
+      errorCause: null,
+      errorHint: null,
+      searchMessages: response
+        ? [...state.searchMessages, searchMessage("assistant", response)]
+        : state.searchMessages,
+    }));
+    if (chatId && hasMore) void get().hydrateAllResults(chatId);
+  },
 
   fail: (failure) => set({
     stage: "error",
@@ -156,12 +330,18 @@ export const useSession = create<SessionState>((set, get) => ({
     errorCode: failure.code || null,
     errorCause: failure.cause ?? null,
     errorHint: failure.hint ?? null,
+    searchUpdating: false,
   }),
 
   // «Новый поиск» в LeftRail: обрывает и выдачу, и ДИАЛОГ — chatId уходит в
   // null, поэтому следующий запрос заведёт новый чат и уйдёт в ML без
   // prev_parsed. Это единственный способ начать разговор с чистого листа.
-  reset: () => { get()._cancel?.(); set({ ...initial }); },
+  reset: () => {
+    get()._cancel?.();
+    cancelViewportRequest();
+    cancelResultsRequest();
+    set({ ...initial });
+  },
 
   // Уход с паспорта снимает объект, открытый с карты: иначе он перекрыл бы
   // обычный выбор из выдачи при следующем открытии.
@@ -171,10 +351,15 @@ export const useSession = create<SessionState>((set, get) => ({
   // выдачу и зону. Иначе на карте Питера остались бы московские полигоны.
   // chatId тоже сбрасывается: чат привязан к городу на бэке, продолжать
   // московский диалог питерской репликой нельзя.
-  setCity: (city) => set({ city, layerData: {}, properties: [], zoneGeoJSON: null,
-                           areaLabel: null, selectedIndex: 0, mapListings: null,
-                           mapProperty: null, chatId: null, totalResults: 0,
-                           hasMore: false, diagnostics: [] }),
+  setCity: (city) => {
+    cancelViewportRequest();
+    cancelResultsRequest();
+    set({ city, layerData: {}, properties: [], zoneGeoJSON: null,
+          areaLabel: null, selectedIndex: 0, mapListings: null,
+          mapProperty: null, chatId: null, totalResults: 0,
+          hasMore: false, diagnostics: [], viewport: null, mapUpdating: false,
+          searchMessages: [], searchUpdating: false });
+  },
   toggleHistory: () => set((s) => ({ historyOpen: !s.historyOpen })),
 
   // «Бары» — один тумблер на две формы одних и тех же данных: точки заведений
@@ -188,15 +373,19 @@ export const useSession = create<SessionState>((set, get) => ({
         ...Object.fromEntries(ids.map((x) => [x, on])),
       },
     }));
-    if (on) ids.forEach((x) => void get().loadLayer(x));
+    const viewport = get().viewport;
+    if (viewport) void get().refreshViewport(viewport);
+    else if (on) ids.forEach((x) => void get().loadLayer(x));
   },
 
-  // Слой тянется под текущий вьюпорт. Повторные вкл/выкл по сети не бьют,
-  // но смена города сбрасывает кэш (см. setCity).
+  // До появления реального viewport берём небольшой фрагмент вокруг центра
+  // города: экран размышления не должен заранее тянуть и держать весь город.
   loadLayer: async (id) => {
-    if (get().layerData[id]) return;
     try {
-      const fetched = await fetchLayers(get().city, [id], get().viewport ?? undefined);
+      const { city, viewport } = get();
+      const fetched = await fetchLayers(city, [id], expandViewport(viewport ?? fallbackViewport(city)));
+      const current = get();
+      if (current.city !== city || !sameViewport(current.viewport, viewport)) return;
       set((s) => ({ layerData: { ...s.layerData, ...fetched } }));
     } catch {
       // Слой не пришёл — карта просто его не покажет. Молча, без падения.
@@ -204,17 +393,41 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   setHoveredProperty: (hoveredId) => set({ hoveredId }),
-  setViewport: (viewport) => { set({ viewport }); void get().loadMapListings(); },
+  setMapUpdating: (mapUpdating) => set({ mapUpdating }),
+  setViewport: (viewport) => {
+    void get().refreshViewport(viewport);
+  },
+
+  refreshViewport: async (viewport) => {
+    cancelViewportRequest();
+    const requestId = viewportRequestId;
+    const controller = new AbortController();
+    viewportController = controller;
+    const { city, activeLayers } = get();
+    const bufferedViewport = expandViewport(viewport);
+    const layers = RENDERED_LAYER_IDS.filter((id) => activeLayers[id]);
+    set({ mapUpdating: true });
+    try {
+      const [mapListings, layerData] = await Promise.all([
+        fetchListings(city, bufferedViewport, controller.signal),
+        fetchLayers(city, layers, bufferedViewport, controller.signal),
+      ]);
+      if (requestId !== viewportRequestId) return;
+      set({ viewport, mapListings, layerData, mapUpdating: false });
+    } catch (error) {
+      if (!isAbortError(error) && requestId === viewportRequestId) {
+        set({ mapUpdating: false });
+      }
+    } finally {
+      if (requestId === viewportRequestId) viewportController = null;
+    }
+  },
 
   // Точки объявлений перезапрашиваются под каждый новый вьюпорт: bbox — часть
   // запроса, кэшировать по городу нельзя.
   loadMapListings: async () => {
-    const { city, viewport } = get();
-    try {
-      set({ mapListings: await fetchListings(city, viewport ?? undefined) });
-    } catch {
-      // Точек не будет — карта просто останется без слоя объявлений.
-    }
+    const { viewport } = get();
+    if (viewport) await get().refreshViewport(viewport);
   },
 
   openListingFromMap: (mapProperty) => set({ mapProperty, screen: "passport" }),

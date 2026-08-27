@@ -14,7 +14,7 @@ export default function PropertyCard({
 
   return (
     <motion.button
-      layoutId={`property-${index}`}
+      layoutId={`property-${property.id}`}
       onClick={() => onOpen(index)}
       onMouseEnter={() => setHovered(property.id)}
       onMouseLeave={() => setHovered(null)}

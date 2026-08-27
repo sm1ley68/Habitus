@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
 import { useGoogleMap } from "@/lib/map/useGoogleMap";
@@ -15,9 +15,15 @@ import {
   toLatLng,
 } from "@/lib/map/google";
 import { layerColor, layerPaintColor } from "@/lib/map/style";
+import {
+  isInViewport,
+  isValidLngLat,
+  rankVisibleProperties,
+} from "@/lib/map/viewport";
 import { useSession } from "@/lib/store/session";
 import { RENDERED_LAYER_IDS, type GeoZone, type LayerId } from "@/lib/agent/types";
 import MapPreviewCard, { type PreviewData } from "./MapPreviewCard";
+import MapUpdateIndicator from "./MapUpdateIndicator";
 
 const ACCENT = "#7C8CFF";
 
@@ -64,6 +70,29 @@ function densityOpacity(zoom: number) {
   return 0.22 * (15.5 - zoom) / 4.5;
 }
 
+function minimumPointZoom(id: LayerId) {
+  if (id === "metro") return 10.5;
+  if (id === "schools") return 12;
+  if (id === "bars") return 14;
+  return 12;
+}
+
+function pointFeatureInViewport(
+  feature: GeoJSON.Feature,
+  viewport: [number, number, number, number] | null,
+) {
+  if (!viewport || !feature.geometry) return true;
+  if (feature.geometry.type === "Point") {
+    const coordinates = feature.geometry.coordinates as [number, number];
+    return isValidLngLat(coordinates) && isInViewport(coordinates, viewport);
+  }
+  if (feature.geometry.type === "MultiPoint") {
+    return feature.geometry.coordinates.some((coordinates) =>
+      isValidLngLat(coordinates) && isInViewport(coordinates, viewport));
+  }
+  return true;
+}
+
 function dataLayerStyle(
   id: LayerId,
   feature: google.maps.Data.Feature,
@@ -71,10 +100,14 @@ function dataLayerStyle(
 ): google.maps.Data.StyleOptions {
   const geometry = feature.getGeometry()?.getType() ?? "Polygon";
   const color = layerColor(id) ?? layerPaintColor(geometry);
+  const visible = geometry === "Point" || geometry === "MultiPoint"
+    ? zoom >= minimumPointZoom(id)
+    : id !== "crime" || zoom < 15.5;
   if (geometry === "Point" || geometry === "MultiPoint") {
     const name = feature.getProperty("name");
     return {
       clickable: false,
+      visible,
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
         fillColor: color,
@@ -93,6 +126,7 @@ function dataLayerStyle(
   if (geometry === "LineString" || geometry === "MultiLineString") {
     return {
       clickable: false,
+      visible,
       strokeColor: color,
       strokeOpacity: 0.72,
       strokeWeight: 4,
@@ -101,6 +135,7 @@ function dataLayerStyle(
   }
   return {
     clickable: false,
+    visible,
     fillColor: color,
     fillOpacity: id === "crime" ? densityOpacity(zoom) : 0.25,
     strokeColor: color,
@@ -121,7 +156,14 @@ export default function MapCanvas() {
   const layerData = useSession((state) => state.layerData);
   const selectProperty = useSession((state) => state.selectProperty);
   const setViewport = useSession((state) => state.setViewport);
+  const viewport = useSession((state) => state.viewport);
+  const mapUpdating = useSession((state) => state.mapUpdating);
+  const setMapUpdating = useSession((state) => state.setMapUpdating);
   const mapListings = useSession((state) => state.mapListings);
+  const visibleProperties = useMemo(
+    () => rankVisibleProperties(properties, viewport),
+    [properties, viewport],
+  );
 
   const resultMarkers = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const listingMarkers = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
@@ -137,6 +179,7 @@ export default function MapCanvas() {
     anchor: { x: number; y: number };
   } | null>(null);
   const closeTimer = useRef<number | undefined>(undefined);
+  const centeredZone = useRef<GeoZone | null>(null);
 
   const openPreview = useCallback((index: number) => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -174,9 +217,6 @@ export default function MapCanvas() {
       zIndex: 2,
     };
     layer.setStyle(hidden);
-    map.setHeading(0);
-    map.setTilt(0);
-    map.fitBounds(createLatLngBounds(positions), 90);
 
     const reveal = () => layer.setStyle({ ...hidden, fillOpacity: 0.18, strokeOpacity: 1 });
     const listener = reduced ? null : google.maps.event.addListenerOnce(map, "idle", reveal);
@@ -189,22 +229,44 @@ export default function MapCanvas() {
   }, [map, ready, zone]);
 
   useEffect(() => {
+    if (!map || !ready || !zone || centeredZone.current === zone) return;
+    centeredZone.current = zone;
+    const resultPositions = [...useSession.getState().properties]
+      .filter((property) => isValidLngLat(property.coordinates))
+      .sort((a, b) => b.match_score - a.match_score)
+      .slice(0, 10)
+      .map((property) => property.coordinates);
+    const positions = resultPositions.length
+      ? resultPositions
+      : collectZonePositions(zone).filter(isValidLngLat);
+    if (!positions.length) return;
+
+    map.setHeading(0);
+    map.setTilt(0);
+    map.fitBounds(createLatLngBounds(positions), 72);
+    const capZoom = google.maps.event.addListenerOnce(map, "idle", () => {
+      if ((map.getZoom() ?? 0) > 14) map.setZoom(14);
+    });
+    return () => capZoom.remove();
+  }, [map, ready, zone]);
+
+  useEffect(() => {
     if (!map || !ready) return;
     resultMarkers.current.forEach(removeAdvancedMarker);
     setPreviewIndex(null);
-    const topId = [...properties].sort((a, b) => b.match_score - a.match_score)[0]?.id;
+    const topId = visibleProperties[0]?.property.id;
 
-    resultMarkers.current = properties.map((property, index) => {
+    resultMarkers.current = visibleProperties.map(({ property, sourceIndex }, index) => {
       const element = createPinElement(property, property.id === topId, index);
-      element.addEventListener("mouseenter", () => { setHovered(property.id); openPreview(index); });
+      element.addEventListener("mouseenter", () => { setHovered(property.id); openPreview(sourceIndex); });
       element.addEventListener("mouseleave", () => { setHovered(null); scheduleClose(); });
-      element.addEventListener("focus", () => { setHovered(property.id); openPreview(index); });
+      element.addEventListener("focus", () => { setHovered(property.id); openPreview(sourceIndex); });
       element.addEventListener("blur", () => { setHovered(null); scheduleClose(); });
-      element.addEventListener("click", (event) => { event.stopPropagation(); selectProperty(index); });
+      element.addEventListener("click", (event) => { event.stopPropagation(); selectProperty(sourceIndex); });
       element.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          selectProperty(index);
+          selectProperty(sourceIndex);
         }
       });
       return new google.maps.marker.AdvancedMarkerElement({
@@ -219,7 +281,7 @@ export default function MapCanvas() {
       resultMarkers.current.forEach(removeAdvancedMarker);
       resultMarkers.current = [];
     };
-  }, [map, ready, properties, setHovered, openPreview, scheduleClose, selectProperty]);
+  }, [map, ready, visibleProperties, setHovered, openPreview, scheduleClose, selectProperty]);
 
   useEffect(() => {
     resultMarkers.current.forEach((marker) => {
@@ -230,14 +292,28 @@ export default function MapCanvas() {
 
   useEffect(() => {
     if (!map || !ready) return;
+    let timer: number | undefined;
     const publish = () => {
       const bounds = map.getBounds()?.toJSON();
       if (bounds) setViewport(boundsLiteralToViewport(bounds));
     };
-    const listener = map.addListener("idle", publish);
-    publish();
-    return () => listener.remove();
-  }, [map, ready, setViewport]);
+    const schedulePublish = () => {
+      if (timer) window.clearTimeout(timer);
+      setMapUpdating(true);
+      timer = window.setTimeout(publish, 300);
+    };
+    const drag = map.addListener("dragstart", () => setMapUpdating(true));
+    const zoom = map.addListener("zoom_changed", () => setMapUpdating(true));
+    const idle = map.addListener("idle", schedulePublish);
+    schedulePublish();
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      drag.remove();
+      zoom.remove();
+      idle.remove();
+      useSession.getState().setMapUpdating(false);
+    };
+  }, [map, ready, setMapUpdating, setViewport]);
 
   useEffect(() => {
     if (!map || !ready) return;
@@ -254,6 +330,7 @@ export default function MapCanvas() {
     for (const feature of mapListings?.features ?? []) {
       if (feature.geometry?.type !== "Point") continue;
       const coordinates = feature.geometry.coordinates as [number, number];
+      if (!isValidLngLat(coordinates) || (viewport && !isInViewport(coordinates, viewport))) continue;
       const properties = (feature.properties ?? {}) as Record<string, unknown>;
       const element = listingDot();
       const marker = new google.maps.marker.AdvancedMarkerElement({
@@ -287,7 +364,7 @@ export default function MapCanvas() {
       listingMarkers.current.forEach(removeAdvancedMarker);
       listingMarkers.current = [];
     };
-  }, [map, ready, mapListings]);
+  }, [map, ready, mapListings, viewport]);
 
   useEffect(() => {
     if (!map || !ready) return;
@@ -298,7 +375,10 @@ export default function MapCanvas() {
       const data = layerData[id];
       if (!activeLayers[id] || !data?.features.length) continue;
       const layer = new google.maps.Data({ map });
-      layer.addGeoJson(data as GeoJSON.GeoJsonObject);
+      layer.addGeoJson({
+        ...data,
+        features: data.features.filter((feature) => pointFeatureInViewport(feature, viewport)),
+      } as GeoJSON.GeoJsonObject);
       layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
       geoLayers.current[id] = layer;
     }
@@ -306,7 +386,9 @@ export default function MapCanvas() {
     const zoom = map.addListener("zoom_changed", () => {
       for (const id of RENDERED_LAYER_IDS) {
         const layer = geoLayers.current[id];
-        if (layer) layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
+        if (layer) {
+          layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
+        }
       }
     });
     return () => {
@@ -314,7 +396,7 @@ export default function MapCanvas() {
       Object.values(geoLayers.current).forEach((layer) => layer?.setMap(null));
       geoLayers.current = {};
     };
-  }, [map, ready, activeLayers, layerData]);
+  }, [map, ready, activeLayers, layerData, viewport]);
 
   useEffect(() => {
     if (!map || !ready || !projection.current) return;
@@ -350,6 +432,7 @@ export default function MapCanvas() {
   return (
     <div className="relative h-full w-full">
       <div ref={container} data-testid="map-canvas" className="absolute inset-0 overflow-hidden rounded-3xl" />
+      <MapUpdateIndicator visible={mapUpdating} />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 rounded-3xl shadow-[inset_0_0_0_1px_rgba(20,20,34,0.06),inset_0_1px_0_rgba(255,255,255,0.4)]"
