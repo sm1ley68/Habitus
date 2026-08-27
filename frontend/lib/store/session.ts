@@ -66,7 +66,6 @@ interface SessionState {
 
   startQuery: (client: AgentClient, query: string) => void;
   refineQuery: (client: AgentClient, query: string) => void;
-  loadMore: () => Promise<void>;
   hydrateAllResults: (chatId: string) => Promise<void>;
   applyEvent: (e: AgentEvent) => void;
   finish: (result: RunResult) => void;
@@ -212,30 +211,6 @@ export const useSession = create<SessionState>((set, get) => ({
       })),
     }, { chatId });
     set({ _cancel: cancel });
-  },
-
-  // «Показать ещё»: остаток сохранённого пула поднимается из
-  // GET /chats/{id}/results, повторный поиск не запускается.
-  loadMore: async () => {
-    const { chatId, properties, hasMore, loadingMore } = get();
-    if (!chatId || !hasMore || loadingMore) return;
-    set({ loadingMore: true });
-    try {
-      const page = await fetchMoreResults(chatId, properties.length);
-      set((s) => {
-        const merged = [...s.properties, ...page.objects];
-        return {
-          properties: merged,
-          totalResults: page.total,
-          hasMore: merged.length < page.total && page.objects.length > 0,
-          loadingMore: false,
-        };
-      });
-    } catch {
-      // Не дотянулось — оставляем то, что уже показано, и прячем кнопку:
-      // повторный тык по неработающей кнопке хуже её отсутствия.
-      set({ loadingMore: false, hasMore: false });
-    }
   },
 
   hydrateAllResults: async (chatId) => {

@@ -177,7 +177,11 @@ test("«новый поиск» начинает разговор заново",
   expect(s.properties).toEqual([]);
 });
 
-test("loadMore дописывает страницу к уже показанным", async () => {
+// «Показать ещё» как отдельной кнопки больше нет: остаток пула догружается
+// в фоне через hydrateAllResults (finish зовёт его сам при hasMore). Тесты
+// зовут его напрямую — как и в проде, повторный вызов просто отменяет и
+// переигрывает фоновый запрос, запущенный из finish().
+test("hydrateAllResults дописывает страницу к уже показанным", async () => {
   useSession.getState().finish(runResult({
     properties: [{ id: "A" } as never], chatId: "c-1", total: 3, hasMore: true,
   }));
@@ -186,51 +190,51 @@ test("loadMore дописывает страницу к уже показанн�
     json: async () => ({ objects: [{ id: "B" }, { id: "C" }], count: 2, total: 3 }),
   }));
 
-  await useSession.getState().loadMore();
+  await useSession.getState().hydrateAllResults("c-1");
 
   const s = useSession.getState();
   expect(s.properties.map((p) => p.id)).toEqual(["A", "B", "C"]);
-  expect(s.hasMore).toBe(false);   // добрали до total — кнопки больше нет
+  expect(s.hasMore).toBe(false);   // добрали до total
   expect(s.loadingMore).toBe(false);
   vi.unstubAllGlobals();
 });
 
-test("loadMore просит остаток от уже показанного, а не с нуля", async () => {
+test("hydrateAllResults просит остаток от уже показанного и не дублирует известные id", async () => {
   useSession.getState().finish(runResult({
     properties: [{ id: "A" } as never, { id: "B" } as never], chatId: "c-1",
     total: 30, hasMore: true,
   }));
   const fetchMock = vi.fn().mockResolvedValue({
-    ok: true, json: async () => ({ objects: [], count: 0, total: 30 }),
+    ok: true, json: async () => ({ objects: [{ id: "B" }, { id: "C" }], count: 2, total: 30 }),
   });
   vi.stubGlobal("fetch", fetchMock);
 
-  await useSession.getState().loadMore();
+  await useSession.getState().hydrateAllResults("c-1");
 
   expect(String(fetchMock.mock.calls[0][0])).toContain("offset=2");
+  expect(useSession.getState().properties.map((p) => p.id)).toEqual(["A", "B", "C"]);
   vi.unstubAllGlobals();
 });
 
-test("сбой догрузки не теряет показанное и прячет кнопку", async () => {
+test("сбой фоновой догрузки не теряет уже показанное", async () => {
   useSession.getState().finish(runResult({
     properties: [{ id: "A" } as never], chatId: "c-1", total: 30, hasMore: true,
   }));
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("сеть")));
 
-  await useSession.getState().loadMore();
+  await useSession.getState().hydrateAllResults("c-1");
 
   const s = useSession.getState();
   expect(s.properties).toHaveLength(1);   // то, что было, осталось
-  expect(s.hasMore).toBe(false);          // повторный тык по мёртвой кнопке хуже её отсутствия
   expect(s.loadingMore).toBe(false);
   vi.unstubAllGlobals();
 });
 
-test("loadMore молчит, когда тянуть нечего", async () => {
+test("hydrateAllResults молчит, когда тянуть нечего", async () => {
   const fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 
-  await useSession.getState().loadMore();          // ни чата, ни hasMore
+  await useSession.getState().hydrateAllResults("c-none");   // ни чата, ни hasMore
 
   expect(fetchMock).not.toHaveBeenCalled();
   vi.unstubAllGlobals();
