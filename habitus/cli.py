@@ -10,7 +10,7 @@ from habitus.ingest.cian_loader import parse_csv as parse_cian_csv
 from habitus.clean.normalize import promote_to_listings
 from habitus.update.incremental import deactivate_missing, latest_snapshot_ids
 from habitus.clean.geocode import backfill_missing_coords
-from habitus.geo.osm_extract import fetch_kind, upsert_poi, OVERPASS_QUERIES
+from habitus.geo.osm_extract import fetch_kind, upsert_poi, POI_KINDS
 from habitus.geo.enrich import enrich_all
 from habitus.embed.document import refresh_doc_text
 from habitus.embed.encode import embed_pending
@@ -30,7 +30,7 @@ _DEFAULT_MIN_NDCG = 0.41
 
 
 def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
-                source="kaggle") -> dict:
+                source="kaggle", city: str = "msk") -> dict:
     init_db(conn)
     stats = {}
     rows = _PARSERS[source](csv_path)
@@ -55,12 +55,12 @@ def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
     # молча: список провалившихся слоёв уезжает в статистику цикла.
     stats["osm_failed"] = []
     if fetch_osm:
-        for kind in OVERPASS_QUERIES:
+        for kind in POI_KINDS:
             try:
-                upsert_poi(fetch_kind(kind), conn)
+                upsert_poi(fetch_kind(kind, city), conn, city=city)
             except Exception as e:  # noqa: BLE001 — внешний API, причин отказа много
                 conn.rollback()
-                stats["osm_failed"].append(f"{kind}: {e}")
+                stats["osm_failed"].append(f"{kind}/{city}: {e}")
     stats["enriched"] = enrich_all(conn)
     stats["doc_text"] = refresh_doc_text(conn)
     stats["embedded"] = embed_pending(conn, model=model)
@@ -74,6 +74,7 @@ def main():
     off.add_argument("--csv", type=Path, required=True)
     off.add_argument("--source", choices=["kaggle", "cian"], default="kaggle")
     off.add_argument("--no-osm", action="store_true")
+    off.add_argument("--city", choices=["msk", "spb"], default="msk")
     sub.add_parser("update")
     s = sub.add_parser("search")
     s.add_argument("query")
@@ -99,7 +100,7 @@ def main():
     with get_conn() as conn:
         if args.cmd == "offline":
             print(run_offline(args.csv, conn, fetch_osm=not args.no_osm,
-                              source=args.source))
+                              source=args.source, city=args.city))
         elif args.cmd == "update":
             print("update: запускать по cron (инкрементал)")
         elif args.cmd == "search":

@@ -29,7 +29,9 @@ import psycopg
 import requests
 
 from habitus.config import settings
-from habitus.geo.osm_extract import HEADERS, MSK_AREA, OVERPASS_URL, RETRY_STATUS
+from habitus.geo.osm_extract import CITY_AREA, HEADERS, OVERPASS_URL, RETRY_STATUS
+
+MSK_AREA = CITY_AREA["msk"]
 
 # --- шумовые уровни по классу трассы, дБ на кромке (открытые справочники
 # дорожной акустики; затухание до фасада досье считает усреднением по 500 м) ---

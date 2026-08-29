@@ -2,8 +2,9 @@ import psycopg
 import requests
 from habitus.config import settings
 from habitus.db.init_db import init_db
-from habitus.geo.osm_extract import (HEADERS, MSK_AREA, OVERPASS_QUERIES, fetch_kind, parse_overpass,
-                                     parse_urban_features, upsert_poi)
+from habitus.geo.osm_extract import (CITY_AREA, HEADERS, POI_KINDS, TRANSIT_AREA, fetch_kind,
+                                     overpass_queries, parse_overpass, parse_urban_features,
+                                     upsert_poi)
 
 SAMPLE = {"elements": [
     {"type": "node", "id": 111, "lat": 55.76, "lon": 37.62, "tags": {"name": "Бар А"}},
@@ -110,10 +111,52 @@ def test_school_query_covers_polygons():
     # 173 школы на Москву вместо ~1500. Проверяем и тип элемента, и bbox —
     # запрос без bbox ушёл бы по всей планете, а сеть в тестах запрещена,
     # поэтому этот тест — единственная защита от такой регрессии.
-    q = OVERPASS_QUERIES["school"]
+    q = overpass_queries(CITY_AREA["msk"])["school"]
     for element in ("node", "way", "relation"):
-        assert f'{element}["amenity"="school"]{MSK_AREA};' in q
+        assert f'{element}["amenity"="school"]{CITY_AREA["msk"]};' in q
     assert q.startswith("(") and q.endswith(");")
+
+
+def test_city_area_covers_both_cities():
+    assert set(CITY_AREA) == {"msk", "spb"}
+    # формат Overpass: (south,west,north,east)
+    assert CITY_AREA["spb"] == "(59.70,29.60,60.20,30.70)"
+
+
+def test_transit_area_for_moscow_is_wider_than_city():
+    # диаметры уходят далеко за город; городской bbox рвал бы линию посередине
+    city = [float(x) for x in CITY_AREA["msk"].strip("()").split(",")]
+    transit = [float(x) for x in TRANSIT_AREA["msk"].strip("()").split(",")]
+    assert transit[0] < city[0] and transit[1] < city[1]
+    assert transit[2] > city[2] and transit[3] > city[3]
+
+
+def test_transit_area_for_spb_equals_city_area():
+    # диаметров в Петербурге нет — расширять нечего
+    assert TRANSIT_AREA["spb"] == CITY_AREA["spb"]
+
+
+def test_queries_are_built_for_the_requested_city():
+    q = overpass_queries(CITY_AREA["spb"])
+    assert set(q) == set(POI_KINDS)
+    assert all(CITY_AREA["spb"] in fragment for fragment in q.values())
+
+
+def test_fetch_kind_sends_the_city_bbox():
+    seen = {}
+
+    class Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"elements": []}
+
+    def fake_post(url, data=None, headers=None, timeout=None):
+        seen["data"] = data["data"]
+        return Resp()
+
+    fetch_kind("metro", "spb", http_post=fake_post)
+    assert CITY_AREA["spb"] in seen["data"]
+    assert CITY_AREA["msk"] not in seen["data"]
 
 
 def test_upsert_poi_sets_city():

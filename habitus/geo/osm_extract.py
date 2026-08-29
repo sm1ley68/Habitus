@@ -6,7 +6,6 @@ import requests
 import psycopg
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-MSK_AREA = "(55.48,37.30,55.95,37.95)"  # bbox: south,west,north,east
 
 # Overpass отдаёт 406 Not Acceptable на дефолтный python-requests UA — нужен
 # осмысленный User-Agent, иначе живой фетч POI не работает.
@@ -16,26 +15,50 @@ HEADERS = {"User-Agent": "Habitus/1.0 (real-estate research)"}
 # ретраим с backoff, иначе один timeout роняет весь offline-прогон.
 RETRY_STATUS = {429, 502, 503, 504}
 
-OVERPASS_QUERIES = {
-    # Школьные здания в OSM — way/relation, а не node: node-only запрос давал
-    # 173 школы на Москву вместо ~1500, и walk_min_school врал.
-    "school":     f'(node["amenity"="school"]{MSK_AREA};'
-                  f'way["amenity"="school"]{MSK_AREA};'
-                  f'relation["amenity"="school"]{MSK_AREA};);',
-    "bar":        f'node["amenity"~"bar|pub"]{MSK_AREA};',
-    "alcohol":    f'node["shop"="alcohol"]{MSK_AREA};',
-    # парки в OSM — полигоны (way/relation), а не точки; берём и их центроид.
-    "park":       f'(node["leisure"="park"]{MSK_AREA};'
-                  f'way["leisure"="park"]{MSK_AREA};'
-                  f'relation["leisure"="park"]{MSK_AREA};);',
-    "metro":      f'node["station"="subway"]{MSK_AREA};',
+# bbox в формате Overpass: (south,west,north,east). Зеркало CITY_BBOX из
+# habitus/clean/normalize.py и frontend/lib/city.ts — там порядок другой
+# ([lng_min, lat_min, lng_max, lat_max]), сверять по значениям, не по позициям.
+CITY_AREA = {
+    "msk": "(55.48,37.30,55.95,37.95)",
+    "spb": "(59.70,29.60,60.20,30.70)",
 }
 
+# Транспортный bbox шире городского: МЦД уходят далеко за Москву (D1 до
+# Одинцова и Лобни, D3 от Зеленограда до Раменского), и городской bbox рвал бы
+# линию посередине — граф получился бы несвязным. Объявления в этот bbox не
+# попадают: он используется ИСКЛЮЧИТЕЛЬНО построением транспортного графа.
+TRANSIT_AREA = {
+    "msk": "(55.00,36.60,56.30,38.60)",
+    "spb": CITY_AREA["spb"],   # диаметров нет — расширять нечего
+}
+
+POI_KINDS = ("school", "bar", "alcohol", "park", "metro")
+
+
+def overpass_queries(area: str) -> dict[str, str]:
+    """Фрагменты Overpass-запросов по слоям POI для конкретного bbox."""
+    return {
+        # Школьные здания в OSM — way/relation, а не node: node-only запрос давал
+        # 173 школы на Москву вместо ~1500, и walk_min_school врал.
+        "school":  f'(node["amenity"="school"]{area};'
+                   f'way["amenity"="school"]{area};'
+                   f'relation["amenity"="school"]{area};);',
+        "bar":     f'node["amenity"~"bar|pub"]{area};',
+        "alcohol": f'node["shop"="alcohol"]{area};',
+        # парки в OSM — полигоны (way/relation), а не точки; берём и их центроид.
+        "park":    f'(node["leisure"="park"]{area};'
+                   f'way["leisure"="park"]{area};'
+                   f'relation["leisure"="park"]{area};);',
+        "metro":   f'node["station"="subway"]{area};',
+    }
+
+
+_MSK = CITY_AREA["msk"]
 URBAN_FEATURE_QUERY = (
-    f'(way["building"]{MSK_AREA};'
-    f'way["leisure"="park"]{MSK_AREA};'
-    f'way["natural"="water"]{MSK_AREA};'
-    f'way["waterway"="riverbank"]{MSK_AREA};);'
+    f'(way["building"]{_MSK};'
+    f'way["leisure"="park"]{_MSK};'
+    f'way["natural"="water"]{_MSK};'
+    f'way["waterway"="riverbank"]{_MSK};);'
 )
 
 def parse_overpass(kind: str, payload: dict) -> list[dict]:
@@ -58,11 +81,11 @@ def parse_overpass(kind: str, payload: dict) -> list[dict]:
         })
     return rows
 
-def fetch_kind(kind: str, http_post=requests.post, retries: int = 4,
-               backoff: float = 3.0) -> list[dict]:
+def fetch_kind(kind: str, city: str = "msk", http_post=requests.post,
+               retries: int = 4, backoff: float = 3.0) -> list[dict]:
     # POST надёжнее GET на крупных запросах; [timeout:120] — серверный лимит Overpass.
     # `out center;` — для way/relation отдаёт центроид, для node просто координаты.
-    q = f"[out:json][timeout:120];{OVERPASS_QUERIES[kind]}out center;"
+    q = f"[out:json][timeout:120];{overpass_queries(CITY_AREA[city])[kind]}out center;"
     last = ""
     for attempt in range(retries):
         try:
