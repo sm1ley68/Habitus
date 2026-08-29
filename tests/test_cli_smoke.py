@@ -2,6 +2,7 @@ import psycopg
 from pathlib import Path
 from habitus.config import settings
 from habitus.cli import run_offline
+from habitus.geo.osm_extract import POI_KINDS
 
 FIX = Path(__file__).parent / "fixtures" / "sample_russia_realestate.csv"
 
@@ -70,7 +71,7 @@ def test_osm_failure_does_not_abort_the_cycle(monkeypatch):
     API не имеет права уносить с собой заливку, обогащение и эмбеддинги."""
     import habitus.cli as cli
 
-    def boom(kind):
+    def boom(kind, city):
         raise RuntimeError(f"Overpass '{kind}' не удался: HTTP 504")
 
     monkeypatch.setattr(cli, "fetch_kind", boom)
@@ -83,3 +84,9 @@ def test_osm_failure_does_not_abort_the_cycle(monkeypatch):
     assert stats["listings"] == 2       # цикл дошёл до конца
     assert stats["embedded"] == 2       # и эмбеддинги посчитаны
     assert stats["osm_failed"]          # но провал зафиксирован, а не скрыт
+    # запись должна нести настоящий 504 конкретного kind/city, а не проглоченный
+    # TypeError от несовпавшей сигнатуры стаба — иначе тест зелёный по ошибке
+    assert len(stats["osm_failed"]) == len(POI_KINDS)
+    for kind, entry in zip(POI_KINDS, stats["osm_failed"]):
+        assert entry.startswith(f"{kind}/msk: ")
+        assert "504" in entry
