@@ -1,8 +1,21 @@
 {
   "lines": [
-    {"ref": "1",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "14", "system": "mck",    "headway_s": 300, "fallback_speed_kmh": 45},
-    {"ref": "D1", "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55}
+    {"ref": "1",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "4А",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "5",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "6",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "7",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "8А",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "9",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "11",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "12",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "16",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "14",  "system": "mck",    "headway_s": 300, "fallback_speed_kmh": 45},
+    {"ref": "D1",  "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55},
+    {"ref": "D2",  "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55},
+    {"ref": "D3",  "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55},
+    {"ref": "D4",  "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55},
+    {"ref": "D4А", "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55}
   ],
   "edges": [
     {"line": "1", "from": "Сокольники", "to": "Красносельская", "seconds": 150}

@@ -5,6 +5,7 @@ __pycache__/
 data/*
 !data/named_zones.seed.json
 !data/metro/
+data/metro/*
 !data/metro/*.json
 .pytest_cache/
 .idea/

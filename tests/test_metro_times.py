@@ -84,3 +84,40 @@ def test_shipped_files_parse():
         c = load_curated(city)
         assert c.headways, f"{city}: интервалы не заданы"
         assert c.speeds, f"{city}: скорости фолбэка не заданы"
+
+
+def test_shipped_msk_curated_pairs_actually_match():
+    # опечатка в имени станции/линии в msk.json иначе тихо съедалась бы
+    # фолбэком: estimated=True вместо ожидаемого estimated=False.
+    msk = load_curated("msk")
+    seconds, estimated = edge_seconds(msk, "1", "Сокольники",
+                                      "Красносельская", "subway", metres=1800)
+    assert (seconds, estimated) == (150, False)
+
+    t_seconds, t_estimated, outdoor = transfer_seconds(
+        msk, "Охотный Ряд", "Театральная")
+    assert (t_seconds, t_estimated, outdoor) == (180, False, False)
+
+
+def test_nonpositive_curated_edge_seconds_is_rejected(tmp_path):
+    (tmp_path / "metro").mkdir()
+    (tmp_path / "metro" / "msk.json").write_text(json.dumps({
+        "lines": [{"ref": "1", "system": "subway", "headway_s": 120,
+                   "fallback_speed_kmh": 40}],
+        "edges": [{"line": "1", "from": "A", "to": "B", "seconds": 0}],
+        "transfers": [],
+    }, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_curated("msk", tmp_path)
+
+
+def test_nonpositive_curated_transfer_seconds_is_rejected(tmp_path):
+    (tmp_path / "metro").mkdir()
+    (tmp_path / "metro" / "msk.json").write_text(json.dumps({
+        "lines": [{"ref": "1", "system": "subway", "headway_s": 120,
+                   "fallback_speed_kmh": 40}],
+        "edges": [],
+        "transfers": [{"from": "A", "to": "B", "seconds": -1}],
+    }, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_curated("msk", tmp_path)

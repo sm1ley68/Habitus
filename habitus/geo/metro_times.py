@@ -40,14 +40,29 @@ def load_curated(city: str, data_dir: Path | None = None) -> CuratedTimes:
         c.headways[line["ref"]] = int(line["headway_s"])
         c.speeds[line["ref"]] = float(line["fallback_speed_kmh"])
     for e in raw.get("edges", []):
+        seconds = int(e["seconds"])
+        if seconds <= 0:
+            # Синтетический ноль (или отрицательное значение) в курируемом
+            # файле — та же запрещённая подмена «нет замера» на «замер = 0»,
+            # только на входе, а не в выдаче. Ловим на загрузке.
+            raise ValueError(
+                f"{path}: перегон {e['line']!r} {e['from']!r} -> {e['to']!r} "
+                f"имеет seconds={seconds} — курированное значение обязано "
+                f"быть положительным")
         key = (e["line"], normalize_station_name(e["from"]),
                normalize_station_name(e["to"]))
-        c.edges[key] = int(e["seconds"])
+        c.edges[key] = seconds
         # перегон ненаправленный: поезд идёт столько же в обратную сторону
-        c.edges[(e["line"], key[2], key[1])] = int(e["seconds"])
+        c.edges[(e["line"], key[2], key[1])] = seconds
     for t in raw.get("transfers", []):
+        seconds = int(t["seconds"])
+        if seconds <= 0:
+            raise ValueError(
+                f"{path}: пересадка {t['from']!r} -> {t['to']!r} имеет "
+                f"seconds={seconds} — курированное значение обязано быть "
+                f"положительным")
         key = _pair(t["from"], t["to"])
-        c.transfers[key] = int(t["seconds"])
+        c.transfers[key] = seconds
         if t.get("outdoor"):
             c.outdoor.add(key)
     return c
