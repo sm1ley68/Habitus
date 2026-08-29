@@ -2,8 +2,10 @@ import json
 from pathlib import Path
 
 import pytest
+import requests
 
-from habitus.geo.metro import (SYSTEMS, LineRaw, normalize_station_name,
+from habitus.geo.metro import (SYSTEMS, TRANSIT_AREA, TRANSIT_RELATION_FILTER,
+                               LineRaw, fetch_system, normalize_station_name,
                                parse_route_relations)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "overpass_subway_msk.json"
@@ -38,6 +40,18 @@ def test_stations_keep_relation_order(payload):
     assert all(-180 <= s.lon <= 180 and -90 <= s.lat <= 90 for s in line.stations)
 
 
+def test_terminal_stations_with_entry_exit_only_roles_are_kept(payload):
+    # relation 305810 (Сокольническая линия) в фикстуре: 27 node-members,
+    # первый — role stop_entry_only «Бульвар Рокоссовского», последний —
+    # role stop_exit_only «Потапово». Точное сравнение роли со "stop" их
+    # теряет — то есть теряет ОБА конца линии молча. Проверено вручную по
+    # фикстуре (см. фикс-раунд 1).
+    line = parse_route_relations(payload, "subway")[0]
+    assert len(line.stations) == 27
+    assert line.stations[0].name == "Бульвар Рокоссовского"
+    assert line.stations[-1].name == "Потапово"
+
+
 def test_geometry_is_lng_lat_pairs(payload):
     line = parse_route_relations(payload, "subway")[0]
     assert all(len(p) == 2 for p in line.geometry)
@@ -52,6 +66,77 @@ def test_relation_without_stops_is_skipped():
          "members": []},
     ]}
     assert parse_route_relations(payload, "subway") == []
+
+
+def test_station_present_as_both_stop_and_platform_node_dedups_to_one():
+    # На МЦК/МЦД фикстуры пока нет, а комментарий в metro.py прямо
+    # предупреждает, что часть линий несёт только platform-роль — то есть
+    # смешанный релейшен (stop-нода + platform-нода на одну физическую
+    # станцию под разными osm_id) правдоподобен. Без дедупа это две
+    # StationRaw на одну станцию → нулевая по длине связь в графе.
+    payload = {"elements": [
+        {"type": "node", "id": 1, "lat": 55.75, "lon": 37.61,
+         "tags": {"name": "Тестовая"}},
+        {"type": "node", "id": 2, "lat": 55.75, "lon": 37.61,
+         "tags": {"name": "Тестовая"}},
+        {"type": "node", "id": 3, "lat": 55.76, "lon": 37.62,
+         "tags": {"name": "Соседняя"}},
+        {"type": "relation", "id": 1000, "tags": {"route": "train", "ref": "14"},
+         "members": [
+             {"type": "node", "ref": 1, "role": "stop"},
+             {"type": "node", "ref": 2, "role": "platform"},
+             {"type": "node", "ref": 3, "role": "stop"},
+         ]},
+    ]}
+    lines = parse_route_relations(payload, "mck")
+    assert len(lines) == 1
+    line = lines[0]
+    assert len(line.stations) == 2
+    assert [s.name for s in line.stations] == ["Тестовая", "Соседняя"]
+
+
+class _Resp:
+    def __init__(self, status=200, payload=None):
+        self.status_code = status
+        self._payload = payload or {"elements": []}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.exceptions.HTTPError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._payload
+
+
+def test_fetch_system_sends_recursive_query_and_filter():
+    # `>;` — рекурсия, без неё node-members приезжают без tags.name и
+    # каждая линия молча схлопывается в 0 станций (см. комментарий у
+    # fetch_system). Пиновка формы запроса — единственная защита от
+    # такой регрессии, сеть в тестах запрещена.
+    captured = {}
+
+    def fake_post(url, data=None, headers=None, timeout=None):
+        captured["data"] = data["data"]
+        return _Resp()
+
+    fetch_system("subway", "msk", http_post=fake_post)
+    q = captured["data"]
+    assert "out body;>;out body geom;" in q
+    assert TRANSIT_RELATION_FILTER["subway"] in q
+    assert TRANSIT_AREA["msk"] in q
+
+
+def test_fetch_system_retries_then_raises_runtime_error():
+    calls = {"n": 0}
+
+    def always_retry_post(url, data=None, headers=None, timeout=None):
+        calls["n"] += 1
+        return _Resp(status=503)  # 503 in RETRY_STATUS
+
+    with pytest.raises(RuntimeError):
+        fetch_system("subway", "msk", http_post=always_retry_post,
+                     retries=2, backoff=0)
+    assert calls["n"] == 2
 
 
 @pytest.mark.parametrize("raw,expected", [

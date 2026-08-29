@@ -26,9 +26,20 @@ TRANSIT_RELATION_FILTER = {
     "mcd":    'relation["route"="train"]["network"~"МЦД|MCD"]',
 }
 
-# Роли members, которыми в OSM размечена остановка. platform идёт вторым:
-# у части линий проставлен только он.
-_STOP_ROLES = ("stop", "platform")
+# Роли members, которыми в OSM размечена остановка. Сравниваем ПРЕФИКСОМ,
+# а не точным равенством: конечные станции линии в PTv2 размечены ролями
+# stop_entry_only/stop_exit_only, а не голым "stop" — точное сравнение это
+# теряет, то есть теряет ОБА конца КАЖДОЙ линии молча (relation 305810 в
+# фикстуре: 27 node-members, первый и последний — как раз entry/exit-only).
+# Безымянная станция ниже по коду всё равно отсеивается отдельной проверкой,
+# так что расширение матчинга безопасно.
+#
+# platform — запасной вариант НА УРОВЕНЬ РЕЛЕЙШЕНА: у части линий проставлен
+# только он, но внутри ОДНОГО релейшена берём platform*-узлы только если там
+# нет вообще ни одного stop*-узла. Иначе одна физическая станция, размеченная
+# и как stop, и как platform (mixed relation — в подземке этого не видно, но
+# на МЦК/МЦД node-платформы плюс node-stop в одном релейшене правдоподобны),
+# задвоилась бы в списке станций и дала бы нулевую по длине связь в графе.
 
 
 @dataclass
@@ -73,20 +84,41 @@ def parse_route_relations(payload: dict, system: str) -> list[LineRaw]:
         if el.get("type") != "relation":
             continue
         tags = el.get("tags") or {}
+        members = el.get("members", [])
+
+        # На уровне релейшена: если есть хоть один stop*-узел — platform*
+        # игнорируем целиком (см. комментарий у платформы/стопа выше).
+        has_stop_node = any(
+            m.get("type") == "node" and (m.get("role") or "").startswith("stop")
+            for m in members
+        )
+
         stations: list[StationRaw] = []
-        seen: set[int] = set()
+        seen_ids: set[int] = set()
+        seen_names: set[str] = set()
         geometry: list[list[float]] = []
 
-        for m in el.get("members", []):
-            if m.get("type") == "node" and m.get("role") in _STOP_ROLES:
+        for m in members:
+            role = m.get("role") or ""
+            is_stop_member = (role.startswith("stop") if has_stop_node
+                              else role.startswith("platform"))
+            if m.get("type") == "node" and is_stop_member:
                 node = nodes.get(m["ref"])
                 if node is None:
                     continue
                 nm = (node.get("tags") or {}).get("name")
                 # Безымянная станция — мусор: подписать её на схеме нечем.
-                if not nm or node["id"] in seen:
+                if not nm:
                     continue
-                seen.add(node["id"])
+                norm = normalize_station_name(nm)
+                # Дедуп по osm_id (одна и та же нода дважды в members) И по
+                # нормализованному имени (одна физическая станция как
+                # stop-нода и platform-нода под разными osm_id — тот же
+                # частный случай, что и mixed-релейшен, но без общего id).
+                if node["id"] in seen_ids or norm in seen_names:
+                    continue
+                seen_ids.add(node["id"])
+                seen_names.add(norm)
                 stations.append(StationRaw(osm_id=node["id"], name=nm,
                                            lon=node["lon"], lat=node["lat"]))
             elif m.get("type") == "way" and not m.get("role"):
