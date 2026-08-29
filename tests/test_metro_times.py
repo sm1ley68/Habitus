@@ -3,7 +3,8 @@ import json
 import pytest
 
 from habitus.geo.metro_times import (DEFAULT_TRANSFER_S, edge_seconds,
-                                     load_curated, transfer_seconds)
+                                     headway_seconds, load_curated,
+                                     transfer_seconds)
 
 
 @pytest.fixture
@@ -121,3 +122,49 @@ def test_nonpositive_curated_transfer_seconds_is_rejected(tmp_path):
     }, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(ValueError):
         load_curated("msk", tmp_path)
+
+
+def test_headway_seconds_curated_hit(curated):
+    seconds, estimated = headway_seconds(curated, "1", "subway")
+    assert (seconds, estimated) == (120, False)
+
+
+def test_headway_seconds_uncurated_line_falls_back_and_is_marked(curated):
+    # линии "99" нет в курируемом файле фикстуры — обязан вернуться пессимистичный
+    # дефолт по системе, а не 0 и не показатель курированной линии
+    seconds, estimated = headway_seconds(curated, "99", "subway")
+    assert (seconds, estimated) == (150, True)
+
+
+def test_headway_seconds_uncurated_default_is_more_pessimistic_than_template(curated):
+    # некурированная линия не должна тихо унаследовать шаблонное число, которое
+    # выглядит как измеренное значение
+    curated_seconds, _ = headway_seconds(curated, "1", "subway")
+    uncurated_seconds, estimated = headway_seconds(curated, "99", "subway")
+    assert estimated is True
+    assert uncurated_seconds > curated_seconds
+
+
+def test_nonpositive_curated_headway_is_rejected(tmp_path):
+    (tmp_path / "metro").mkdir()
+    (tmp_path / "metro" / "msk.json").write_text(json.dumps({
+        "lines": [{"ref": "1", "system": "subway", "headway_s": 0,
+                   "fallback_speed_kmh": 40}],
+        "edges": [],
+        "transfers": [],
+    }, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_curated("msk", tmp_path)
+
+
+def test_nonpositive_curated_fallback_speed_is_rejected(tmp_path):
+    (tmp_path / "metro").mkdir()
+    (tmp_path / "metro" / "msk.json").write_text(json.dumps({
+        "lines": [{"ref": "1", "system": "subway", "headway_s": 120,
+                   "fallback_speed_kmh": -5}],
+        "edges": [],
+        "transfers": [],
+    }, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_curated("msk", tmp_path)
+

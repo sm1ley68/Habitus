@@ -37,8 +37,19 @@ def load_curated(city: str, data_dir: Path | None = None) -> CuratedTimes:
     raw = json.loads(path.read_text(encoding="utf-8"))
     c = CuratedTimes()
     for line in raw.get("lines", []):
-        c.headways[line["ref"]] = int(line["headway_s"])
-        c.speeds[line["ref"]] = float(line["fallback_speed_kmh"])
+        ref = line["ref"]
+        headway = int(line["headway_s"])
+        speed = float(line["fallback_speed_kmh"])
+        if headway <= 0:
+            raise ValueError(
+                f"{path}: линия {ref!r} имеет headway_s={headway} — "
+                f"курированное значение обязано быть положительным")
+        if speed <= 0:
+            raise ValueError(
+                f"{path}: линия {ref!r} имеет fallback_speed_kmh={speed} — "
+                f"курированное значение обязано быть положительным")
+        c.headways[ref] = headway
+        c.speeds[ref] = speed
     for e in raw.get("edges", []):
         seconds = int(e["seconds"])
         if seconds <= 0:
@@ -93,3 +104,19 @@ def transfer_seconds(curated: CuratedTimes, a_name: str,
     if key in curated.transfers:
         return curated.transfers[key], False, key in curated.outdoor
     return DEFAULT_TRANSFER_S, True, False
+
+
+#: Интервал для линии, которой нет даже в списке lines курируемого файла.
+#: Сознательно ПЕССИМИСТИЧНЕЕ шаблонных курированных значений (120/300/600) —
+#: некурированная линия не должна тихо унаследовать число, которое выглядит
+#: как измеренное. Источник: task-6-brief.md:130, восходит к диапазонам из
+#: комментария схемы в task-5-brief.md:93-95.
+_UNCURATED_HEADWAY_S = {"subway": 150, "mck": 360, "mcd": 720}
+
+
+def headway_seconds(curated: CuratedTimes, line_ref: str,
+                    system: str) -> tuple[int, bool]:
+    """Интервал движения на линии и признак того, что это оценка."""
+    if line_ref in curated.headways:
+        return curated.headways[line_ref], False
+    return _UNCURATED_HEADWAY_S[system], True
