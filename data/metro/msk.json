@@ -1,0 +1,14 @@
+{
+  "lines": [
+    {"ref": "1",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
+    {"ref": "14", "system": "mck",    "headway_s": 300, "fallback_speed_kmh": 45},
+    {"ref": "D1", "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55}
+  ],
+  "edges": [
+    {"line": "1", "from": "Сокольники", "to": "Красносельская", "seconds": 150}
+  ],
+  "transfers": [
+    {"from": "Охотный Ряд", "to": "Театральная", "seconds": 180},
+    {"from": "Площадь Гагарина", "to": "Ленинский проспект", "seconds": 420, "outdoor": true}
+  ]
+}

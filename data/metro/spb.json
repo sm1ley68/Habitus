@@ -1,0 +1,11 @@
+{
+  "lines": [
+    {"ref": "1", "system": "subway", "headway_s": 150, "fallback_speed_kmh": 40},
+    {"ref": "2", "system": "subway", "headway_s": 150, "fallback_speed_kmh": 40},
+    {"ref": "3", "system": "subway", "headway_s": 150, "fallback_speed_kmh": 40},
+    {"ref": "4", "system": "subway", "headway_s": 150, "fallback_speed_kmh": 40},
+    {"ref": "5", "system": "subway", "headway_s": 150, "fallback_speed_kmh": 40}
+  ],
+  "edges": [],
+  "transfers": []
+}

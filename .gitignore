@@ -4,6 +4,8 @@ __pycache__/
 .env
 data/*
 !data/named_zones.seed.json
+!data/metro/
+!data/metro/*.json
 .pytest_cache/
 .idea/
 .DS_Store
