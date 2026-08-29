@@ -1,0 +1,688 @@
+{
+ "elements": [
+  {
+   "type": "relation",
+   "id": 305810,
+   "members": [
+    {
+     "type": "node",
+     "ref": 6938823544,
+     "role": "stop_entry_only"
+    },
+    {
+     "type": "way",
+     "ref": 374902371,
+     "role": "platform_entry_only"
+    },
+    {
+     "type": "node",
+     "ref": 6938823546,
+     "role": "stop"
+    },
+    {
+     "type": "way",
+     "ref": 374900894,
+     "role": "platform"
+    },
+    {
+     "type": "node",
+     "ref": 6938823548,
+     "role": "stop"
+    },
+    {
+     "type": "way",
+     "ref": 206021243,
+     "role": "platform"
+    },
+    {
+     "type": "node",
+     "ref": 6938823550,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823552,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6937381503,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 267335318,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6937856034,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938090619,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6937811149,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823557,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823559,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 278692976,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823561,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823563,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823565,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823567,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823569,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823571,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 3355867698,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823575,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823578,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823579,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823581,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938823583,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 6938881285,
+     "role": "stop"
+    },
+    {
+     "type": "node",
+     "ref": 12157560724,
+     "role": "stop_exit_only"
+    }
+   ],
+   "tags": {
+    "colour": "#E42313",
+    "duration": "01:03",
+    "from": "Бульвар Рокоссовского",
+    "name": "Сокольническая линия: Бульвар Рокоссовского → Потапово",
+    "name:de": "1 -> Süden",
+    "name:en": "Sokolnicheskaya line: Bul'var Rokossovskogo → Potapovo",
+    "network": "Московский метрополитен",
+    "network:en": "Moscow Metro",
+    "network:ru": "Московский метрополитен",
+    "network:wikidata": "Q5499",
+    "operator": "ГУП «Московский метрополитен»",
+    "public_transport:version": "2",
+    "ref": "1",
+    "route": "subway",
+    "to": "Потапово",
+    "type": "route",
+    "wheelchair": "limited",
+    "wikidata": "Q729631"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823544,
+   "lat": 55.8146309,
+   "lon": 37.7342937,
+   "tags": {
+    "name": "Бульвар Рокоссовского",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823546,
+   "lat": 55.8038799,
+   "lon": 37.7449301,
+   "tags": {
+    "name": "Черкизовская",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823548,
+   "lat": 55.7964285,
+   "lon": 37.7153116,
+   "tags": {
+    "name": "Преображенская площадь",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823550,
+   "lat": 55.7888545,
+   "lon": 37.6801752,
+   "tags": {
+    "name": "Сокольники",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823552,
+   "lat": 55.7803907,
+   "lon": 37.6675951,
+   "tags": {
+    "name": "Красносельская",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6937381503,
+   "lat": 55.7752557,
+   "lon": 37.6559741,
+   "tags": {
+    "name": "Комсомольская",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 267335318,
+   "lat": 55.7691111,
+   "lon": 37.6488733,
+   "tags": {
+    "name": "Красные Ворота",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6937856034,
+   "lat": 55.7659443,
+   "lon": 37.6388984,
+   "tags": {
+    "name": "Чистые пруды",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938090619,
+   "lat": 55.7599854,
+   "lon": 37.6278511,
+   "tags": {
+    "name": "Лубянка",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6937811149,
+   "lat": 55.7578477,
+   "lon": 37.6163676,
+   "tags": {
+    "name": "Охотный Ряд",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823557,
+   "lat": 55.7515247,
+   "lon": 37.6102524,
+   "tags": {
+    "name": "Библиотека имени Ленина",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823559,
+   "lat": 55.7454796,
+   "lon": 37.6036755,
+   "tags": {
+    "name": "Кропоткинская",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 278692976,
+   "lat": 55.7352856,
+   "lon": 37.5940414,
+   "tags": {
+    "name": "Парк Культуры",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823561,
+   "lat": 55.726982,
+   "lon": 37.5782658,
+   "tags": {
+    "name": "Фрунзенская",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823563,
+   "lat": 55.7234798,
+   "lon": 37.5641012,
+   "tags": {
+    "name": "Спортивная",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823565,
+   "lat": 55.7103953,
+   "lon": 37.5591397,
+   "tags": {
+    "name": "Воробьёвы горы",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823567,
+   "lat": 55.692741,
+   "lon": 37.5331503,
+   "tags": {
+    "name": "Университет",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823569,
+   "lat": 55.6772643,
+   "lon": 37.5059863,
+   "tags": {
+    "name": "Проспект Вернадского",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823571,
+   "lat": 55.6636706,
+   "lon": 37.4831199,
+   "tags": {
+    "name": "Юго-Западная",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 3355867698,
+   "lat": 55.6459095,
+   "lon": 37.472448,
+   "tags": {
+    "name": "Тропарёво",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823575,
+   "lat": 55.6330195,
+   "lon": 37.4415631,
+   "tags": {
+    "name": "Румянцево",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823578,
+   "lat": 55.6219591,
+   "lon": 37.4240887,
+   "tags": {
+    "name": "Саларьево",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823579,
+   "lat": 55.601349,
+   "lon": 37.4075865,
+   "tags": {
+    "name": "Филатов Луг",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823581,
+   "lat": 55.5861703,
+   "lon": 37.4337938,
+   "tags": {
+    "name": "Прокшино",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938823583,
+   "lat": 55.5687176,
+   "lon": 37.4591681,
+   "tags": {
+    "name": "Ольховая",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6938881285,
+   "lat": 55.5605211,
+   "lon": 37.4678995,
+   "tags": {
+    "name": "Новомосковская",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 12157560724,
+   "lat": 55.5525824,
+   "lon": 37.4926294,
+   "tags": {
+    "name": "Потапово",
+    "public_transport": "stop_position",
+    "railway": "stop",
+    "subway": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 374902371,
+   "bounds": {
+    "minlat": 55.8143365,
+    "minlon": 37.7331884,
+    "maxlat": 55.8150282,
+    "maxlon": 37.7354916
+   },
+   "nodes": [
+    3782845165,
+    4739808713,
+    3782845167,
+    3782845164,
+    5311855192,
+    3782845163,
+    3782845165
+   ],
+   "geometry": [
+    {
+     "lat": 55.8149499,
+     "lon": 37.7331884
+    },
+    {
+     "lat": 55.8149891,
+     "lon": 37.7332225
+    },
+    {
+     "lat": 55.8150282,
+     "lon": 37.7332565
+    },
+    {
+     "lat": 55.8144148,
+     "lon": 37.7354916
+    },
+    {
+     "lat": 55.8143769,
+     "lon": 37.7354587
+    },
+    {
+     "lat": 55.8143365,
+     "lon": 37.7354235
+    },
+    {
+     "lat": 55.8149499,
+     "lon": 37.7331884
+    }
+   ],
+   "tags": {
+    "area": "yes",
+    "layer": "-2",
+    "lit": "yes",
+    "material": "granite",
+    "name": "Бульвар Рокоссовского",
+    "operator": "ГУП «Московский метрополитен»",
+    "public_transport": "platform",
+    "railway": "platform",
+    "subway": "yes",
+    "tunnel": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 374900894,
+   "bounds": {
+    "minlat": 55.8031577,
+    "minlon": 37.7449305,
+    "maxlat": 55.8045815,
+    "maxlon": 37.7451339
+   },
+   "nodes": [
+    3782816692,
+    3782816691,
+    3782816689,
+    4416889232,
+    3782816690,
+    3782816692
+   ],
+   "geometry": [
+    {
+     "lat": 55.8045815,
+     "lon": 37.7449741
+    },
+    {
+     "lat": 55.8045799,
+     "lon": 37.7451339
+    },
+    {
+     "lat": 55.8031577,
+     "lon": 37.7450903
+    },
+    {
+     "lat": 55.8031586,
+     "lon": 37.7450079
+    },
+    {
+     "lat": 55.8031592,
+     "lon": 37.7449305
+    },
+    {
+     "lat": 55.8045815,
+     "lon": 37.7449741
+    }
+   ],
+   "tags": {
+    "area": "yes",
+    "bench": "yes",
+    "bin": "no",
+    "layer": "-2",
+    "lit": "yes",
+    "material": "granite",
+    "name": "Черкизовская",
+    "operator": "ГУП «Московский метрополитен»",
+    "public_transport": "platform",
+    "railway": "platform",
+    "subway": "yes",
+    "tactile_paving": "no",
+    "tunnel": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 206021243,
+   "bounds": {
+    "minlat": 55.7961244,
+    "minlon": 37.714145,
+    "maxlat": 55.796623,
+    "maxlon": 37.7165426
+   },
+   "nodes": [
+    2160270865,
+    1688165495,
+    2160270862,
+    2160270851,
+    1688165488,
+    2160270854,
+    2160270865
+   ],
+   "geometry": [
+    {
+     "lat": 55.796623,
+     "lon": 37.7164949
+    },
+    {
+     "lat": 55.7965799,
+     "lon": 37.7165189
+    },
+    {
+     "lat": 55.7965372,
+     "lon": 37.7165426
+    },
+    {
+     "lat": 55.7961244,
+     "lon": 37.7141928
+    },
+    {
+     "lat": 55.7961674,
+     "lon": 37.7141689
+    },
+    {
+     "lat": 55.7962103,
+     "lon": 37.714145
+    },
+    {
+     "lat": 55.796623,
+     "lon": 37.7164949
+    }
+   ],
+   "tags": {
+    "area": "yes",
+    "bench": "yes",
+    "bin": "no",
+    "layer": "-2",
+    "lit": "yes",
+    "material": "granite",
+    "name": "Преображенская площадь",
+    "operator": "ГУП «Московский метрополитен»",
+    "public_transport": "platform",
+    "railway": "platform",
+    "subway": "yes",
+    "tunnel": "yes",
+    "wheelchair": "no"
+   }
+  }
+ ]
+}
