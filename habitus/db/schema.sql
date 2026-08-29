@@ -182,3 +182,93 @@ ALTER TABLE raw_listings ADD COLUMN IF NOT EXISTS source_extra jsonb NOT NULL DE
 -- гашение по снимку источника (объявления продавца ни в каком снимке нет)
 -- и перезапись полей при повторном обходе (правки продавца главнее источника).
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS owner_managed boolean NOT NULL DEFAULT false;
+
+-- Рельсовый транспорт: метро, МЦК, МЦД. Префикс metro_ сохраняется для всех
+-- трёх систем сознательно: публичный контракт уже называет эту сущность
+-- «metro» в трёх местах (TravelMode, GeoConstraint.kind, enum слоёв карты), и
+-- переименование ради формальной точности порвало бы зафиксированные на трёх
+-- сторонах enum'ы без выигрыша для пользователя. Систему различает колонка.
+--
+-- Узел графа — ПЛАТФОРМА ОДНОЙ ЛИНИИ, а не станция как здание: «Охотный Ряд»
+-- и «Театральная» — два узла, связанные строкой в metro_transfer.
+CREATE TABLE IF NOT EXISTS metro_line (
+    id                 BIGSERIAL PRIMARY KEY,
+    city               TEXT NOT NULL,
+    system             TEXT NOT NULL CHECK (system IN ('subway','mck','mcd')),
+    ref                TEXT NOT NULL,
+    name               TEXT NOT NULL,
+    colour             TEXT,
+    -- Интервал и скорость фолбэка — ДАННЫЕ, а не логика: у метро интервал
+    -- около двух минут, у МЦК пять-восемь, у диаметров днём до двенадцати;
+    -- перегонная скорость у диаметров заметно выше метро.
+    headway_s          INTEGER NOT NULL,
+    -- true — headway_seconds() из habitus/geo/metro_times.py не нашёл линию в
+    -- курируемом файле и вернул пессимистичный дефолт по системе, а не
+    -- измеренный интервал. Без этой колонки признак терялся бы на границе с
+    -- БД: Задача 9 читает headway_s через SELECT, а не из объекта curated в
+    -- памяти, и молча показала бы оценку как факт.
+    headway_estimated  BOOLEAN NOT NULL DEFAULT FALSE,
+    fallback_speed_kmh REAL NOT NULL,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (city, system, ref)
+);
+
+CREATE TABLE IF NOT EXISTS metro_station (
+    id          BIGSERIAL PRIMARY KEY,
+    city        TEXT NOT NULL,
+    line_id     BIGINT NOT NULL REFERENCES metro_line(id) ON DELETE CASCADE,
+    osm_id      BIGINT,
+    name        TEXT NOT NULL,
+    name_norm   TEXT NOT NULL,
+    geom        geometry(Point, 4326) NOT NULL,
+    order_index INTEGER NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (line_id, order_index)
+);
+
+CREATE TABLE IF NOT EXISTS metro_edge (
+    city         TEXT NOT NULL,
+    from_station BIGINT NOT NULL REFERENCES metro_station(id) ON DELETE CASCADE,
+    to_station   BIGINT NOT NULL REFERENCES metro_station(id) ON DELETE CASCADE,
+    seconds      INTEGER NOT NULL,
+    -- true — время выведено из расстояния, а не взято из курируемого файла.
+    -- Признак едет наружу до фронта: оценка показывается как оценка.
+    estimated    BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (from_station, to_station)
+);
+
+CREATE TABLE IF NOT EXISTS metro_transfer (
+    city         TEXT NOT NULL,
+    from_station BIGINT NOT NULL REFERENCES metro_station(id) ON DELETE CASCADE,
+    to_station   BIGINT NOT NULL REFERENCES metro_station(id) ON DELETE CASCADE,
+    seconds      INTEGER NOT NULL,
+    estimated    BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Переход улицей (типично между метро и МЦД): 5–10 минут вместо трёх.
+    outdoor      BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (from_station, to_station)
+);
+
+CREATE TABLE IF NOT EXISTS metro_line_geom (
+    line_id BIGINT PRIMARY KEY REFERENCES metro_line(id) ON DELETE CASCADE,
+    geom    geometry(LineString, 4326)
+);
+
+-- Пешие плечи «объект → платформа». Несколько строк на объект: у дома возле
+-- пересадочного узла в пешей доступности несколько платформ, и движку нужны
+-- все — ближайшая по прямой регулярно оказывается на тупиковой ветке.
+CREATE TABLE IF NOT EXISTS listing_metro_access (
+    external_id  TEXT NOT NULL,
+    station_id   BIGINT NOT NULL REFERENCES metro_station(id) ON DELETE CASCADE,
+    walk_seconds INTEGER NOT NULL,
+    estimated    BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (external_id, station_id)
+);
+
+CREATE INDEX IF NOT EXISTS metro_line_city_system_ix ON metro_line (city, system);
+CREATE INDEX IF NOT EXISTS metro_station_geom_gix ON metro_station USING GIST (geom);
+CREATE INDEX IF NOT EXISTS metro_station_city_ix ON metro_station (city);
+CREATE INDEX IF NOT EXISTS metro_station_norm_ix ON metro_station (city, name_norm);
+CREATE INDEX IF NOT EXISTS metro_edge_city_ix ON metro_edge (city);
+CREATE INDEX IF NOT EXISTS metro_transfer_city_ix ON metro_transfer (city);
+CREATE INDEX IF NOT EXISTS lma_station_ix ON listing_metro_access (station_id);
