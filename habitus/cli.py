@@ -1,4 +1,5 @@
 import argparse
+import logging
 import sys
 from pathlib import Path
 import psycopg
@@ -18,6 +19,7 @@ from habitus.geo.metro_access import (ORSWalker, refresh_listing_metro_access,
 from habitus.embed.document import refresh_doc_text
 from habitus.embed.encode import embed_pending
 
+log = logging.getLogger(__name__)
 
 _PARSERS = {"kaggle": parse_kaggle_csv, "cian": parse_cian_csv}
 
@@ -33,7 +35,7 @@ _DEFAULT_MIN_NDCG = 0.41
 
 
 def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
-                source="kaggle", city: str = "msk") -> dict:
+                source="kaggle", city: str = "msk", no_ors: bool = False) -> dict:
     init_db(conn)
     stats = {}
     rows = _PARSERS[source](csv_path)
@@ -72,9 +74,13 @@ def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
         # monkeypatch.setattr(cli, "fetch_system", ...) в тестах реально
         # подменяет то, что уйдёт в build_metro, а не бьётся о дефолт,
         # захваченный один раз при определении функции.
+        # walker: тот же опт-ин по ORS_API_KEY, что и в подкоманде `metro`
+        # (R49) — --no-osm выключает и POI, и метро разом, поэтому нужен
+        # отдельный --no-ors, который выключает только внешний пеший роутер,
+        # не трогая ни POI, ни сбор графа метро/МЦК/МЦД из OSM.
         stats["metro"] = build_metro(
             conn, city, fetch=fetch_system,
-            walker=ORSWalker() if settings.ors_api_key else None)
+            walker=None if no_ors or not settings.ors_api_key else ORSWalker())
     stats["doc_text"] = refresh_doc_text(conn)
     stats["embedded"] = embed_pending(conn, model=model)
     return stats
@@ -128,8 +134,14 @@ def build_metro(conn, city: str, fetch=fetch_system, walker=None) -> dict:
                 # Второй риск дешевле первого — синтетический ноль в графе
                 # запрещён тем же принципом, что и синтетический ноль в
                 # досье объекта (CLAUDE.md).
+                # "skipped" — явный маркер: ключ отличает «ничего не
+                # трогали, потому что fetch вернул 0» от настоящего нуля
+                # линий, который дал бы upsert_transit на пустой,
+                # неотличимый по форме stats-словарь без этого поля.
                 stats[system] = {"lines": 0, "stations": 0, "edges": 0,
-                                 "transfers": 0}
+                                 "transfers": 0,
+                                 "skipped": "пустой успешный fetch — "
+                                            "данные системы не тронуты"}
                 continue
             stats[system] = upsert_transit(lines, conn, city)
             # R36 (ruling): upsert_transit сам по себе только апсертит —
@@ -147,6 +159,33 @@ def build_metro(conn, city: str, fetch=fetch_system, walker=None) -> dict:
             # и listing_metro_access (те же ON DELETE CASCADE, что и в
             # тестовой фикстуре `TRUNCATE metro_line CASCADE`).
             refs = [line.ref for line in lines]
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT count(*) FROM metro_line "
+                    "WHERE city = %s AND system = %s;", (city, system))
+                stored = cur.fetchone()[0]
+            # R47 (ruling): пустой fetch выше защищён отдельно, но типичный
+            # сбой Overpass — "потерялись elements где-то в середине
+            # рекурсивного `>;`" (см. докстринг fetch_system) — обычно даёт
+            # НЕ пустой, а ЧАСТИЧНЫЙ список: старую защиту это не ловит.
+            # Если свежий список меньше половины того, что уже лежит в БД
+            # для этой (city, system), delete-missing отменяется —
+            # апсерт fetched-линий (строкой выше) уже случился и не
+            # откатывается, он только добавляет/обновляет и разрушительного
+            # действия в нём нет. Порог 0.5, а не более жёсткий: подземка
+            # крупного города не теряет между двумя соседними ночными
+            # прогонами больше половины линий ни при каком реальном
+            # событии — настоящее массовое закрытие такого масштаба само
+            # по себе редкое, заметное и переживёт один пропущенный
+            # автоматический цикл до ручной проверки; тихая потеря графа
+            # от одного битого ответа Overpass — не переживёт.
+            if stored > 0 and len(refs) < stored * 0.5:
+                stats["failed"].append(
+                    f"{system}/{city}: подозрительно короткий ответ Overpass "
+                    f"({len(refs)} линий против {stored} в БД) — "
+                    "delete-missing пропущен, нужна ручная проверка")
+                conn.commit()
+                continue
             with conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM metro_line WHERE city = %s AND system = %s "
@@ -173,7 +212,15 @@ def build_metro(conn, city: str, fetch=fetch_system, walker=None) -> dict:
         stats["walk_min_metro"] = refresh_walk_min_metro(conn, city)
     except Exception as e:  # noqa: BLE001
         conn.rollback()
+        log.error("пересчёт пеших плеч метро провалился (%s): %s", city, e)
         stats["failed"].append(f"access/{city}: {e}")
+        # Ключи остаются в словаре с явным сентинелом None (успешный прогон
+        # всегда пишет сюда int — количество строк), а не просто исчезают:
+        # скриптовый/cron-запуск, который читает stats["access"] напрямую,
+        # без осмотра stats["failed"], иначе не отличил бы отказ от того,
+        # что этот шаг вовсе не выполнялся.
+        stats.setdefault("access", None)
+        stats.setdefault("walk_min_metro", None)
     return stats
 
 
@@ -184,6 +231,8 @@ def main():
     off.add_argument("--csv", type=Path, required=True)
     off.add_argument("--source", choices=["kaggle", "cian"], default="kaggle")
     off.add_argument("--no-osm", action="store_true")
+    off.add_argument("--no-ors", action="store_true",
+                     help="не ходить в ORS: пешие плечи метро оценкой по прямой")
     off.add_argument("--city", choices=["msk", "spb"], default="msk")
     sub.add_parser("update")
     s = sub.add_parser("search")
@@ -214,7 +263,8 @@ def main():
     with get_conn() as conn:
         if args.cmd == "offline":
             print(run_offline(args.csv, conn, fetch_osm=not args.no_osm,
-                              source=args.source, city=args.city))
+                              source=args.source, city=args.city,
+                              no_ors=args.no_ors))
         elif args.cmd == "update":
             print("update: запускать по cron (инкрементал)")
         elif args.cmd == "search":
@@ -266,6 +316,13 @@ def main():
             init_db(conn)
             print({"imported": upsert_urban_features(fetch_urban_features(), conn)})
         elif args.cmd == "metro":
+            # init_db — как и во всех остальных пишущих подкомандах
+            # (import-evidence, import-zones, import-osm-features, offline):
+            # без него на базе, где schema.sql не переигран после Задачи 5,
+            # все три системы и пересчёт плеч упадут на "relation metro_line
+            # does not exist", а команда всё равно напечатает stats и
+            # выйдет с кодом 0 (R48 ruling).
+            init_db(conn)
             # walker=None по умолчанию, если ключ ORS не настроен — как и в
             # run_offline: ORS включается ТОЛЬКО опт-ином через
             # ORS_API_KEY, а не молча по факту наличия команды, потому что

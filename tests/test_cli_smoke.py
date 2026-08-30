@@ -96,6 +96,15 @@ def test_osm_failure_does_not_abort_the_cycle(monkeypatch):
     for kind, entry in zip(POI_KINDS, stats["osm_failed"]):
         assert entry.startswith(f"{kind}/msk: ")
         assert "504" in entry
+    # Фикс-раунд 1, пункт 5: этот стаб — просто lambda с сигнатурой
+    # fetch_system, никакого реального поведения он не проверяет. Если
+    # сигнатура fetch_system когда-нибудь разъедется со стабом, вызов
+    # упадёт исключением, попадёт в общий except в build_metro и молча
+    # осядет в stats["metro"]["failed"] — тест остался бы зелёным по
+    # неправильной причине (тот же класс дефекта, что уже был в Задаче 2
+    # с устаревшей сигнатурой стаба). Явная проверка на пустой failed
+    # ловит именно это дрожание сигнатуры.
+    assert stats["metro"]["failed"] == []
 
 
 def test_build_metro_reports_failed_systems_without_dying(monkeypatch):
@@ -201,3 +210,46 @@ def test_build_metro_keeps_data_of_system_whose_fetch_failed():
         # subway пересобрана штатно, mck (провалившийся fetch) сохранила
         # прежние данные — а не стала пустой из-за общего TRUNCATE.
         assert refs == {"1", "14"}
+
+
+def test_build_metro_refuses_delete_missing_on_suspiciously_short_fetch():
+    """R47 (фикс-раунд 1): усечённый (не пустой!) ответ Overpass — потерялись
+    elements где-то в середине рекурсивного `>;` — раньше молча стирал линии,
+    которых не было в укороченном списке: delete-missing сравнивал fetched refs
+    с БД буквально, без всякой защиты на «подозрительно мало». Воспроизведено
+    до фикса на реальном прогоне build_metro (3 линии → 1 в следующем fetch →
+    2 линии стёрты, stats["failed"] == []); см. task-8-report.md, фикс-раунд 1,
+    пункт 1, для протокола repro."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE metro_line CASCADE;")
+        conn.commit()
+
+        def fetch_three(system, city):
+            if system == "subway":
+                return [_line("1", "subway", ("A", "B")),
+                        _line("2", "subway", ("C", "D"), lon0=37.70),
+                        _line("3", "subway", ("E", "F"), lon0=37.80)]
+            return []
+
+        build_metro(conn, "msk", fetch=fetch_three, walker=None)
+        refs = {r[0] for r in conn.execute(
+            "SELECT ref FROM metro_line WHERE city='msk' AND system='subway'"
+        ).fetchall()}
+        assert refs == {"1", "2", "3"}
+
+        # 1 линия из 3 — меньше половины того, что лежит в БД: подозрительно
+        # усечённый ответ, а не настоящее закрытие двух линий разом.
+        def fetch_truncated(system, city):
+            if system == "subway":
+                return [_line("1", "subway", ("A", "B"))]
+            return []
+
+        stats = build_metro(conn, "msk", fetch=fetch_truncated, walker=None)
+        refs = {r[0] for r in conn.execute(
+            "SELECT ref FROM metro_line WHERE city='msk' AND system='subway'"
+        ).fetchall()}
+        # Все три линии на месте — delete-missing отменён.
+        assert refs == {"1", "2", "3"}
+        assert any("subway" in f and "msk" in f for f in stats["failed"])
