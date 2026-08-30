@@ -25,22 +25,6 @@ def _nearest_min(kind: str) -> str:
     )"""
 
 
-# Название ближайшего POI — тем же KNN и с тем же добором пяти кандидатов, что
-# и минуты: планарно ближайшая точка не всегда геодезически ближайшая, а
-# название обязано соответствовать той станции, по которой посчитаны минуты.
-# Безымянные точки отбрасываются: подпись «метро (без названия)» — мусор.
-def _nearest_name(kind: str) -> str:
-    return f"""(
-      SELECT p.name
-      FROM (SELECT geom, name FROM poi
-            WHERE kind = '{kind}' AND city = l.city
-              AND name IS NOT NULL AND name <> ''
-            ORDER BY geom <-> l.geom LIMIT 5) p
-      ORDER BY ST_Distance(l.geom::geography, p.geom::geography)
-      LIMIT 1
-    )"""
-
-
 # Шумовая экспозиция объекта — средние модельные дБ в 500 м — и границы третей
 # по городу. Пороги ОТНОСИТЕЛЬНЫЕ, а не абсолютные (55/65 дБ): слой модельный,
 # у него всего несколько дискретных значений по классу дороги и средние 65 дБ,
@@ -74,12 +58,11 @@ UPDATE listings l SET
   ),
   walk_min_school = {_nearest_min('school')},
   walk_min_park   = {_nearest_min('park')},
-  -- источник в приоритете, вычисленное — фолбэк (см. спеку: провенанс)
-  walk_min_metro  = COALESCE(l.walk_min_metro_src, {_nearest_min('metro')}),
-  -- Та же логика провенанса для названия: станция источника в приоритете,
-  -- вычисленная — фолбэк. Циан называет станции только пешие, поэтому у части
-  -- объявлений название пустовало при уже посчитанных минутах.
-  metro_station   = COALESCE(l.metro_station, {_nearest_name('metro')}),
+  -- walk_min_metro здесь НЕ считается: его владелец — habitus/geo/metro_access.py,
+  -- который берёт время по пешей сети до платформы подземки. Прямая по воздуху
+  -- (прежний _nearest_min('metro')) занижала на реке, путях и закрытых кварталах.
+  -- Порядок в offline-прогоне: enrich_all → refresh_listing_metro_access →
+  -- refresh_walk_min_metro, поэтому здесь колонка не трогается вовсе.
   -- тише трети города → low, тише двух третей → medium, остальное → high.
   -- Барный прокси остаётся фолбэком там, где слой не покрывает адрес.
   noise_level = COALESCE(

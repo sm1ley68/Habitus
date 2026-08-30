@@ -55,25 +55,33 @@ def test_enrich_around_only_touches_nearby():
         assert far_density is None    # far не пересчитывался
 
 
-def test_source_metro_time_wins_over_computed():
+def test_enrich_all_does_not_touch_walk_min_metro():
+    """walk_min_metro/metro_station больше не считаются здесь (Задача 7):
+    владелец — habitus/geo/metro_access.py (пешая сеть до платформы подземки,
+    а не прямая по воздуху до ближайшего poi kind='metro'). enrich_all не
+    имеет права ни заполнить, ни затереть эти два поля — иначе порядок
+    offline-прогона (enrich_all → refresh_listing_metro_access →
+    refresh_walk_min_metro) перестал бы что-либо значить."""
     with psycopg.connect(settings.db_dsn) as conn:
         init_db(conn)
         with conn.cursor() as cur:
             cur.execute("TRUNCATE listings, poi;")
-            # станция в ~1.5 км → вычисленное время ~19 мин
+            # станция в poi(kind='metro') — наследие старого механизма;
+            # enrich_all обязан её игнорировать целиком.
             cur.execute("""INSERT INTO poi (osm_id, kind, name, geom, city) VALUES
                 (1,'metro','Дальняя',ST_SetSRID(ST_MakePoint(37.63,55.75),4326),'msk');""")
             cur.execute("""INSERT INTO listings (external_id, source, geom, city,
-                                                 walk_min_metro_src) VALUES
-                ('WITH_SRC','t',ST_SetSRID(ST_MakePoint(37.61,55.75),4326),'msk',7),
-                ('NO_SRC','t',ST_SetSRID(ST_MakePoint(37.61,55.75),4326),'msk',NULL);""")
+                                                 walk_min_metro_src, metro_station) VALUES
+                ('WITH_SRC','t',ST_SetSRID(ST_MakePoint(37.61,55.75),4326),'msk',7,'Уже есть'),
+                ('NO_SRC','t',ST_SetSRID(ST_MakePoint(37.61,55.75),4326),'msk',NULL,NULL);""")
         conn.commit()
         enrich_all(conn)
         with conn.cursor() as cur:
-            cur.execute("SELECT external_id, walk_min_metro FROM listings ORDER BY external_id;")
-            got = dict(cur.fetchall())
-    assert got["WITH_SRC"] == 7.0            # источник не перезаписан
-    assert got["NO_SRC"] > 10                # посчитано по OSM
+            cur.execute("""SELECT external_id, walk_min_metro, metro_station
+                           FROM listings ORDER BY external_id;""")
+            got = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+    assert got["WITH_SRC"] == (None, "Уже есть")  # walk_min_metro не тронут, имя не тронуто
+    assert got["NO_SRC"] == (None, None)          # и не досчитан по прямой до poi
 
 
 def test_enrich_does_not_cross_cities():
@@ -167,63 +175,8 @@ def test_noise_grades_are_relative_thirds_of_the_city():
     assert got == {"low": 3, "medium": 3, "high": 3}
 
 
-# --- название ближайшей станции ------------------------------------------
-#
-# Циан отдаёт станции с transport_type; пеших среди них может не быть вовсе,
-# и тогда metro_station оставался NULL — при том, что МИНУТЫ до метро уже
-# считались по OSM-фолбэку (у 206 объявлений из 2143 именно так). Название
-# станции лежало ровно в тех же точках poi, просто не записывалось.
-def _seed_metro(conn):
-    with conn.cursor() as cur:
-        cur.execute("TRUNCATE listings, poi;")
-        cur.execute("""INSERT INTO listings (external_id, source, geom, metro_station)
-            VALUES ('L_NO_NAME','cian',
-                    ST_SetSRID(ST_MakePoint(37.6173,55.7558),4326), NULL),
-                   ('L_FROM_SOURCE','cian',
-                    ST_SetSRID(ST_MakePoint(37.6175,55.7559),4326), 'Охотный Ряд');""")
-        cur.execute("""INSERT INTO poi (osm_id, kind, name, geom) VALUES
-            (10,'metro','Театральная', ST_SetSRID(ST_MakePoint(37.6190,55.7575),4326)),
-            (11,'metro','Тверская',    ST_SetSRID(ST_MakePoint(37.6060,55.7640),4326));""")
-    conn.commit()
-
-
-def test_enrich_fills_station_name_from_nearest_poi():
-    with psycopg.connect(settings.db_dsn) as conn:
-        init_db(conn)
-        _seed_metro(conn)
-        enrich_all(conn)
-        with conn.cursor() as cur:
-            cur.execute("""SELECT metro_station, walk_min_metro
-                           FROM listings WHERE external_id='L_NO_NAME';""")
-            station, minutes = cur.fetchone()
-        assert station == "Театральная"   # ближайшая, а не первая попавшаяся
-        assert minutes is not None
-
-
-def test_source_station_is_not_overwritten_by_computed_one():
-    """Данные источника приоритетнее вычисленных: если Циан назвал станцию,
-    вычисленная не имеет права её затереть."""
-    with psycopg.connect(settings.db_dsn) as conn:
-        init_db(conn)
-        _seed_metro(conn)
-        enrich_all(conn)
-        with conn.cursor() as cur:
-            cur.execute("""SELECT metro_station FROM listings
-                           WHERE external_id='L_FROM_SOURCE';""")
-            assert cur.fetchone()[0] == "Охотный Ряд"
-
-
-def test_no_metro_poi_leaves_station_empty():
-    """Нет точек метро — станция остаётся NULL. Придумывать название нельзя."""
-    with psycopg.connect(settings.db_dsn) as conn:
-        init_db(conn)
-        with conn.cursor() as cur:
-            cur.execute("TRUNCATE listings, poi;")
-            cur.execute("""INSERT INTO listings (external_id, source, geom)
-                VALUES ('L_ALONE','cian',
-                        ST_SetSRID(ST_MakePoint(37.6173,55.7558),4326));""")
-        conn.commit()
-        enrich_all(conn)
-        with conn.cursor() as cur:
-            cur.execute("SELECT metro_station FROM listings WHERE external_id='L_ALONE';")
-            assert cur.fetchone()[0] is None
+# Название ближайшей станции метро (по подземной пешей сети, с провенансом
+# источник-важнее-вычисленного) больше не тестируется здесь — эта логика
+# переехала в refresh_walk_min_metro (Задача 7), см.
+# tests/test_metro_access_db.py::test_walk_min_metro_fills_name_and_minutes_from_nearest_subway
+# и ::test_walk_min_metro_prefers_source_over_computed.
