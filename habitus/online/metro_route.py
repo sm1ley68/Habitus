@@ -221,7 +221,15 @@ class MetroGraph:
         best: tuple[int, str, int] | None = None   # (total, kind, target_id)
         for t, walk in targets.items():
             candidates: list[tuple[int, str]] = []
-            if t in seeds:
+            # R59 (фикс-раунд 2): `t in seeds` одно не гарантирует, что t —
+            # реальный узел графа. `_dijkstra` молча пропускает семена не из
+            # self.stations (:147) — если не повторить тот же фильтр здесь,
+            # "тривиальный" кандидат построится для несуществующей станции
+            # (устаревший id в listing_metro_access после пересборки графа),
+            # и route() покажет "вы уже на месте" там, где times_from() эту
+            # станцию вообще не знает. Фикс — не дефолт, а то же условие
+            # членства в графе, что уже применяется в _dijkstra.
+            if t in seeds and t in self.stations:
                 candidates.append((seeds[t] + walk, "trivial"))
             if t in dist:
                 candidates.append((dist[t] + walk, "rail"))

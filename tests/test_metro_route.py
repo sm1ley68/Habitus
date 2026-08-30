@@ -146,6 +146,24 @@ def test_route_reconciles_with_times_from_on_the_cheaper_rail_case(graph):
     assert r.ride_seconds == graph.times_from(seeds)[3] + 0
 
 
+def test_route_and_times_from_agree_on_an_out_of_graph_seed(graph):
+    # R59 (фикс-раунд 2): станция 77 не входит в self.stations вообще —
+    # устаревший id в listing_metro_access после пересборки графа. До фикса
+    # route({77:0},{77:0}) строила "тривиальный" маршрут (ride_seconds=0,
+    # без сегментов) для станции, которую times_from вообще не знает.
+    assert graph.times_from({77: 0}) == {}
+    assert graph.route({77: 0}, {77: 0}) is None
+
+
+def test_route_and_times_from_agree_on_a_mixed_out_of_graph_seed(graph):
+    # Та же дыра, но семя из графа (1) подмешано к семени вне графа (77) —
+    # цель 77 не должна тривиально "найтись" только потому, что она есть в
+    # seeds; times_from тоже не должен знать о ней.
+    times = graph.times_from({1: 0, 77: 30})
+    assert 77 not in times
+    assert graph.route({1: 0, 77: 30}, {77: 0}) is None
+
+
 # --- R29/R30: нет дефолта 0 для отсутствующего интервала --------------------
 
 def test_missing_headway_entry_raises_instead_of_defaulting_to_zero():
