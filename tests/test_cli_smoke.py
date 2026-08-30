@@ -1,3 +1,5 @@
+import sys
+
 import psycopg
 from pathlib import Path
 from habitus.config import settings
@@ -85,8 +87,11 @@ def test_osm_failure_does_not_abort_the_cycle(monkeypatch):
         with conn.cursor() as cur:
             cur.execute("DROP TABLE IF EXISTS listings, raw_listings, poi CASCADE;")
         conn.commit()
+        # no_ors=True (R50): без него, на машине с настроенным ORS_API_KEY,
+        # build_metro(walker=ORSWalker()) реально уходил бы во внешний ORS —
+        # fetch_osm=True здесь означает и метро, не только POI.
         stats = run_offline(FIX, conn, model=FakeModel(), fetch_osm=True,
-                            geocoder=_no_network_geocoder)
+                            geocoder=_no_network_geocoder, no_ors=True)
     assert stats["listings"] == 2       # цикл дошёл до конца
     assert stats["embedded"] == 2       # и эмбеддинги посчитаны
     assert stats["osm_failed"]          # но провал зафиксирован, а не скрыт
@@ -253,3 +258,65 @@ def test_build_metro_refuses_delete_missing_on_suspiciously_short_fetch():
         # Все три линии на месте — delete-missing отменён.
         assert refs == {"1", "2", "3"}
         assert any("subway" in f and "msk" in f for f in stats["failed"])
+
+
+def test_metro_cli_branch_uses_stubbed_fetch_and_never_hits_network(monkeypatch):
+    """R52 (фикс-раунд 2): до фикса `elif args.cmd == "metro":` звал
+    build_metro без fetch=fetch_system явно — полагаясь на дефолт параметра
+    build_metro, захваченный ОДИН РАЗ при определении функции, а не на живой
+    lookup имени в глобалах cli. monkeypatch.setattr(cli, "fetch_system", ...)
+    такой дефолт не подменяет (тот же механизм, что уже потребовал
+    fetch=fetch_system явно в вызове из run_offline, см. R52-комментарий в
+    cli.py) — ветка `metro` была непроверяемой и реально стучалась в
+    Overpass, что ре-ревьюер обнаружил на собственной пробе."""
+    import habitus.cli as cli
+
+    calls = []
+
+    def fake_fetch(system, city):
+        calls.append((system, city))
+        return []
+
+    monkeypatch.setattr(cli, "fetch_system", fake_fetch)
+    monkeypatch.setattr(
+        sys, "argv", ["habitus", "metro", "--city", "msk", "--no-ors"])
+
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE metro_line CASCADE;")
+        conn.commit()
+
+    cli.main()  # без SystemExit — все fetch пустые, но успешные
+
+    assert [c[0] for c in calls] == ["subway", "mck", "mcd"]
+
+
+def test_metro_cli_exits_nonzero_when_stats_failed_is_not_empty(monkeypatch):
+    """R51 (фикс-раунд 2): отказ (в т.ч. срабатывание R47-порога) раньше был
+    виден только в stdout — код возврата оставался 0, и cron/скриптовый
+    раннер не мог отличить успешный прогон от отказавшего."""
+    import habitus.cli as cli
+
+    def fake_fetch(system, city):
+        if system == "mcd":
+            raise RuntimeError("Overpass 504")
+        return []
+
+    monkeypatch.setattr(cli, "fetch_system", fake_fetch)
+    monkeypatch.setattr(
+        sys, "argv", ["habitus", "metro", "--city", "msk", "--no-ors"])
+
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE metro_line CASCADE;")
+        conn.commit()
+
+    try:
+        cli.main()
+    except SystemExit as exc:
+        code = exc.code
+    else:
+        code = None
+    assert code == 1
