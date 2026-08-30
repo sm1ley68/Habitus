@@ -10,6 +10,7 @@ from habitus.clean.normalize import is_valid
 from habitus.embed.document import refresh_doc_text
 from habitus.embed.encode import embed_pending
 from habitus.geo.enrich import enrich_ids
+from habitus.geo.metro_access import refresh_metro_for_listings
 from habitus.online.schema import OwnerListingUpsertRequest
 
 
@@ -78,6 +79,13 @@ def upsert_owner_listing(req: OwnerListingUpsertRequest,
     conn.commit()
 
     enrich_ids(conn, [req.external_id])
+    # ДО refresh_doc_text: doc_text и, следом, эмбеддинг запекают
+    # walk_min_metro/metro_station в момент постройки — если пересчитать метро
+    # позже, значение в тексте и векторе останется NULL навсегда, и городская
+    # пересборка это уже не починит (R39). refresh_listing_metro_access сам
+    # по себе — весь город, здесь нужен точечный пересчёт ровно этого
+    # объявления.
+    refresh_metro_for_listings(conn, req.city, [req.external_id])
     refresh_doc_text(conn, [req.external_id])
     embed_pending(conn, model=model, external_ids=[req.external_id])
 

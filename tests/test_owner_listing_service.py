@@ -53,6 +53,42 @@ def test_upsert_creates_indexed_owner_managed_row():
     assert round(row[6], 4) == 55.7108
 
 
+def test_upsert_fills_walk_min_metro_before_doc_text_is_built():
+    """R39: раньше upsert_owner_listing вообще не считал метро для
+    опубликованного из кабинета объявления (enrich_ids его больше не
+    вычисляет, а городской refresh_listing_metro_access на этом пути не
+    вызывается никем) — объявление получало walk_min_metro=NULL навсегда, а
+    doc_text/эмбеддинг запекались без строки про метро ДО того, как поле
+    вообще могло бы появиться. Метро рядом с координатами объявления
+    (37.6595, 55.7108) — если refresh не выполнился до refresh_doc_text,
+    doc_text не будет содержать фразу «метро в … мин пешком»."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        _clean(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE metro_line CASCADE;")
+            cur.execute("""INSERT INTO metro_line
+                           (id, city, system, ref, name, headway_s, fallback_speed_kmh)
+                           VALUES (1,'msk','subway','1','л1',120,40);""")
+            cur.execute("""INSERT INTO metro_station
+                           (id, city, line_id, name, name_norm, geom, order_index)
+                           VALUES (10,'msk',1,'Курская','курская',
+                                   ST_SetSRID(ST_MakePoint(37.6600,55.7110),4326),0);""")
+        conn.commit()
+
+        upsert_owner_listing(_req(), conn, model=FakeModel())
+
+        with conn.cursor() as cur:
+            cur.execute("""SELECT walk_min_metro, doc_text
+                           FROM listings WHERE external_id='owner_test1';""")
+            walk_min_metro, doc_text = cur.fetchone()
+    assert walk_min_metro is not None
+    assert "мин пешком" in doc_text and "метро" in doc_text, (
+        "doc_text построен без walk_min_metro — значит, refresh случился "
+        "после refresh_doc_text, а не до него"
+    )
+
+
 def test_upsert_is_idempotent_and_updates_price():
     with psycopg.connect(settings.db_dsn) as conn:
         init_db(conn)

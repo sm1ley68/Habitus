@@ -20,10 +20,18 @@ class ORSWalker:
     """Пешая сеть через ORS. Вызывается как walker(start, end) → секунды."""
 
     def __init__(self, provider=None):
-        # Импорт ВНУТРИ функции/метода, а не на уровне модуля (R2): ORSProvider
-        # живёт в habitus.online.geo, а тот модуль (через цепочку импортов)
-        # тянет обратно в habitus.geo — импорт на уровне модуля здесь дал бы
-        # цикл, как и straight_walk_seconds → habitus.online.geo в Задачах 9/11.
+        # Импорт ВНУТРИ __init__, а не на уровне модуля. Сегодня цикла через
+        # habitus.online.geo НЕТ (проверено: он не импортирует ничего из
+        # habitus.geo) — прежняя формулировка комментария заявляла цикл,
+        # которого не существует, и вводила в заблуждение. Импорт всё равно
+        # остаётся отложенным по границе слоёв из R2: habitus/geo/* — нижний
+        # слой, на который опирается habitus/online/*, а не наоборот, и
+        # module-level импорт отсюда в habitus.online.geo эту границу
+        # стирает. Task 9 кладёт код графа в habitus/online/metro_route.py,
+        # который читает listing_metro_access и, скорее всего, потянет
+        # habitus.geo.metro_access обратно — тогда цикл станет реальным, и
+        # находить его через ImportError в проде дороже, чем держать этот
+        # импорт отложенным уже сейчас.
         from habitus.online.geo import ORSProvider
 
         self._provider = provider or ORSProvider()
@@ -34,8 +42,26 @@ class ORSWalker:
         return seconds
 
 
+def _fetch_nearest_subway(cur, city: str, lon: float, lat: float):
+    """Ближайшая ПОДЗЕМНАЯ платформа отдельным KNN, с той же поправкой на
+    планарность, что и основной запрос ниже (буфер 5 вместо LIMIT 1 сразу)."""
+    cur.execute("""
+        SELECT s.id, ST_X(s.geom), ST_Y(s.geom),
+               ST_Distance(s.geom::geography,
+                           ST_SetSRID(ST_MakePoint(%(lon)s,%(lat)s),4326)::geography)
+        FROM (SELECT st.id, st.geom
+              FROM metro_station st JOIN metro_line ml ON ml.id = st.line_id
+              WHERE st.city = %(city)s AND ml.system = 'subway'
+              ORDER BY st.geom <-> ST_SetSRID(ST_MakePoint(%(lon)s,%(lat)s),4326)
+              LIMIT 5) s
+        ORDER BY 4
+        LIMIT 1;""", {"city": city, "lon": lon, "lat": lat})
+    return cur.fetchone()
+
+
 def refresh_listing_metro_access(conn: psycopg.Connection, city: str,
-                                 walker=None, k: int = 3) -> int:
+                                 walker=None, k: int = 3,
+                                 external_ids: list[str] | None = None) -> int:
     """Три ближайшие платформы на объект с пешим временем до каждой.
 
     Три, а не одна: ближайшая по прямой платформа регулярно оказывается на
@@ -46,13 +72,31 @@ def refresh_listing_metro_access(conn: psycopg.Connection, city: str,
     ПЛАНАРНОМУ расстоянию в градусах, а планарно ближайшая точка на широте
     Москвы не всегда геодезически ближайшая (тот же приём и та же причина, что
     в habitus/geo/enrich.py).
+
+    k ближайших берутся по ВСЕМ системам (subway/mck/mcd) — так и было
+    задумано, Задаче 9 нужны МЦК/МЦД как входы графа. Но дом у диаметра без
+    метро рядом может получить все k ближайших не-subway, и тогда
+    walk_min_metro (проекция только на подземку, refresh_walk_min_metro ниже)
+    останется NULL там, где прежний расчёт по прямой всегда давал значение.
+    Поэтому ближайшая ПОДЗЕМНАЯ платформа гарантированно добирается отдельным
+    запросом и добавляется к кандидатам, если её не оказалось среди k
+    ближайших по всем системам — лишняя строка доступа у домов вдали от метро,
+    но без нового способа потерять walk_min_metro.
+
+    external_ids сужает обход до конкретных объявлений (публикация из
+    кабинета, инкрементальный прогон) вместо всего города — на всём городе
+    один SELECT+DELETE+k·INSERT на объявление стоит дорого, точечный вызов
+    остаётся дешёвым.
     """
     written = 0
     with conn.cursor() as cur:
         cur.execute("""
             SELECT l.external_id, ST_X(l.geom), ST_Y(l.geom)
             FROM listings l
-            WHERE l.city = %s AND l.geom IS NOT NULL;""", (city,))
+            WHERE l.city = %(city)s AND l.geom IS NOT NULL
+              AND (%(ids)s::text[] IS NULL OR l.external_id = ANY(%(ids)s::text[]));""",
+            {"city": city,
+             "ids": list(external_ids) if external_ids is not None else None})
         listings = cur.fetchall()
 
         for ext_id, lon, lat in listings:
@@ -71,6 +115,11 @@ def refresh_listing_metro_access(conn: psycopg.Connection, city: str,
             # DELETE ниже использует тот же cur и иначе стёр бы ещё не
             # прочитанный результат SELECT.
             candidates = cur.fetchall() or []
+
+            guarantee = _fetch_nearest_subway(cur, city, lon, lat)
+            if guarantee is not None and guarantee[0] not in {c[0] for c in candidates}:
+                candidates.append(guarantee)
+
             cur.execute("DELETE FROM listing_metro_access WHERE external_id = %s;",
                         (ext_id,))
             for st_id, s_lon, s_lat, metres in candidates:
@@ -81,10 +130,13 @@ def refresh_listing_metro_access(conn: psycopg.Connection, city: str,
                         if got is not None:
                             seconds, estimated = int(round(got)), False
                     except (requests.RequestException, KeyError, TypeError,
-                            ValueError, RuntimeError) as exc:
+                            ValueError, RuntimeError, IndexError) as exc:
                         # Отказ пешего роутера деградирует ОДНУ станцию до
                         # оценки, а не роняет весь прогон: тем же принципом,
-                        # которым защищён сбор POI в habitus/cli.py.
+                        # которым защищён сбор POI в habitus/cli.py. IndexError
+                        # — отдельно: ORSProvider.directions делает
+                        # resp.json()["features"][0], и пустой ответ ORS
+                        # бросает именно его, а не RequestException.
                         log.warning("пеший роутер отказал на %s→%s: %s",
                                     ext_id, st_id, exc)
                 cur.execute("""
@@ -100,7 +152,8 @@ def refresh_listing_metro_access(conn: psycopg.Connection, city: str,
     return written
 
 
-def refresh_walk_min_metro(conn: psycopg.Connection, city: str) -> int:
+def refresh_walk_min_metro(conn: psycopg.Connection, city: str,
+                           external_ids: list[str] | None = None) -> int:
     """walk_min_metro из посчитанных плеч — вместо прямой по воздуху.
 
     ТОЛЬКО подземка: платформы МЦК и МЦД в это поле не подмешиваются (условие
@@ -110,6 +163,14 @@ def refresh_walk_min_metro(conn: psycopg.Connection, city: str) -> int:
     `eval --check` измерены на текущих данных
     (docs/notes/eval-baseline-2026-08-18.md) — тихая подмена смысла поля
     сдвинула бы выдачу и обесценила baseline.
+
+    Обновляются ВСЕ объявления в скоупе (город × external_ids), а не только
+    те, у кого нашлась строка в listing_metro_access: self-join с LEFT JOIN
+    LATERAL ниже — иначе walk_min_metro_src (минуты от Циана) вообще не
+    доезжает до listings в городе без единой subway-платформы (spb сегодня),
+    а устаревшее вычисленное значение у объявления, чьи строки доступа
+    пропали (снесённая станция, пересборка графа), молча переживает
+    пересчёт вместо того, чтобы стать NULL.
     """
     with conn.cursor() as cur:
         cur.execute("""
@@ -117,17 +178,38 @@ def refresh_walk_min_metro(conn: psycopg.Connection, city: str) -> int:
                 walk_min_metro = COALESCE(l.walk_min_metro_src, sub.minutes),
                 metro_station = COALESCE(l.metro_station, sub.name),
                 updated_at = now()
-            FROM (
-                SELECT DISTINCT ON (a.external_id)
-                       a.external_id, a.walk_seconds / 60.0 AS minutes, s.name
+            FROM listings l2
+            LEFT JOIN LATERAL (
+                SELECT a.walk_seconds / 60.0 AS minutes, s.name
                 FROM listing_metro_access a
                 JOIN metro_station s ON s.id = a.station_id
                 JOIN metro_line ml ON ml.id = s.line_id
-                WHERE ml.system = 'subway' AND s.city = %s
-                ORDER BY a.external_id, a.walk_seconds
-            ) sub
-            WHERE l.external_id = sub.external_id AND l.city = %s;""",
-            (city, city))
+                WHERE ml.system = 'subway' AND a.external_id = l2.external_id
+                ORDER BY a.walk_seconds
+                LIMIT 1
+            ) sub ON true
+            WHERE l.external_id = l2.external_id
+              AND l2.city = %(city)s
+              AND (%(ids)s::text[] IS NULL OR l2.external_id = ANY(%(ids)s::text[]));""",
+            {"city": city,
+             "ids": list(external_ids) if external_ids is not None else None})
         n = cur.rowcount
     conn.commit()
     return n
+
+
+def refresh_metro_for_listings(conn: psycopg.Connection, city: str,
+                               external_ids: list[str], walker=None,
+                               k: int = 3) -> int:
+    """Плечи + walk_min_metro для конкретных объявлений — один помощник на
+    оба места, которым нужен точечный (не городской) пересчёт метро:
+    публикация из личного кабинета (habitus/online/owner_listing.py) и
+    инкрементальный прогон (habitus/update/incremental.py). До этой правки
+    ни один из них не пересчитывал метро вовсе (Задача 7 отдала это только
+    городскому refresh_listing_metro_access), и оба тихо переставали
+    поддерживать walk_min_metro на своих путях (R39, R40).
+    """
+    written = refresh_listing_metro_access(conn, city, walker=walker, k=k,
+                                           external_ids=external_ids)
+    refresh_walk_min_metro(conn, city, external_ids=external_ids)
+    return written

@@ -2,8 +2,10 @@ import logging
 from datetime import datetime, timedelta
 
 import psycopg
-from habitus.geo.osm_extract import upsert_poi
+from habitus.config import settings
 from habitus.geo.enrich import enrich_around
+from habitus.geo.metro_access import refresh_metro_for_listings
+from habitus.geo.osm_extract import upsert_poi
 
 log = logging.getLogger("habitus.update.incremental")
 
@@ -72,12 +74,38 @@ def latest_snapshot_ids(rows: list[dict], gap: timedelta = CRAWL_GAP,
     return undated | {r["external_id"] for t, r in dated if t >= cutoff}
 
 
-def apply_new_poi(rows: list[dict], conn: psycopg.Connection) -> int:
-    upsert_poi(rows, conn)
+def apply_new_poi(rows: list[dict], conn: psycopg.Connection, city: str = "msk") -> int:
+    """Новые POI из обхода Overpass → enrich_around вокруг каждой точки.
+
+    До фикс-раунда 1 metro_access.py уже перестал быть частью enrich_around
+    (Задача 7 переселила walk_min_metro в отдельный пересчёт по графу), и этот
+    cron-путь молча перестал поддерживать поле у объявлений, которых касался
+    enrich_around (R40) — раньше single-UPDATE enrich_all пересчитывал метро
+    заодно с прочими колонками для любого затронутого объявления, независимо
+    от того, какого рода POI спровоцировал обновление. Чтобы вернуть паритет,
+    после enrich_around собираем external_id объявлений в том же радиусе и
+    пересчитываем им метро тем же точечным помощником, что и публикация из
+    кабинета (habitus/geo/metro_access.py:refresh_metro_for_listings).
+    walker не передаётся (дефолт None → деградация к оценке по прямой): какой
+    walker использовать по умолчанию на cron-пути решает Задача 8.
+    """
+    upsert_poi(rows, conn, city=city)
     affected = 0
-    for r in rows:
-        wkt = f"POINT({r['lon']} {r['lat']})"
-        affected += enrich_around(conn, wkt)
+    touched_ids: set[str] = set()
+    with conn.cursor() as cur:
+        for r in rows:
+            wkt = f"POINT({r['lon']} {r['lat']})"
+            affected += enrich_around(conn, wkt)
+            cur.execute("""
+                SELECT external_id FROM listings
+                WHERE city = %(city)s AND geom IS NOT NULL
+                  AND ST_DWithin(geom::geography,
+                                 ST_GeogFromText(%(wkt)s), %(radius)s);""",
+                {"city": city, "wkt": f"SRID=4326;{wkt}",
+                 "radius": settings.poi_radius_m})
+            touched_ids.update(row[0] for row in cur.fetchall())
+    if touched_ids:
+        refresh_metro_for_listings(conn, city, list(touched_ids))
     return affected
 
 

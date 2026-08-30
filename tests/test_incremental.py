@@ -25,6 +25,38 @@ def test_new_bar_recomputes_nearby_density():
         assert density == 1  # пересчиталось
 
 
+def test_apply_new_poi_refreshes_metro_for_touched_listings():
+    """R40: enrich_around перестал знать о метро (владелец переехал в
+    metro_access.py), и cron-путь молча перестал поддерживать walk_min_metro.
+    apply_new_poi обязан после enrich_around точечно пересчитать метро тем
+    объявлениям, которых коснулся радиус новой POI."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        init_db(conn)
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE listings, poi CASCADE;")
+            cur.execute("TRUNCATE metro_line CASCADE;")
+            cur.execute("""INSERT INTO metro_line
+                           (id, city, system, ref, name, headway_s, fallback_speed_kmh)
+                           VALUES (1,'msk','subway','1','л1',120,40);""")
+            cur.execute("""INSERT INTO metro_station
+                           (id, city, line_id, name, name_norm, geom, order_index)
+                           VALUES (10,'msk',1,'Тестовая','тестовая',
+                                   ST_SetSRID(ST_MakePoint(37.6175,55.7559),4326),0);""")
+            cur.execute("""INSERT INTO listings (external_id, source, city, geom)
+                VALUES ('L1','kaggle','msk',
+                    ST_SetSRID(ST_MakePoint(37.6173,55.7558),4326));""")
+        conn.commit()
+        new_bar = [{"osm_id": 999, "kind": "bar", "name": "Новый бар",
+                    "lat": 55.7560, "lon": 37.6180}]
+
+        apply_new_poi(new_bar, conn)
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT walk_min_metro FROM listings WHERE external_id='L1';")
+            walk_min_metro = cur.fetchone()[0]
+        assert walk_min_metro is not None
+
+
 def test_deactivate_missing():
     with psycopg.connect(settings.db_dsn) as conn:
         init_db(conn)
