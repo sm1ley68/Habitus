@@ -12,6 +12,9 @@ from habitus.update.incremental import deactivate_missing, latest_snapshot_ids
 from habitus.clean.geocode import backfill_missing_coords
 from habitus.geo.osm_extract import fetch_kind, upsert_poi, POI_KINDS
 from habitus.geo.enrich import enrich_all
+from habitus.geo.metro import SYSTEMS, fetch_system, upsert_transit
+from habitus.geo.metro_access import (ORSWalker, refresh_listing_metro_access,
+                                      refresh_walk_min_metro)
 from habitus.embed.document import refresh_doc_text
 from habitus.embed.encode import embed_pending
 
@@ -62,8 +65,115 @@ def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
                 conn.rollback()
                 stats["osm_failed"].append(f"{kind}/{city}: {e}")
     stats["enriched"] = enrich_all(conn)
+    if fetch_osm:
+        # fetch=fetch_system передан явно (а не оставлен на дефолт параметра
+        # build_metro): это делает имя живым lookup'ом в глобалах модуля на
+        # момент вызова — тем же приёмом, что fetch_kind чуть выше — и
+        # monkeypatch.setattr(cli, "fetch_system", ...) в тестах реально
+        # подменяет то, что уйдёт в build_metro, а не бьётся о дефолт,
+        # захваченный один раз при определении функции.
+        stats["metro"] = build_metro(
+            conn, city, fetch=fetch_system,
+            walker=ORSWalker() if settings.ors_api_key else None)
     stats["doc_text"] = refresh_doc_text(conn)
     stats["embedded"] = embed_pending(conn, model=model)
+    return stats
+
+
+def build_metro(conn, city: str, fetch=fetch_system, walker=None) -> dict:
+    """Граф рельсового транспорта города: OSM → БД → пешие плечи объектов.
+
+    Отказ одной системы не уносит остальные и не глотается молча — тем же
+    принципом, которым защищён сбор POI: Overpass регулярно отдаёт 504.
+
+    R36 (ruling): upsert_transit САМ по себе только апсертит — линия,
+    пропавшая из OSM (закрыли участок, переразметили релейшен под другим
+    ref), иначе жила бы в графе вечно и маршрутизировалась бы как настоящая.
+    Решение — delete-missing ПО СИСТЕМЕ после каждого успешного fetch, а не
+    общий TRUNCATE metro_line CASCADE в начале функции: TRUNCATE стирает ВСЕ
+    города и ВСЕ системы разом, а провал fetch одной системы (Overpass 504)
+    тогда навсегда обнулял бы её прежние, ещё валидные данные вместо того,
+    чтобы их сохранить до следующего успешного прогона — ровно тот компромисс,
+    от которого защищает try/except ниже. Delete-missing запускается только
+    для систем, fetch которых УДАЛСЯ: ref, которых нет в свежем списке линий
+    этой системы для этого города, удаляются; каскад с metro_line дотягивается
+    до metro_station → metro_edge/metro_transfer/metro_line_geom и
+    listing_metro_access (те же ON DELETE CASCADE, что и в тестовой фикстуре
+    TRUNCATE metro_line CASCADE).
+
+    walker=None — оценка по прямой (никаких сетевых вызовов); walker=ORSWalker()
+    — реальные пешие маршруты через внешний ORS. На 66k объявлений и k=3 это
+    ~200k вызовов ORS за один прогон — далеко за пределами публичной квоты,
+    поэтому CLI НЕ включает ORS сам по себе: он используется только если
+    оператор явно настроил ORS_API_KEY (settings.ors_api_key) и не передал
+    --no-ors. Без ключа поведение как раньше — оценка по прямой.
+    """
+    stats: dict = {"failed": []}
+    for system in SYSTEMS:
+        try:
+            lines = fetch(system, city)
+            if not lines:
+                # Пустой, но УСПЕШНЫЙ (без исключения) ответ Overpass — не
+                # апсертим и не удаляем ничего для этой системы. «Было N
+                # линий → стало 0» неотличимо от сбоя формата ответа
+                # (потерялись elements где-то в середине рекурсивного `>;`
+                # при таймауте) — тот же класс проблем, из-за которого
+                # запрос вообще сделан рекурсивным (см. docstring
+                # fetch_system). Трактовать пустой список как «система
+                # реально опустела» и стирать её прежние данные — риск
+                # потерять весь граф молча от одного плохого ответа;
+                # трактовать как «ничего не изменилось в этом цикле» — риск
+                # на один цикл не заметить настоящее исчезновение системы
+                # целиком (для msk/spb это практически не происходит).
+                # Второй риск дешевле первого — синтетический ноль в графе
+                # запрещён тем же принципом, что и синтетический ноль в
+                # досье объекта (CLAUDE.md).
+                stats[system] = {"lines": 0, "stations": 0, "edges": 0,
+                                 "transfers": 0}
+                continue
+            stats[system] = upsert_transit(lines, conn, city)
+            # R36 (ruling): upsert_transit сам по себе только апсертит —
+            # линию, пропавшую из OSM у системы, которая по-прежнему
+            # отвечает (закрыли участок, переразметили релейшен под другим
+            # ref), никто не удаляет, и она жила бы в графе вечно,
+            # маршрутизируясь как настоящая. Delete-missing — ПО СИСТЕМЕ
+            # (city, system), а не общий TRUNCATE metro_line CASCADE в
+            # начале функции: TRUNCATE стирает разом все города и все
+            # системы, и тогда провал fetch другой системы в этом же
+            # прогоне (см. except ниже) навсегда обнулял бы её прежние,
+            # ещё валидные данные вместо того, чтобы сохранить их до
+            # следующего успешного прогона. Каскад с metro_line дотягивается
+            # до metro_station → metro_edge/metro_transfer/metro_line_geom
+            # и listing_metro_access (те же ON DELETE CASCADE, что и в
+            # тестовой фикстуре `TRUNCATE metro_line CASCADE`).
+            refs = [line.ref for line in lines]
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM metro_line WHERE city = %s AND system = %s "
+                    "AND NOT (ref = ANY(%s::text[]));",
+                    (city, system, refs))
+            conn.commit()
+        except Exception as e:  # noqa: BLE001 — внешний API, причин отказа много
+            conn.rollback()
+            stats["failed"].append(f"{system}/{city}: {e}")
+    # Пешие плечи — ПОСЛЕ пересборки графа выше, не до: delete-missing мог
+    # снести станции (а с ними каскадом и listing_metro_access) тех линий,
+    # что пропали из OSM. Посчитай плечи раньше — walk_min_metro у таких
+    # объектов молча остался бы на устаревшем значении вместо пересчёта.
+    #
+    # Обёрнуто в try/except тем же принципом: refresh_listing_metro_access
+    # при walker=ORSWalker() уходит во внешний ORS на каждую станцию
+    # кандидата (внутренние отказы там уже деградируют ДО оценки по прямой,
+    # см. metro_access.py), но городской SELECT/DELETE/INSERT по всем 66k
+    # объявлений — это тоже нетривиальный объём работы поверх ЖИВОЙ БД;
+    # его отказ не должен превращать уже успешно пересобранный граф линий
+    # в незафиксированный результат команды.
+    try:
+        stats["access"] = refresh_listing_metro_access(conn, city, walker=walker)
+        stats["walk_min_metro"] = refresh_walk_min_metro(conn, city)
+    except Exception as e:  # noqa: BLE001
+        conn.rollback()
+        stats["failed"].append(f"access/{city}: {e}")
     return stats
 
 
@@ -96,6 +206,10 @@ def main():
     sub.add_parser("import-osm-features")
     windows = sub.add_parser("extract-windows")
     windows.add_argument("--limit", type=int, default=None)
+    metro = sub.add_parser("metro")
+    metro.add_argument("--city", choices=["msk", "spb"], default="msk")
+    metro.add_argument("--no-ors", action="store_true",
+                       help="не ходить в ORS: пешие плечи оценкой по прямой")
     args = ap.parse_args()
     with get_conn() as conn:
         if args.cmd == "offline":
@@ -151,6 +265,15 @@ def main():
                                                   upsert_urban_features)
             init_db(conn)
             print({"imported": upsert_urban_features(fetch_urban_features(), conn)})
+        elif args.cmd == "metro":
+            # walker=None по умолчанию, если ключ ORS не настроен — как и в
+            # run_offline: ORS включается ТОЛЬКО опт-ином через
+            # ORS_API_KEY, а не молча по факту наличия команды, потому что
+            # на 66k объявлений и k=3 это ~200k вызовов внешнего API за один
+            # прогон (см. docstring build_metro). --no-ors — явный оверрайд
+            # в обратную сторону: оценка по прямой, даже если ключ настроен.
+            walker = None if args.no_ors or not settings.ors_api_key else ORSWalker()
+            print(build_metro(conn, args.city, walker=walker))
         elif args.cmd == "extract-windows":
             from habitus.clean.windows import extract_windows
             from habitus.online.llm import OpenRouterLLM

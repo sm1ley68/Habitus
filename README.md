@@ -151,6 +151,11 @@ uv run habitus offline --csv <kaggle.csv> --source kaggle
 (PostGIS) → текстификация → BGE-M3 dense+sparse эмбеддинги. Инкрементальный:
 повторный прогон досчитывает только новое.
 
+Граф рельсового транспорта (метро, МЦК, МЦД) собирается отдельной командой —
+`uv run habitus metro --city msk` и `uv run habitus metro --city spb`. Она же
+пересчитывает пешие плечи объектов до платформ. Без ключа ORS
+(`ORS_API_KEY`) плечи считаются оценкой по прямой и помечаются `estimated`.
+
 ### 2. Гео-слои для досье
 
 ```bash
