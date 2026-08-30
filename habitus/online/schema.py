@@ -77,6 +77,7 @@ class ParsedQuery(BaseModel):
 # Намерение реплики в многоходовом чате: новый поиск / правка прошлого разбора /
 # вопрос про уже показанную выдачу без нового поиска.
 TurnIntent = Literal["new_search", "refine", "followup"]
+MetroSystem = Literal["subway", "mck", "mcd"]
 
 
 class ParsedTurn(BaseModel):
@@ -132,7 +133,8 @@ class PointConstraint(BaseModel):
     lon: float = Field(ge=-180, le=180)
     lat: float = Field(ge=-90, le=90)
     minutes: int = Field(default=15, gt=0, le=60)
-    mode: Literal["foot-walking", "cycling-regular", "driving-car"] = "foot-walking"
+    # "metro" считается внутренним движком по графу, остальные — изохронами ORS
+    mode: Literal["foot-walking", "cycling-regular", "driving-car", "metro"] = "foot-walking"
 
 
 class SearchRequest(BaseModel):
@@ -172,6 +174,43 @@ class LineStringGeometry(BaseModel):
         return coordinates
 
 
+class MetroSegment(BaseModel):
+    """Отрезок поездки по одной линии без пересадок."""
+    line_ref: str
+    line_name: str
+    system: MetroSystem
+    colour: str | None = None
+    from_station: str
+    to_station: str
+    stops: int = Field(ge=1)
+    minutes: int = Field(ge=0)
+    # true — время выведено из расстояния, а не взято из курируемого файла.
+    # Признак едет до фронта: оценка показывается как оценка.
+    estimated: bool = False
+
+
+class MetroTransfer(BaseModel):
+    from_station: str
+    to_station: str
+    minutes: int = Field(ge=0)
+    # Переход улицей (типично между метро и МЦД) — рисуется отдельным пешим
+    # сегментом, а не сливается в общий «переход»: он вдвое-втрое длиннее.
+    outdoor: bool = False
+    estimated: bool = False
+
+
+class MetroRide(BaseModel):
+    """Разбивка метро-ноги. Итог «от двери до двери» живёт в RouteLeg.minutes,
+    здесь — из чего он сложился. Сумма частей равна RouteLeg.minutes; фронт
+    показывает разбивку и не складывает её заново, иначе округления разойдутся."""
+    walk_from_home_min: int = Field(ge=0)
+    walk_to_dest_min: int = Field(ge=0)
+    segments: list[MetroSegment] = []
+    transfers: list[MetroTransfer] = []
+    total_minutes: int = Field(ge=0)
+    estimated: bool = False
+
+
 class RouteLeg(BaseModel):
     to_label: str
     to_kind: DestinationKind
@@ -181,6 +220,9 @@ class RouteLeg(BaseModel):
     minutes: int = Field(ge=0)
     safety: LegSafety
     geometry: LineStringGeometry
+    # Разбивка поездки на рельсовом транспорте. None у ног любого другого
+    # режима — существующие потребители RouteLeg не ломаются.
+    metro: MetroRide | None = None
 
 
 class HouseholdMember(BaseModel):

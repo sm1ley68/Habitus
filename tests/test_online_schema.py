@@ -1,9 +1,10 @@
 import pytest
 from pydantic import ValidationError
 from habitus.online.schema import (GeoConstraint, HouseholdLegIntent,
-                                   LineStringGeometry, ParsedQuery, ParsedTurn,
-                                   PointConstraint, ResultItem, SearchRequest,
-                                   SearchResponse)
+                                   LineStringGeometry, MetroRide, MetroSegment,
+                                   MetroTransfer, ParsedQuery, ParsedTurn,
+                                   PointConstraint, ResultItem, RouteLeg,
+                                   SearchRequest, SearchResponse)
 
 
 def test_parsed_query_defaults():
@@ -132,3 +133,55 @@ def test_search_request_top_n_bounds():
     for bad in (0, -1, 51):
         with pytest.raises(ValidationError):
             SearchRequest(query="q", top_n=bad)
+
+
+def _ride(**over):
+    base = dict(
+        walk_from_home_min=7, walk_to_dest_min=5,
+        segments=[MetroSegment(line_ref="1", line_name="Сокольническая",
+                               system="subway", colour="#EF161E",
+                               from_station="Сокольники", to_station="Охотный Ряд",
+                               stops=6, minutes=13)],
+        transfers=[], total_minutes=25)
+    base.update(over)
+    return MetroRide(**base)
+
+
+def test_point_constraint_accepts_metro_mode():
+    assert PointConstraint(lon=37.6, lat=55.75, minutes=40, mode="metro").mode == "metro"
+
+
+def test_point_constraint_still_rejects_unknown_mode_after_metro_added():
+    with pytest.raises(ValidationError):
+        PointConstraint(lon=37.6, lat=55.75, minutes=40, mode="teleport")
+
+
+def test_route_leg_metro_is_optional():
+    leg = RouteLeg(to_label="офис", to_kind="work", mode="walk",
+                   depart="08:00", arrive="08:30", minutes=30, safety="safe",
+                   geometry=LineStringGeometry(coordinates=[(37.6, 55.7), (37.61, 55.71)]))
+    assert leg.metro is None
+
+
+def test_segment_rejects_unknown_system():
+    with pytest.raises(ValidationError):
+        MetroSegment(line_ref="1", line_name="л", system="tram", colour=None,
+                     from_station="A", to_station="B", stops=2, minutes=5)
+
+
+def test_estimated_defaults_to_false_everywhere():
+    ride = _ride()
+    assert ride.estimated is False
+    assert ride.segments[0].estimated is False
+    assert MetroTransfer(from_station="A", to_station="B", minutes=3).outdoor is False
+
+
+def test_ride_total_is_the_door_to_door_number():
+    # RouteLeg.minutes — итог, MetroRide — его разбивка; фронт не складывает заново
+    ride = _ride()
+    leg = RouteLeg(to_label="офис", to_kind="work", mode="metro",
+                   depart="08:00", arrive="08:25", minutes=ride.total_minutes,
+                   safety="safe",
+                   geometry=LineStringGeometry(coordinates=[(37.6, 55.7), (37.61, 55.71)]),
+                   metro=ride)
+    assert leg.minutes == leg.metro.total_minutes == 25
