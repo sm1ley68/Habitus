@@ -267,7 +267,10 @@ def upsert_transit(lines: list[LineRaw], conn: psycopg.Connection, city: str,
             # этого явного ребра стык кольца недостижим напрямую. Флаг ring
             # никогда не выводится здесь из ref — он уже вычислен в парсере.
             pairs = [(i, i + 1) for i in range(len(ids) - 1)]
-            if line.ring and len(ids) >= 2:
+            # >= 3, не >= 2: у двухстанционного кольца замыкающая пара
+            # (последняя, первая) совпадает с уже учтённой (0, 1) — это одна
+            # и та же связь, а не две (controller ruling R35, фикс-раунд 1).
+            if line.ring and len(ids) >= 3:
                 pairs.append((len(ids) - 1, 0))
 
             for i, j in pairs:
@@ -290,22 +293,28 @@ def upsert_transit(lines: list[LineRaw], conn: psycopg.Connection, city: str,
                         (city, x, y, seconds, estimated))
                     stats["edges"] += 1
 
-        # Пересадка — одноимённые платформы на разных линиях. Имя сверяется
-        # нормализованным: в OSM одна и та же станция пишется по-разному.
-        cur.execute("""
-            SELECT a.id, b.id, a.name, b.name
-            FROM metro_station a JOIN metro_station b
-              ON a.name_norm = b.name_norm AND a.line_id <> b.line_id
-            WHERE a.city = %s AND b.city = %s;""", (city, city))
-        for a_id, b_id, a_name, b_name in cur.fetchall():
+        # Пересадка — два источника, объединённых (controller ruling R33,
+        # фикс-раунд 1):
+        #  1) одноимённые платформы на разных линиях — типовой случай, когда
+        #     одна физическая станция размечена в OSM отдельным узлом на
+        #     каждую линию под одним и тем же именем;
+        #  2) курируемые пары РАЗНОИМЁННЫХ станций одного пересадочного узла
+        #     («Охотный Ряд» ↔ «Театральная», «Площадь Гагарина» ↔ «Ленинский
+        #     проспект» — оба реальных перехода в data/metro/msk.json именно
+        #     такие). Self-join по name_norm их не находит НИКОГДА: имена не
+        #     совпадают по определению. Без этой ветки курируемый transfers
+        #     был мёртвым кодом на реальных данных — ни один курируемый переход,
+        #     включая единственный outdoor=True во всём проекте, не попадал в
+        #     БД (см. R27/R32 — та самая уличная МЦД↔метро пересадка).
+        def _upsert_transfer(a_id: int, b_id: int, seconds: int,
+                             estimated: bool, outdoor: bool) -> None:
             # outdoor приходит из transfer_seconds() как есть и пишется без
             # переинтерпретации: FALSE здесь означает ровно то, что говорит
             # курируемый источник — либо явное "не уличный", либо (вместе с
             # estimated=True) "не курировано, факт неизвестен", а не "мы не
-            # проверяли, но пишем как факт" (task-6-brief, R32). МЦД↔метро
-            # уличные пересадки намеренно не курируются (R27) — эта функция
-            # их не "дособирает" и не изобретает outdoor=True.
-            seconds, estimated, outdoor = transfer_seconds(cur_times, a_name, b_name)
+            # проверяли, но пишем как факт" (R32). МЦД↔метро уличные
+            # пересадки намеренно не курируются (R27) — эта функция их не
+            # "дособирает" и не изобретает outdoor=True.
             cur.execute("""
                 INSERT INTO metro_transfer (city, from_station, to_station,
                                             seconds, estimated, outdoor)
@@ -315,6 +324,44 @@ def upsert_transit(lines: list[LineRaw], conn: psycopg.Connection, city: str,
                     outdoor = EXCLUDED.outdoor;""",
                 (city, a_id, b_id, seconds, estimated, outdoor))
             stats["transfers"] += 1
+
+        cur.execute("""
+            SELECT a.id, b.id, a.name, b.name
+            FROM metro_station a JOIN metro_station b
+              ON a.name_norm = b.name_norm AND a.line_id <> b.line_id
+            WHERE a.city = %s AND b.city = %s;""", (city, city))
+        for a_id, b_id, a_name, b_name in cur.fetchall():
+            seconds, estimated, outdoor = transfer_seconds(cur_times, a_name, b_name)
+            _upsert_transfer(a_id, b_id, seconds, estimated, outdoor)
+
+        # Курируемые пары разноимённых станций. Ключ cur_times.transfers —
+        # уже нормализованная пара имён (metro_times._pair сортирует их при
+        # загрузке JSON), поэтому резолвим каждую сторону в id станций этого
+        # города напрямую по name_norm — без повторной нормализации. Несколько
+        # физических узлов с одним и тем же именем на разных линиях дают
+        # декартово произведение пар, кроме пар на одной линии (это был бы
+        # перегон между соседними станциями, а не пересадка — уже покрыт
+        # рёбрами выше). Имя, которого нет среди станций города, просто не
+        # даёт ни одной строки: станцию или пересадку это не изобретает.
+        for norm_a, norm_b in cur_times.transfers:
+            cur.execute("SELECT id, line_id FROM metro_station "
+                       "WHERE city = %s AND name_norm = %s;", (city, norm_a))
+            a_rows = cur.fetchall()
+            cur.execute("SELECT id, line_id FROM metro_station "
+                       "WHERE city = %s AND name_norm = %s;", (city, norm_b))
+            b_rows = cur.fetchall()
+            if not a_rows or not b_rows:
+                continue
+            # Имена уже нормализованы — transfer_seconds() лишь ищет по ним
+            # ту же пару в cur_times.transfers/outdoor, повторная нормализация
+            # normalize_station_name на нормализованной строке идемпотентна.
+            seconds, estimated, outdoor = transfer_seconds(cur_times, norm_a, norm_b)
+            for a_id, a_line in a_rows:
+                for b_id, b_line in b_rows:
+                    if a_line == b_line:
+                        continue
+                    _upsert_transfer(a_id, b_id, seconds, estimated, outdoor)
+                    _upsert_transfer(b_id, a_id, seconds, estimated, outdoor)
 
     conn.commit()
     return stats
