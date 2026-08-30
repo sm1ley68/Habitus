@@ -68,6 +68,61 @@ def test_relation_without_stops_is_skipped():
     assert parse_route_relations(payload, "subway") == []
 
 
+def test_real_fixture_line_is_not_a_ring(payload):
+    # Сокольническая — обычная линия, а не кольцо: первая и последняя станции
+    # в фикстуре разные («Бульвар Рокоссовского» / «Потапово», см. тест выше
+    # про entry/exit-only роли). Ложный ring=True на реальных данных склеил бы
+    # несуществующий перегон между двумя конечными.
+    line = parse_route_relations(payload, "subway")[0]
+    assert line.ring is False
+
+
+def test_ring_relation_gets_ring_flag_and_dedups_closing_repeat():
+    # МЦК/Кольцевая в OSM: первая station-нода релейшена повторена последней —
+    # так замыкают кольцо на схеме. Дедуп по нормализованному имени (см.
+    # normalize_station_name) снимает этот повтор из списка станций, поэтому
+    # ring нужно определять ДО дедупа, по сырой последовательности members
+    # (см. R24 в task-6-brief).
+    payload = {"elements": [
+        {"type": "node", "id": 1, "lat": 55.75, "lon": 37.60, "tags": {"name": "А"}},
+        {"type": "node", "id": 2, "lat": 55.76, "lon": 37.61, "tags": {"name": "Б"}},
+        {"type": "node", "id": 3, "lat": 55.77, "lon": 37.62, "tags": {"name": "В"}},
+        {"type": "node", "id": 4, "lat": 55.75, "lon": 37.60, "tags": {"name": "А"}},
+        {"type": "relation", "id": 2000, "tags": {"route": "train", "ref": "14"},
+         "members": [
+             {"type": "node", "ref": 1, "role": "stop"},
+             {"type": "node", "ref": 2, "role": "stop"},
+             {"type": "node", "ref": 3, "role": "stop"},
+             {"type": "node", "ref": 4, "role": "stop"},
+         ]},
+    ]}
+    lines = parse_route_relations(payload, "mck")
+    assert len(lines) == 1
+    line = lines[0]
+    assert line.ring is True
+    assert [s.name for s in line.stations] == ["А", "Б", "В"]
+
+
+def test_non_ring_relation_does_not_get_ring_flag():
+    # Три РАЗНЫЕ станции, первая и последняя не совпадают — обычная линия,
+    # закрывающего ребра быть не должно (см. R24: инвентированный перегон на
+    # прямой линии — такая же фабрикация факта, как и пропущенный).
+    payload = {"elements": [
+        {"type": "node", "id": 1, "lat": 55.75, "lon": 37.60, "tags": {"name": "А"}},
+        {"type": "node", "id": 2, "lat": 55.76, "lon": 37.61, "tags": {"name": "Б"}},
+        {"type": "node", "id": 3, "lat": 55.77, "lon": 37.62, "tags": {"name": "В"}},
+        {"type": "relation", "id": 2001, "tags": {"route": "subway", "ref": "1"},
+         "members": [
+             {"type": "node", "ref": 1, "role": "stop"},
+             {"type": "node", "ref": 2, "role": "stop"},
+             {"type": "node", "ref": 3, "role": "stop"},
+         ]},
+    ]}
+    lines = parse_route_relations(payload, "subway")
+    assert len(lines) == 1
+    assert lines[0].ring is False
+
+
 def test_station_present_as_both_stop_and_platform_node_dedups_to_one():
     # На МЦК/МЦД фикстуры пока нет, а комментарий в metro.py прямо
     # предупреждает, что часть линий несёт только platform-роль — то есть

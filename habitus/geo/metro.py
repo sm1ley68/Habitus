@@ -4,10 +4,12 @@
 # docs/notes/osm-transit-tags-2026-08-29.md. Разметка у МЦК и МЦД менялась,
 # поэтому фиксировать её по памяти нельзя: при расхождении правится ФИЛЬТР,
 # модель данных к конкретным тегам не привязана.
+import json
 import re
 import time
 from dataclasses import dataclass, field
 
+import psycopg
 import requests
 
 from habitus.geo.osm_extract import HEADERS, OVERPASS_URL, RETRY_STATUS, TRANSIT_AREA
@@ -58,6 +60,16 @@ class LineRaw:
     colour: str | None
     stations: list[StationRaw] = field(default_factory=list)
     geometry: list[list[float]] = field(default_factory=list)
+    # Кольцевая линия (МЦК, Кольцевая линия метро): первая station-нода
+    # релейшена в OSM обычно повторена последней, чтобы замкнуть кольцо на
+    # схеме. Дедуп в parse_route_relations по нормализованному имени снимает
+    # этот повтор из stations — то есть после парсинга по списку станций
+    # кольцо от обычной линии уже не отличить. Флаг вычисляется ДО дедупа, по
+    # сырой последовательности members, и переживает дедуп именно для этого:
+    # Задача 6 замыкает граф явным ребром последняя→первая только когда флаг
+    # True (см. task-6-brief, R24). Никогда не выводится из ref (никаких
+    # хардкодов вида ref == "14") — только из данных.
+    ring: bool = False
 
 
 def normalize_station_name(name: str) -> str:
@@ -97,6 +109,10 @@ def parse_route_relations(payload: dict, system: str) -> list[LineRaw]:
         seen_ids: set[int] = set()
         seen_names: set[str] = set()
         geometry: list[list[float]] = []
+        # Сырая (до дедупа) последовательность нормализованных имён
+        # station-членов — только по ней определяется ring (см. комментарий
+        # у поля LineRaw.ring).
+        raw_names: list[str] = []
 
         for m in members:
             role = m.get("role") or ""
@@ -111,6 +127,7 @@ def parse_route_relations(payload: dict, system: str) -> list[LineRaw]:
                 if not nm:
                     continue
                 norm = normalize_station_name(nm)
+                raw_names.append(norm)
                 # Дедуп по osm_id (одна и та же нода дважды в members) И по
                 # нормализованному имени (одна физическая станция как
                 # stop-нода и platform-нода под разными osm_id — тот же
@@ -130,12 +147,13 @@ def parse_route_relations(payload: dict, system: str) -> list[LineRaw]:
         # не может: ни одной станции для графа из него не извлечь.
         if len(stations) < 2:
             continue
+        is_ring = len(raw_names) >= 2 and raw_names[0] == raw_names[-1]
         lines.append(LineRaw(
             system=system,
             ref=tags.get("ref") or tags.get("name") or str(el["id"]),
             name=tags.get("name") or tags.get("ref") or str(el["id"]),
             colour=tags.get("colour"),
-            stations=stations, geometry=geometry))
+            stations=stations, geometry=geometry, ring=is_ring))
     return lines
 
 
@@ -169,3 +187,134 @@ def fetch_system(system: str, city: str, http_post=requests.post,
         time.sleep(backoff * (attempt + 1))
     raise RuntimeError(f"Overpass '{system}/{city}' не удался за {retries} "
                        f"попыток: {last}")
+
+
+def upsert_transit(lines: list[LineRaw], conn: psycopg.Connection, city: str,
+                   curated: "CuratedTimes | None" = None) -> dict[str, int]:
+    """Линии из OSM + курируемые времена → граф в БД. Идемпотентно.
+
+    Импорт habitus.geo.metro_times — намеренно ВНУТРИ функции, а не на уровне
+    модуля: metro_times импортирует normalize_station_name ИЗ этого модуля,
+    и импорт на уровне модуля здесь дал бы цикл (task-6-brief, R2). Аннотация
+    типа curated — строковая по той же причине: для неё импорт CuratedTimes
+    вообще не нужен, даже внутри функции.
+    """
+    from habitus.geo.metro_times import (DEFAULT_SPEED_KMH, edge_seconds,
+                                         headway_seconds, load_curated,
+                                         transfer_seconds)
+
+    cur_times = curated if curated is not None else load_curated(city)
+    stats = {"lines": 0, "stations": 0, "edges": 0, "transfers": 0}
+
+    with conn.cursor() as cur:
+        for line in lines:
+            # Интервал — ТОЛЬКО через headway_seconds(): она же несёт признак
+            # оценки, который тут же пишется в headway_estimated. Заводить
+            # локальный словарь дефолтов по системе запрещено ровно затем,
+            # чтобы не было двух копий этих чисел в двух модулях (R29/R30).
+            # Та же логика применена к скорости: DEFAULT_SPEED_KMH — общий с
+            # metro_times.edge_seconds() источник дефолта, а не вторая копия.
+            headway_s, headway_estimated = headway_seconds(
+                cur_times, line.ref, line.system)
+            fallback_speed_kmh = (cur_times.speeds.get(line.ref)
+                                  or DEFAULT_SPEED_KMH[line.system])
+
+            cur.execute("""
+                INSERT INTO metro_line (city, system, ref, name, colour,
+                                        headway_s, headway_estimated,
+                                        fallback_speed_kmh)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (city, system, ref) DO UPDATE SET
+                    name = EXCLUDED.name, colour = EXCLUDED.colour,
+                    headway_s = EXCLUDED.headway_s,
+                    headway_estimated = EXCLUDED.headway_estimated,
+                    fallback_speed_kmh = EXCLUDED.fallback_speed_kmh,
+                    updated_at = now()
+                RETURNING id;""",
+                (city, line.system, line.ref, line.name, line.colour,
+                 headway_s, headway_estimated, fallback_speed_kmh))
+            line_id = cur.fetchone()[0]
+            stats["lines"] += 1
+
+            # Перестраиваем станции линии целиком: порядок следования мог
+            # измениться (продлили ветку в начало), а order_index — часть
+            # уникального ключа. Каскад снимет старые рёбра этой линии.
+            cur.execute("DELETE FROM metro_station WHERE line_id = %s;", (line_id,))
+            ids: list[int] = []
+            for i, st in enumerate(line.stations):
+                cur.execute("""
+                    INSERT INTO metro_station (city, line_id, osm_id, name,
+                                               name_norm, geom, order_index)
+                    VALUES (%s,%s,%s,%s,%s,
+                            ST_SetSRID(ST_MakePoint(%s,%s),4326),%s)
+                    RETURNING id;""",
+                    (city, line_id, st.osm_id, st.name,
+                     normalize_station_name(st.name), st.lon, st.lat, i))
+                ids.append(cur.fetchone()[0])
+                stats["stations"] += 1
+
+            if len(line.geometry) >= 2:
+                cur.execute("""
+                    INSERT INTO metro_line_geom (line_id, geom)
+                    VALUES (%s, ST_SetSRID(ST_GeomFromGeoJSON(%s),4326))
+                    ON CONFLICT (line_id) DO UPDATE SET geom = EXCLUDED.geom;""",
+                    (line_id, json.dumps({"type": "LineString",
+                                          "coordinates": line.geometry})))
+
+            # Последовательные перегоны линии плюс, для кольца, замыкающее
+            # последняя→первая. Дедуп в parse_route_relations снимает повтор
+            # первой станции в конце ring-маршрута (см. LineRaw.ring) — без
+            # этого явного ребра стык кольца недостижим напрямую. Флаг ring
+            # никогда не выводится здесь из ref — он уже вычислен в парсере.
+            pairs = [(i, i + 1) for i in range(len(ids) - 1)]
+            if line.ring and len(ids) >= 2:
+                pairs.append((len(ids) - 1, 0))
+
+            for i, j in pairs:
+                a, b = line.stations[i], line.stations[j]
+                cur.execute("""SELECT ST_Distance(
+                                  (SELECT geom FROM metro_station WHERE id=%s)::geography,
+                                  (SELECT geom FROM metro_station WHERE id=%s)::geography);""",
+                            (ids[i], ids[j]))
+                metres = float(cur.fetchone()[0])
+                seconds, estimated = edge_seconds(cur_times, line.ref, a.name,
+                                                  b.name, line.system, metres)
+                for x, y in ((ids[i], ids[j]), (ids[j], ids[i])):
+                    cur.execute("""
+                        INSERT INTO metro_edge (city, from_station, to_station,
+                                                seconds, estimated)
+                        VALUES (%s,%s,%s,%s,%s)
+                        ON CONFLICT (from_station, to_station) DO UPDATE SET
+                            seconds = EXCLUDED.seconds,
+                            estimated = EXCLUDED.estimated;""",
+                        (city, x, y, seconds, estimated))
+                    stats["edges"] += 1
+
+        # Пересадка — одноимённые платформы на разных линиях. Имя сверяется
+        # нормализованным: в OSM одна и та же станция пишется по-разному.
+        cur.execute("""
+            SELECT a.id, b.id, a.name, b.name
+            FROM metro_station a JOIN metro_station b
+              ON a.name_norm = b.name_norm AND a.line_id <> b.line_id
+            WHERE a.city = %s AND b.city = %s;""", (city, city))
+        for a_id, b_id, a_name, b_name in cur.fetchall():
+            # outdoor приходит из transfer_seconds() как есть и пишется без
+            # переинтерпретации: FALSE здесь означает ровно то, что говорит
+            # курируемый источник — либо явное "не уличный", либо (вместе с
+            # estimated=True) "не курировано, факт неизвестен", а не "мы не
+            # проверяли, но пишем как факт" (task-6-brief, R32). МЦД↔метро
+            # уличные пересадки намеренно не курируются (R27) — эта функция
+            # их не "дособирает" и не изобретает outdoor=True.
+            seconds, estimated, outdoor = transfer_seconds(cur_times, a_name, b_name)
+            cur.execute("""
+                INSERT INTO metro_transfer (city, from_station, to_station,
+                                            seconds, estimated, outdoor)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (from_station, to_station) DO UPDATE SET
+                    seconds = EXCLUDED.seconds, estimated = EXCLUDED.estimated,
+                    outdoor = EXCLUDED.outdoor;""",
+                (city, a_id, b_id, seconds, estimated, outdoor))
+            stats["transfers"] += 1
+
+    conn.commit()
+    return stats

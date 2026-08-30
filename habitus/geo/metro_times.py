@@ -88,13 +88,18 @@ def edge_seconds(curated: CuratedTimes, line_ref: str, a_name: str, b_name: str,
     # Фолбэк: расстояние по геометрии линии на скорость ЭТОЙ линии. Одна
     # константа на все три системы врала бы систематически — у диаметров
     # перегонная скорость заметно выше метро.
-    kmh = curated.speeds.get(line_ref) or _DEFAULT_SPEED_KMH[system]
+    kmh = curated.speeds.get(line_ref) or DEFAULT_SPEED_KMH[system]
     return int(round(metres / (kmh * 1000 / 3600))) + STOP_DWELL_S, True
 
 
 #: Запасная скорость, когда линии нет даже в списке lines курируемого файла
 #: (например, станция открылась и приехала из OSM раньше, чем её докурировали).
-_DEFAULT_SPEED_KMH = {"subway": 40.0, "mck": 45.0, "mcd": 55.0}
+#: Без подчёркивания намеренно: Задача 6 берёт это же значение для колонки
+#: metro_line.fallback_speed_kmh, когда линии нет в курируемом файле вовсе.
+#: Второй копии этих чисел в habitus/geo/metro.py быть не должно — ровно та
+#: же причина, по которой headway_seconds() не даёт завести локальный
+#: словарь дефолтов интервала (см. task-6-brief, R29/R30).
+DEFAULT_SPEED_KMH = {"subway": 40.0, "mck": 45.0, "mcd": 55.0}
 
 
 def transfer_seconds(curated: CuratedTimes, a_name: str,
