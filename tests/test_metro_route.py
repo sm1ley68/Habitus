@@ -106,6 +106,46 @@ def test_empty_seeds_or_targets_return_none(graph):
     assert graph.route({1: 0}, {}) is None
 
 
+# --- R56 (фикс-раунд 1): route() и times_from() обязаны сходиться -----------
+
+def test_route_and_times_from_agree_when_target_is_also_a_seed(graph):
+    # Случай (a) из отчёта ревью: цель совпадает со входом — ехать не нужно
+    # вовсе, ни headway, ни сегментов. До фикса здесь протекал фантомный
+    # headway (120 с) без единого сегмента.
+    r = graph.route({2: 0}, {2: 0})
+    assert r.ride_seconds == 0
+    assert r.segments == [] and r.transfers == []
+    assert r.ride_seconds == graph.times_from({2: 0})[2] + 0
+
+
+def test_times_from_keeps_the_cheaper_rail_path_over_a_pricier_seed_walk(graph):
+    # Случай (b): станция 3 сама seed (пешее плечо 900 с), но рельсами от
+    # станции 1 до неё дешевле (320 с — см. test_direct_ride_on_one_line) —
+    # обязан победить рельсовый путь, а не безусловный walk.
+    times = graph.times_from({1: 0, 3: 900})
+    assert times[3] == 320
+
+
+def test_route_reconciles_with_times_from_on_a_direct_ride(graph):
+    r = graph.route({1: 0}, {3: 0})
+    assert r.ride_seconds == graph.times_from({1: 0})[3] + 0
+
+
+def test_route_reconciles_with_times_from_on_a_transfer(graph):
+    r = graph.route({1: 0}, {5: 300})
+    assert r.ride_seconds == graph.times_from({1: 0})[5] + 300
+
+
+def test_route_reconciles_with_times_from_on_the_cheaper_rail_case(graph):
+    # Тот же случай (b), но проверенный со стороны route(): выбирается
+    # рельсовый путь 1→...→3 (320 с), а не тривиальный заход в 3 (900 с).
+    seeds = {1: 0, 3: 900}
+    r = graph.route(seeds, {3: 0})
+    assert r.ride_seconds == 320
+    assert r.segments, "рельсовый путь обязан иметь хотя бы один сегмент"
+    assert r.ride_seconds == graph.times_from(seeds)[3] + 0
+
+
 # --- R29/R30: нет дефолта 0 для отсутствующего интервала --------------------
 
 def test_missing_headway_entry_raises_instead_of_defaulting_to_zero():
@@ -187,6 +227,29 @@ def test_ring_line_path_slicing_picks_the_actual_shorter_side():
     assert (seg.from_station, seg.to_station, seg.stops) == ("A", "C", 2)
     assert seg.seconds == 10               # 5 + 5, не 5 + 50 и не 50 + 50
     assert r.ride_seconds == 10 + 60       # + интервал посадки
+
+
+# --- R58 (фикс-раунд 1, минор): estimated на сегментах и переходах ---------
+
+def test_segment_estimated_flag_reflects_its_edges(graph):
+    # Отрезок A→C содержит перегон (2,3) с estimated=True в EDGES — сегмент
+    # обязан унаследовать это, а не молчаливо остаться False. Удаление
+    # накопления estimated в _segment оставляло бы этот тест единственным
+    # красным местом среди всего набора.
+    r = graph.route({1: 0}, {3: 0})
+    assert r.segments[0].estimated is True
+
+
+def test_transfer_estimated_flag_is_read_from_the_transfer_table():
+    # Своя фикстура с estimated=True на самой пересадке (в общем graph все
+    # TRANSFERS не оценочные) — проверяет, что Transfer.estimated идёт из
+    # self.transfers, а не забыт по пути.
+    transfers_est = {(2, 4): (180, True, True), (4, 2): (180, True, True)}
+    g = MetroGraph(stations=STATIONS, edges=EDGES, transfers=transfers_est,
+                   headways=HEADWAYS)
+    r = g.route({1: 0}, {5: 0})
+    assert r.transfers[0].estimated is True
+    assert r.estimated is True
 
 
 # --- load_graph / clear_graph_cache: чтение графа из БД --------------------

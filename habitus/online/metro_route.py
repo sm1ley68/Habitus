@@ -3,7 +3,11 @@
 # Граф крошечный (порядка 300 узлов в Москве, 70 в Петербурге), поэтому обход
 # считается за доли миллисекунды и предрасчитанная матрица не нужна: и число
 # для SQL-фильтра (Задача 12), и разбивка маршрута для отрисовки (Задача 11)
-# берутся из ОДНОГО обхода одного графа — разойтись им нечему.
+# берутся из ОДНОГО обхода одного графа _dijkstra(). Это НЕ гарантирует само
+# по себе, что times_from() и route() дают одно и то же число для одной и
+# той же станции — семя, которое одновременно и цель, нужно ещё явно свести
+# к общей формуле min(пеший заход, рельсовый путь) в обоих местах (R56,
+# фикс-раунд 1) — иначе они расходятся именно в этой точке.
 import heapq
 from dataclasses import dataclass, field
 
@@ -99,6 +103,14 @@ class MetroGraph:
             for (a, b), (sec, _est) in self.edges.items():
                 adj.setdefault(a, []).append((b, sec, "ride"))
             for (a, b), (sec, _est, _outdoor) in self.transfers.items():
+                # Вес ребра пересадки включает интервал линии станции b
+                # ЦЕЛИКОМ, даже если b и есть конечная цель маршрута (перешёл
+                # на платформу другой линии — это и есть цель, садиться на
+                # неё уже не нужно). Модель платит headway в любом случае:
+                # это консервативно (никогда не занижает число, только
+                # изредка завышает) на редком классе "цель — соседняя
+                # пересадочная платформа". Осознанно оставлено комментарием,
+                # а не фиксом (фикс-раунд 1, минор R58).
                 headway_sec, _headway_est = self._headway(self.stations[b])
                 adj.setdefault(a, []).append((b, sec + headway_sec, "transfer"))
             self._adj = adj
@@ -156,35 +168,84 @@ class MetroGraph:
     def times_from(self, seeds: dict[int, int]) -> dict[int, int]:
         """Секунды до каждой достижимой платформы. Один обход one-to-all.
 
-        Станции-семена возвращаются с голым пешим плечом `walk`: дойти до
-        входа, которым уже стоишь, не значит ждать поезд — интервал линии
-        посева входит в стоимость ТОЛЬКО при выходе на граф (см. `_dijkstra`)
-        и оседает в результатах всех остальных, не самих станций посева.
+        R56 (фикс-раунд 1): для станций-семян результат — min(голый пеший
+        `walk`, рельсовый путь через граф), а НЕ безусловный `walk`. До
+        фикса здесь стояла безусловная подмена на `walk` — она давала
+        правильный 0, когда seed совпадает с целью, но когда один seed
+        достижим ДЕШЕВЛЕ рельсами от другого seed (например, семена
+        {1: 0, 3: 900}, где до станции 3 рельсами от станции 1 всего 320 с),
+        отбрасывала более короткий рельсовый путь и завышала число —
+        SQL-фильтр (Задача 12) занижал бы доступность и терял подходящие
+        объявления.
+
+        `route()` использует ТОТ ЖЕ min() на тех же величинах (см. его
+        докстроку) — этим гарантируется, что оба метода не могут разойтись
+        в числах для одной и той же станции: `route(S, {t: w}).ride_seconds
+        == times_from(S)[t] + w` всегда, когда t достижима.
         """
         dist, _ = self._dijkstra(seeds)
         for sid, walk in seeds.items():
             if sid in dist:
-                dist[sid] = walk
+                dist[sid] = min(walk, dist[sid])
         return dist
 
     def route(self, seeds: dict[int, int],
               targets: dict[int, int]) -> MetroRoute | None:
         """Лучший маршрут между наборами входов и выходов, с разбивкой на
-        отрезки одной линии (Segment) и пересадки (Transfer)."""
+        отрезки одной линии (Segment) и пересадки (Transfer).
+
+        R56 (фикс-раунд 1): у каждой целевой станции — до двух кандидатов на
+        итоговое время: "тривиальный" (её id есть среди seeds — цель
+        совпадает со входом, ехать не нужно вовсе) и "рельсовый" (обычный
+        путь по графу). Побеждает меньший — та же формула минимума, что и в
+        `times_from()`, поэтому оба метода НЕ МОГУТ разойтись в числах для
+        одной и той же станции (см. докстроку `times_from` и таблицу сверки
+        в отчёте задачи). Раньше здесь всегда строился рельсовый путь, и для
+        seed == target это давало фантомную поездку (headway + 0 рёбер) —
+        ожидание поезда, на который пассажир никогда не садится.
+
+        R54 (фикс-раунд 1): `MetroRoute.estimated` намеренно НЕ учитывает
+        пешие плечи входа/выхода — `seeds`/`targets` это голые секунды без
+        признака оценки, и graph о них ничего не знает по зафиксированному
+        контракту интерфейса. `estimated` здесь — только про рельсовую
+        часть: рёбра, пересадки, интервалы. Итоговую честность (рельсы ИЛИ
+        пешие плечи) обязан досчитать вызывающий — Задача 11, у которой
+        есть `listing_metro_access.estimated` для обоих плеч; забыть OR-нуть
+        его там — значит показать оценочное пешее плечо как измеренный
+        факт, что запрещено проектом.
+        """
         if not seeds or not targets:
             return None
         dist, prev = self._dijkstra(seeds)
-        reachable = [(dist[t] + walk, t) for t, walk in targets.items()
-                     if t in dist]
-        if not reachable:
+
+        best: tuple[int, str, int] | None = None   # (total, kind, target_id)
+        for t, walk in targets.items():
+            candidates: list[tuple[int, str]] = []
+            if t in seeds:
+                candidates.append((seeds[t] + walk, "trivial"))
+            if t in dist:
+                candidates.append((dist[t] + walk, "rail"))
+            if not candidates:
+                continue
+            total_t, kind_t = min(candidates)
+            if best is None or total_t < best[0]:
+                best = (total_t, kind_t, t)
+        if best is None:
             return None
-        total, end = min(reachable)
+        total, kind, end = best
+
+        if kind == "trivial":
+            # Цель совпадает со входом, и рельсовый путь до неё не дешевле
+            # прямого пешего захода — ехать незачем. Ни headway, ни
+            # сегментов: "прокат" через граф здесь был бы неоплаченной
+            # ложью пользователю (R56, случай (a) из фикс-раунда 1).
+            return MetroRoute(ride_seconds=total)
 
         path: list[int] = [end]
         kinds: list[str] = []
         while path[-1] in prev:
-            node, kind = prev[path[-1]]
-            kinds.append(kind)
+            node, edge_kind = prev[path[-1]]
+            kinds.append(edge_kind)
             path.append(node)
         path.reverse()
         kinds.reverse()
@@ -197,9 +258,9 @@ class MetroGraph:
         route.estimated = seed_headway_est
 
         run_start = 0   # индекс в path, с которого начинается текущий отрезок
-        for i, kind in enumerate(kinds):
+        for i, edge_kind in enumerate(kinds):
             a, b = path[i], path[i + 1]
-            if kind == "ride":
+            if edge_kind == "ride":
                 if self.edges[(a, b)][1]:
                     route.estimated = True
                 continue
