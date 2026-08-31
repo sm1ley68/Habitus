@@ -75,7 +75,10 @@ def test_system_prompt_covers_district_and_named_zone_examples():
 
 
 def test_prompt_teaches_the_metro_travel_budget():
-    # без этого «40 минут до работы на метро» уезжает в semantic_text
+    # число минут («40 минут до работы на метро») парсер намеренно отбрасывает
+    # — ParsedQuery не хранит бюджет времени на поездку (нет ни поля point,
+    # ни минут в household.legs); промпт должен явно это фиксировать, а не
+    # молча ронять число (и не выдумывать под него household-персону).
     assert "метро" in SYSTEM_PROMPT
     assert "point" in SYSTEM_PROMPT
     assert '"mode": "metro"' in SYSTEM_PROMPT
