@@ -74,6 +74,17 @@ def test_system_prompt_covers_district_and_named_zone_examples():
     assert "Патрики" in SYSTEM_PROMPT
 
 
+def test_prompt_teaches_the_metro_travel_budget():
+    # без этого «40 минут до работы на метро» уезжает в semantic_text
+    assert "метро" in SYSTEM_PROMPT
+    assert "point" in SYSTEM_PROMPT
+    assert '"mode": "metro"' in SYSTEM_PROMPT
+
+
+def test_prompt_mentions_carless_phrasing():
+    assert "без машины" in SYSTEM_PROMPT
+
+
 # --- parse_turn / merge_parsed (многоходовый чат) ---------------------------
 
 
