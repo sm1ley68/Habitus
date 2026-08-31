@@ -1,6 +1,30 @@
-from habitus.online.dossier import (ListingEvidence, _climate_data,
-                                    _family_data, _solar_samples)
-from habitus.online.schema import DossierRequest, ParsedQuery
+import psycopg
+import pytest
+
+from habitus.config import settings
+from habitus.db.init_db import init_db
+from habitus.online.dossier import (ListingEvidence, ROUTE_PROFILE,
+                                    _climate_data, _family_data,
+                                    _solar_samples, build_dossier)
+from habitus.online.schema import (DossierRequest, HouseholdLegIntent,
+                                   HouseholdMemberIntent, ParsedQuery)
+
+
+@pytest.fixture
+def dossier_conn():
+    """Одна строка listings с external_id='A' — по образцу фикстуры `conn`
+    из tests/test_metro_access_db.py. Метро-таблицы не нужны: тесты этого
+    файла подменяют door_to_door, в БД реальный граф не ходит."""
+    with psycopg.connect(settings.db_dsn) as c:
+        init_db(c)
+        with c.cursor() as cur:
+            cur.execute("TRUNCATE listings CASCADE;")
+            cur.execute("""INSERT INTO listings (external_id, source, is_active,
+                               city, geom)
+                           VALUES ('A','test',TRUE,'msk',
+                                   ST_SetSRID(ST_MakePoint(37.60,55.75),4326));""")
+        c.commit()
+        yield c
 
 
 class RouteProvider:
@@ -21,7 +45,7 @@ def test_family_data_uses_explicit_time_and_ors_geometry():
     }))
     provider = RouteProvider()
     listing = ListingEvidence(37.6, 55.7, 7, 12, {})
-    data = _family_data(req, listing, provider, lambda _: (37.61, 55.71))
+    data = _family_data(None, req, listing, provider, lambda _: (37.61, 55.71))
     leg = data.members[0].legs[0]
     assert leg.arrive == "08:26" and leg.minutes == 11
     assert leg.geometry.coordinates[-1] == (37.61, 55.71)
@@ -29,14 +53,22 @@ def test_family_data_uses_explicit_time_and_ors_geometry():
     assert leg.safety == "caution"  # safety is conservative unless proven
 
 
-def test_family_data_does_not_invent_time_or_public_transport_route():
+def test_family_data_does_not_invent_time_or_public_transport_route(monkeypatch):
+    # раньше mode="metro" молча выбрасывался (ROUTE_PROFILE его не знал);
+    # теперь метро — реальный внутренний движок, и «нет маршрута» должно
+    # прийти от самого движка (door_to_door → None), а не от отсутствия
+    # профиля. Стаб возвращает None, как это делает движок при недостижимой
+    # цели/неизвестном городе — досье не должно ходить в БД ради этого теста.
+    from habitus.online import dossier as mod
+    monkeypatch.setattr(mod, "door_to_door", lambda *a, **kw: None)
+
     req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
         "household": [{"id": "parent", "label": "Родитель", "legs": [
             {"to_label": "Работа", "to_kind": "work", "mode": "car"},
             {"to_label": "Метро", "to_kind": "metro", "mode": "metro", "depart": "09:00"},
         ]}],
     }))
-    assert _family_data(req, ListingEvidence(37.6, 55.7, None, None, {}),
+    assert _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
                         RouteProvider(), lambda _: (37.7, 55.8)) is None
 
 
@@ -48,7 +80,7 @@ def test_family_data_rejects_geocode_outside_moscow():
         }]}],
     }))
     provider = RouteProvider()
-    data = _family_data(req, ListingEvidence(37.6, 55.7, None, None, {}),
+    data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
                         provider, lambda _: (30.3, 59.9))
     assert data is None and provider.calls == []
 
@@ -110,3 +142,64 @@ def test_climate_data_degrades_without_noise_evidence_no_synthetic_numbers():
     })
     result = _climate_data(_FakeConn(), req, listing, _FakeClimateProvider())
     assert result is None
+
+
+# --- Task 11: метро-нога в досье --------------------------------------------
+
+def test_metro_is_no_longer_an_unroutable_mode():
+    # раньше ROUTE_PROFILE не знал metro и _family_data молча выбрасывал ногу
+    assert "metro" in ROUTE_PROFILE
+
+
+class _StubMetro:
+    """Подменяет движок: досье не должно ходить в БД ради этого теста."""
+    def __init__(self, ride, geometry):
+        self.ride, self.geometry = ride, geometry
+        self.calls = 0
+
+    def __call__(self, conn, city, home, dest, walker=None):
+        self.calls += 1
+        return self.ride, self.geometry
+
+
+def test_metro_leg_carries_the_ride_breakdown(monkeypatch, dossier_conn):
+    from habitus.online import dossier as mod
+    from habitus.online.schema import MetroRide, MetroSegment
+
+    ride = MetroRide(
+        walk_from_home_min=7, walk_to_dest_min=5, total_minutes=25,
+        segments=[MetroSegment(line_ref="1", line_name="Сокольническая",
+                               system="subway", colour="#EF161E",
+                               from_station="Сокольники", to_station="Охотный Ряд",
+                               stops=6, minutes=13)])
+    stub = _StubMetro(ride, [[37.60, 55.75], [37.62, 55.76]])
+    monkeypatch.setattr(mod, "door_to_door", stub)
+
+    req = DossierRequest(
+        object_id="A", city="msk",
+        parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
+            id="me", label="я", legs=[HouseholdLegIntent(
+                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+    payload = build_dossier(req, dossier_conn, geocoder=lambda q: (37.62, 55.76))
+    block = next(b for b in payload.blocks if b.key == "family_routing")
+    leg = block.data.members[0].legs[0]
+    assert leg.mode == "metro"
+    assert leg.metro is not None
+    assert leg.minutes == leg.metro.total_minutes == 25
+    assert leg.arrive == "08:25"
+    assert stub.calls == 1
+
+
+def test_no_graph_for_city_drops_the_block_instead_of_showing_zeros(
+        monkeypatch, dossier_conn):
+    from habitus.online import dossier as mod
+    monkeypatch.setattr(mod, "door_to_door", lambda *a, **kw: None)
+
+    req = DossierRequest(
+        object_id="A", city="spb",
+        parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
+            id="me", label="я", legs=[HouseholdLegIntent(
+                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+    payload = build_dossier(req, dossier_conn, geocoder=lambda q: (30.3, 59.93))
+    # синтетический ноль вместо отсутствующего замера запрещён
+    assert not any(b.key == "family_routing" for b in payload.blocks)

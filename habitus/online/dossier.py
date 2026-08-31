@@ -18,6 +18,7 @@ from psycopg.rows import dict_row
 
 from habitus.clean.geocode import geocode_address
 from habitus.online.geo import DirectionsProvider
+from habitus.online.metro_route import door_to_door
 from habitus.online.schema import (
     BriefItem, CompromiseNote, DirectLight, DossierPayload, DossierRequest,
     FamilyRoutingData, HouseholdMember, LifestyleBlock, LineStringGeometry,
@@ -33,6 +34,9 @@ ORIENTATION_DEG = {
 ROUTE_PROFILE = {
     "walk": "foot-walking", "scooter": "cycling-regular",
     "car": "driving-car",
+    # metro считается внутренним движком по графу, а не ORS: публичный ORS
+    # public transport не умеет (см. ORSProvider.directions).
+    "metro": "metro",
 }
 SEASON_DAY = {"winter": 355, "spring": 79, "summer": 172, "autumn": 266}
 MSK_BOUNDS = (37.30, 55.48, 37.95, 55.95)
@@ -125,11 +129,15 @@ def _minutes_to_clock(clock: str, delta: int) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
-def _family_data(req: DossierRequest, listing: ListingEvidence,
+def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
                  route_provider: DirectionsProvider | None,
                  geocoder: Callable[[str], tuple[float, float] | None]) -> FamilyRoutingData | None:
-    if route_provider is None or not req.parsed_query.household:
+    if not req.parsed_query.household:
         return None
+    # route_provider отсутствует — ORS не настроен. Раньше это выбрасывало
+    # ВЕСЬ блок: все режимы ходили через ORS. Метро — свой движок по графу и
+    # ORS не требует, поэтому дальше отсутствие route_provider отсекает
+    # только немаршрутные-по-метро ноги (см. ниже), а не блок целиком.
     members = []
     home = (listing.lon, listing.lat)
     for member_intent in req.parsed_query.household:
@@ -141,7 +149,32 @@ def _family_data(req: DossierRequest, listing: ListingEvidence,
                 continue
             target = geocoder(intent.to_label if "моск" in intent.to_label.lower()
                               else f"{intent.to_label}, Москва")
-            if target is None or not _inside_moscow(target):
+            if target is None:
+                continue
+            # Гейт по границам Москвы применяется только к немаршрутным по
+            # метро ногам. Для метро границей служит сам граф — он у Москвы
+            # шире города (МЦД уходят в область), а Петербург вообще вне
+            # MSK_BOUNDS по определению.
+            if intent.mode != "metro" and req.city == "msk" and not _inside_moscow(target):
+                continue
+            if intent.mode == "metro":
+                got = door_to_door(conn, req.city, start, target)
+                if got is None:
+                    # графа города нет или цель недостижима — ногу пропускаем,
+                    # нулей не выдумываем
+                    continue
+                ride, geometry = got
+                minutes = ride.total_minutes
+                depart = intent.depart or _minutes_to_clock(intent.arrive, -minutes)
+                arrive = intent.arrive or _minutes_to_clock(intent.depart, minutes)
+                legs.append(RouteLeg(
+                    to_label=intent.to_label, to_kind=intent.to_kind,
+                    mode="metro", depart=depart, arrive=arrive,
+                    minutes=minutes, safety="safe", metro=ride,
+                    geometry=LineStringGeometry(coordinates=[tuple(p) for p in geometry])))
+                start = target
+                continue
+            if route_provider is None:
                 continue
             try:
                 geometry, seconds = route_provider.directions(start, target, profile)
@@ -438,7 +471,10 @@ def build_dossier(req: DossierRequest, conn, *,
     sources = set()
 
     is_moscow = req.city == "msk"
-    family = _family_data(req, listing, route_provider, geocoder) if is_moscow else None
+    # Маршрутный блок больше не московский: граф Петербурга — такой же граф.
+    # Блоки social и climate остаются под is_moscow — под них нет данных по
+    # Петербургу, и это отдельная задача.
+    family = _family_data(conn, req, listing, route_provider, geocoder)
     if family:
         blocks = [b for b in blocks if b.key != "logistics"]
         blocks.insert(0, LifestyleBlock(

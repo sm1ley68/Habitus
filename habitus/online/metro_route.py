@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 
 import psycopg
 
+from habitus.online.schema import MetroRide, MetroSegment, MetroTransfer
+
 
 @dataclass(frozen=True)
 class Station:
@@ -365,3 +367,133 @@ def load_graph(conn: psycopg.Connection, city: str) -> MetroGraph | None:
     _GRAPH_CACHE.clear()          # держим только актуальный отпечаток
     _GRAPH_CACHE[key] = graph
     return graph
+
+
+def _nearest_stations_detailed(conn: psycopg.Connection, city: str, lon: float,
+                               lat: float, k: int = 3,
+                               walker=None) -> dict[int, tuple[int, bool]]:
+    """«id платформы → (пешие секунды, оценка ли)».
+
+    Внутренний helper: несёт то, что публичный `nearest_stations()` обязан
+    прятать по документированному контракту задачи (`dict[int, int]` — на
+    нём завязан SQL-фильтр Задачи 12, которому признак оценки не нужен), но
+    что нужно `door_to_door()` ниже для честного `MetroRide.estimated`
+    (controller ruling R54/R57): семя, добравшееся straight-line-фолбэком
+    (`walker` не дан, вернул None, либо упал исключением), обязано покрасить
+    итог как оценку — та же семантика, что `listing_metro_access.estimated`
+    несёт для офлайн-предрасчитанного пешего доступа (Задача 7), только
+    посчитанная заново для произвольной точки: у `door_to_door()` нет id
+    объявления, чтобы прочитать готовую строку из той таблицы.
+    """
+    from habitus.geo.metro_access import straight_walk_seconds
+
+    rows = conn.execute("""
+        SELECT s.id, ST_X(s.geom), ST_Y(s.geom),
+               ST_Distance(s.geom::geography,
+                           ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography)
+        FROM (SELECT id, geom FROM metro_station WHERE city = %s
+              ORDER BY geom <-> ST_SetSRID(ST_MakePoint(%s,%s),4326)
+              LIMIT %s) s
+        ORDER BY 4 LIMIT %s;""",
+        (lon, lat, city, lon, lat, max(k * 3, 9), k)).fetchall()
+
+    out: dict[int, tuple[int, bool]] = {}
+    for sid, s_lon, s_lat, metres in rows:
+        seconds = straight_walk_seconds(metres)
+        estimated = True
+        if walker is not None:
+            try:
+                got = walker((lon, lat), (s_lon, s_lat))
+                if got is not None:
+                    seconds = int(round(got))
+                    estimated = False
+            except Exception:  # noqa: BLE001 — внешний роутер, деградируем к оценке
+                pass
+        out[sid] = (seconds, estimated)
+    return out
+
+
+def nearest_stations(conn: psycopg.Connection, city: str, lon: float, lat: float,
+                     k: int = 3, walker=None) -> dict[int, int]:
+    """«id платформы → пешие секунды». Три платформы, а не одна: ближайшая по
+    прямой регулярно стоит на тупиковой ветке.
+
+    Публичный контракт задачи — только секунды, без признака оценки; его
+    несёт `_nearest_stations_detailed` выше для `door_to_door()`.
+    """
+    return {sid: seconds for sid, (seconds, _est) in
+            _nearest_stations_detailed(conn, city, lon, lat, k, walker=walker).items()}
+
+
+def door_to_door(conn: psycopg.Connection, city: str,
+                 home: tuple[float, float], dest: tuple[float, float],
+                 walker=None) -> tuple[MetroRide, list[list[float]]] | None:
+    """Разбивка поездки от дома до цели и её геометрия для карты.
+
+    None — графа города нет, у дома/цели нет достижимых платформ, либо цель
+    недостижима по графу. Блок тогда деградирует до отсутствия: синтетический
+    ноль вместо отсутствующего замера запрещён.
+    """
+    graph = load_graph(conn, city)
+    if graph is None:
+        return None
+    seeds_detailed = _nearest_stations_detailed(conn, city, home[0], home[1],
+                                                walker=walker)
+    targets_detailed = _nearest_stations_detailed(conn, city, dest[0], dest[1],
+                                                  walker=walker)
+    if not seeds_detailed or not targets_detailed:
+        return None
+    seeds = {sid: seconds for sid, (seconds, _est) in seeds_detailed.items()}
+    targets = {sid: seconds for sid, (seconds, _est) in targets_detailed.items()}
+    route = graph.route(seeds, targets)
+    if route is None:
+        return None
+
+    def _min(seconds: int) -> int:
+        return max(1, int(round(seconds / 60)))
+
+    entry = graph.stations[min(seeds, key=lambda s: seeds[s])]
+    home_walk = _min(min(seeds.values()))
+    dest_walk = _min(min(targets.values()))
+
+    # R54/R57: route.estimated — это только рельсовая честность (рёбра,
+    # пересадки, интервалы; см. докстроку route()). Пешие плечи в неё
+    # намеренно не входят — это обязанность вызывающего. Семя/цель,
+    # добравшиеся straight-line-фолбэком (walker не дан или отказал на
+    # конкретной платформе), красят итог так же, как listing_metro_access.
+    # estimated красит офлайн-доступ. OR берётся по ВСЕМ кандидатам k
+    # платформ, а не только по фактически выигравшей у route() (её id route()
+    # наружу не отдаёт) — это осознанно консервативный выбор: может показать
+    # оценку там, где выигравший вход на деле был измерен, но никогда не
+    # спрячет реальную оценку как измеренный факт, что и запрещено проектом.
+    walk_estimated = (any(est for _, est in seeds_detailed.values())
+                      or any(est for _, est in targets_detailed.values()))
+
+    ride = MetroRide(
+        walk_from_home_min=home_walk, walk_to_dest_min=dest_walk,
+        # route.ride_seconds уже включает ОБА пеших плеча (см. докстроку
+        # route(), R56: `ride_seconds == times_from(seeds)[t] + walk`) — это
+        # ПОЛНОЕ время от двери до двери. Прибавлять сюда ещё раз
+        # min(targets.values()) значило бы посчитать пешее плечо до цели
+        # дважды.
+        total_minutes=_min(route.ride_seconds),
+        estimated=route.estimated or walk_estimated,
+        segments=[MetroSegment(
+            line_ref=s.line_ref, line_name=s.line_name, system=s.system,
+            colour=s.colour, from_station=s.from_station,
+            to_station=s.to_station, stops=s.stops, minutes=_min(s.seconds),
+            estimated=s.estimated) for s in route.segments],
+        transfers=[MetroTransfer(
+            from_station=t.from_station, to_station=t.to_station,
+            minutes=_min(t.seconds), outdoor=t.outdoor,
+            estimated=t.estimated) for t in route.transfers])
+
+    # Геометрия для карты: дом → станция входа → станции пути → цель.
+    geometry: list[list[float]] = [[home[0], home[1]], [entry.lon, entry.lat]]
+    for seg in route.segments:
+        for st in graph.stations.values():
+            if st.name == seg.to_station and st.line_ref == seg.line_ref:
+                geometry.append([st.lon, st.lat])
+                break
+    geometry.append([dest[0], dest[1]])
+    return ride, geometry

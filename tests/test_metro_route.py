@@ -9,7 +9,9 @@ from habitus.online.metro_route import (
     MetroGraph,
     Station,
     clear_graph_cache,
+    door_to_door,
     load_graph,
+    nearest_stations,
 )
 
 #  линия 1:  A(1) — B(2) — C(3)      по 100 с
@@ -331,3 +333,96 @@ def test_load_graph_cache_invalidates_after_rebuild(conn):
     g3 = load_graph(conn, "msk")
     assert g3 is not g1, "перестройка графа обязана дать новый отпечаток"
     assert set(s.line_ref for s in g3.stations.values()) == {"2"}
+
+
+# --- Task 11: nearest_stations / door_to_door — движок «дверь-дверь» -------
+
+def test_nearest_stations_returns_plain_seconds_dict(conn):
+    # Публичный контракт задачи: dict[int, int], без признака оценки — на
+    # нём завязан SQL-фильтр Задачи 12.
+    upsert_transit([_line()], conn, "msk", _curated())
+    out = nearest_stations(conn, "msk", 37.60, 55.75, walker=None)
+    assert out and all(isinstance(v, int) for v in out.values())
+
+
+def test_door_to_door_reports_absence_for_unknown_city(conn):
+    upsert_transit([_line()], conn, "msk", _curated())
+    assert door_to_door(conn, "spb", (37.60, 55.75), (37.64, 55.75)) is None
+
+
+def test_door_to_door_reports_absence_when_target_unreachable(conn):
+    # Два несвязанных острова: разные имена станций не образуют пересадку,
+    # граф остаётся разбит на две компоненты — дом у одной, цель у другой.
+    upsert_transit([
+        _line("1", names=("A", "B", "C"), lon0=37.60),
+        _line("9", names=("X", "Y", "Z"), lon0=38.60),
+    ], conn, "msk", _curated())
+    home = (37.60, 55.75)     # рядом с "A"
+    dest = (38.60, 55.75)     # рядом с "X" — другая компонента графа
+    assert door_to_door(conn, "msk", home, dest, walker=None) is None
+
+
+def test_door_to_door_total_minutes_do_not_double_count_the_destination_walk(conn):
+    # route.ride_seconds УЖЕ включает оба пеших плеча (докстрока route(),
+    # R56: `ride_seconds == times_from(seeds)[t] + walk`) — это полное время
+    # от двери до двери. Самопроверка через прямой вызов route() с теми же
+    # seeds/targets ловит повторное прибавление пешего плеча цели.
+    #
+    # dest НАМЕРЕННО не совпадает с координатами станции "C" (это дало бы
+    # targets[C] == 0 и замаскировало бы двойной счёт нулём) — смещение
+    # ~130 м даёт targets[C] заметно больше нуля.
+    upsert_transit([_line()], conn, "msk", _curated())
+    home, dest = (37.60, 55.75), (37.641, 55.751)   # рядом с "A" и с "C"
+    got = door_to_door(conn, "msk", home, dest, walker=None)
+    assert got is not None
+    ride, _geometry = got
+
+    graph = load_graph(conn, "msk")
+    seeds = nearest_stations(conn, "msk", *home, walker=None)
+    targets = nearest_stations(conn, "msk", *dest, walker=None)
+    expected = graph.route(seeds, targets)
+    assert ride.total_minutes == max(1, round(expected.ride_seconds / 60))
+
+
+def test_door_to_door_segment_colour_field_maps_to_schema_colour(conn):
+    # Segment.colour (внутренний граф) обязан лечь в MetroSegment.colour.
+    upsert_transit([_line()], conn, "msk", _curated())
+    ride, _ = door_to_door(conn, "msk", (37.60, 55.75), (37.64, 55.75), walker=None)
+    assert ride.segments and ride.segments[0].colour == "#EF161E"
+
+
+def test_door_to_door_ors_in_walking_leg_estimate_r54(conn):
+    # Controller ruling R54/R57: рельсовая часть маршрута полностью
+    # курирована (все headway/edges — из _curated()), но пешее плечо
+    # (walker=None → straight_walk_seconds-фолбэк) обязано покрасить
+    # MetroRide.estimated в True — иначе оценочное пешее плечо покажется
+    # пользователю как измеренный факт.
+    upsert_transit([_line()], conn, "msk", _curated())
+    ride, _ = door_to_door(conn, "msk", (37.60, 55.75), (37.64, 55.75), walker=None)
+    assert not ride.segments[0].estimated, "рельсовая часть курирована"
+    assert ride.estimated is True, "оценочное пешее плечо обязано покрасить итог"
+
+
+def test_door_to_door_walking_leg_not_estimated_when_walker_succeeds(conn):
+    # Тот же курированный граф, но живой walker отвечает на все вызовы —
+    # оба пеших плеча измерены, итог не должен красить True из-за них.
+    upsert_transit([_line()], conn, "msk", _curated())
+    ride, _ = door_to_door(conn, "msk", (37.60, 55.75), (37.64, 55.75),
+                           walker=lambda a, b: 42.0)
+    assert ride.estimated is False
+
+
+def test_door_to_door_walker_failure_on_one_station_still_taints_estimate(conn):
+    # per-station отказ (как в Задаче 7, test_walker_failure_degrades_
+    # per_station_not_globally): часть кандидатов провалилась — оценка
+    # обязана всплыть, даже если другие кандидаты той же точки ответили
+    # успешно.
+    upsert_transit([_line()], conn, "msk", _curated())
+
+    def flaky(start, end):
+        if end[0] > 37.62:   # дальние кандидаты недоступны сети
+            raise RuntimeError("сеть недоступна")
+        return 42.0
+
+    ride, _ = door_to_door(conn, "msk", (37.60, 55.75), (37.64, 55.75), walker=flaky)
+    assert ride.estimated is True
