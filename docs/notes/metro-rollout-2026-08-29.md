@@ -177,7 +177,15 @@ ride_seconds=312 trivial=False entry=514 exit=542 estimated=True
 
 ## Шаг 5: Тесты
 
-(заполняется по мере прогона)
+`uv run pytest`: **529 passed, 2 skipped**, 158.43s, exit code 0.
+(2 skip — `test_smoke_llm.py`, ожидаемо: без `OPENROUTER_API_KEY` LLM-smoke
+тест скипается, а не падает — ровно поведение, описанное в CLAUDE.md.)
+
+`cd backend && go test ./...`: все пакеты `ok` (часть из кэша), `[no test
+files]` там, где тестов не предполагалось — exit code 0.
+
+`cd frontend && npm test`: **43 test files passed (43), 184 tests passed
+(184)**, 13.5s, exit code 0.
 
 ## Вывод
 
