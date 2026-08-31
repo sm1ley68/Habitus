@@ -56,6 +56,24 @@ class MetroRoute:
     transfers: list[Transfer] = field(default_factory=list)
     ride_seconds: int = 0
     estimated: bool = False
+    #: R65 (фикс-раунд 1): станция ФАКТИЧЕСКОГО входа/выхода — та, что выбрала
+    #: Дейкстра при разрешении seeds/targets, а не ближайшая по прямой из
+    #: словаря кандидатов. door_to_door() обязан красить пешее плечо той же
+    #: платформой, что уже вошла в ride_seconds — иначе walk_from_home_min
+    #: может занижать плечо, которое total_minutes уже посчитал.
+    entry_station: int | None = None
+    exit_station: int | None = None
+    #: R64 (фикс-раунд 1): суммарное ожидание посадки — интервал линии
+    #: посева плюс интервал каждой линии после пересадки. Ни Segment, ни
+    #: Transfer его по отдельности не несут (см. докстроку route()) — это
+    #: та самая скрытая величина, ради честности которой вся задача и
+    #: существует. door_to_door() кладёт это в MetroRide.wait_min.
+    wait_seconds: int = 0
+    #: R66 (фикс-раунд 1): True — цель ближе всего к той же платформе, что и
+    #: вход (rides_seconds — это только два пеших плеча, рельсовой части не
+    #: было). door_to_door() трактует это как «метро тут не нужно», а не как
+    #: поездку с пустыми segments.
+    trivial: bool = False
 
 
 @dataclass
@@ -249,7 +267,10 @@ class MetroGraph:
             # прямого пешего захода — ехать незачем. Ни headway, ни
             # сегментов: "прокат" через граф здесь был бы неоплаченной
             # ложью пользователю (R56, случай (a) из фикс-раунда 1).
-            return MetroRoute(ride_seconds=total)
+            # trivial=True (R66, фикс-раунд 1) — сигнал вызывающему, что это
+            # вообще не метро-поездка, а два пеших плеча подряд.
+            return MetroRoute(ride_seconds=total, entry_station=end,
+                              exit_station=end, trivial=True)
 
         path: list[int] = [end]
         kinds: list[str] = []
@@ -260,12 +281,19 @@ class MetroGraph:
         path.reverse()
         kinds.reverse()
 
-        route = MetroRoute(ride_seconds=total)
+        # entry_station/exit_station (R65): станции, которые ДЕЙСТВИТЕЛЬНО
+        # выбрала Дейкстра — path[0]/path[-1], а не ближайшая по прямой из
+        # seeds/targets. door_to_door() обязан красить пешее плечо по ним же.
+        route = MetroRoute(ride_seconds=total, entry_station=path[0],
+                           exit_station=path[-1])
         # Интервал линии станции посева тоже часть честности маршрута — тот
         # же учёт, что и в _dijkstra, но здесь он должен попасть в
         # route.estimated (R29/R30: флаг — OR всех оценочных вводов).
-        _, seed_headway_est = self._headway(self.stations[path[0]])
+        seed_headway_sec, seed_headway_est = self._headway(self.stations[path[0]])
         route.estimated = seed_headway_est
+        # R64 (фикс-раунд 1): ожидание посадки на линию станции посева —
+        # первое слагаемое суммарного wait_seconds.
+        route.wait_seconds = seed_headway_sec
 
         run_start = 0   # индекс в path, с которого начинается текущий отрезок
         for i, edge_kind in enumerate(kinds):
@@ -285,8 +313,11 @@ class MetroGraph:
             # Интервал линии, на которую садимся после пересадки, — тоже
             # оценочный ввод, красящий маршрут, даже если сама Transfer не
             # estimated (она хранит только честность пешей части перехода).
-            _, headway_est = self._headway(self.stations[b])
+            headway_sec, headway_est = self._headway(self.stations[b])
             route.estimated = route.estimated or est or headway_est
+            # R64: и второе (третье, ...) слагаемое — интервал каждой линии,
+            # на которую садимся после очередной пересадки.
+            route.wait_seconds += headway_sec
             run_start = i + 1
         if len(path) - 1 > run_start:
             route.segments.append(self._segment(path[run_start:]))
@@ -369,10 +400,23 @@ def load_graph(conn: psycopg.Connection, city: str) -> MetroGraph | None:
     return graph
 
 
+#: R63 (фикс-раунд 1): потолок пешего плеча до входа/выхода. Без него KNN
+#: всегда отдаёт k «ближайших» станций города вне зависимости от того,
+#: насколько они на самом деле далеко — точка, геокодированная за пределы
+#: реальной зоны охвата графа (соседний город, опечатка в адресе, чужой
+#: регион), всё равно получала бы «ближайшие» станции и честный на вид
+#: MetroRide с многочасовым пешим плечом. 3000 м — это заведомо больше
+#: любого реалистичного пешего подхода к метро/МЦК/МЦД внутри города (около
+#: 35 минут ходьбы в темпе WALK_SPEED_MPS с поправкой WALK_DETOUR), но на
+#: порядки меньше межгородского расстояния — отсекает именно «графа тут по
+#: сути нет», а не «станция далековато».
+MAX_ENTRY_WALK_METRES = 3000.0
+
+
 def _nearest_stations_detailed(conn: psycopg.Connection, city: str, lon: float,
                                lat: float, k: int = 3,
                                walker=None) -> dict[int, tuple[int, bool]]:
-    """«id платформы → (пешие секунды, оценка ли)».
+    """«id платформы → (пешие секунды, оценка ли)», не дальше MAX_ENTRY_WALK_METRES.
 
     Внутренний helper: несёт то, что публичный `nearest_stations()` обязан
     прятать по документированному контракту задачи (`dict[int, int]` — на
@@ -384,6 +428,12 @@ def _nearest_stations_detailed(conn: psycopg.Connection, city: str, lon: float,
     несёт для офлайн-предрасчитанного пешего доступа (Задача 7), только
     посчитанная заново для произвольной точки: у `door_to_door()` нет id
     объявления, чтобы прочитать готовую строку из той таблицы.
+
+    Кандидаты, что дальше MAX_ENTRY_WALK_METRES, отбрасываются целиком, а не
+    попадают в результат с честной, но абсурдной оценкой в часах (R63) —
+    KNN-запрос всё равно берёт ГЕОДЕЗИЧЕСКИ ближайшие k станций до фильтра,
+    так что отбрасывание не может подменить настоящего близкого кандидата
+    более дальним.
     """
     from habitus.geo.metro_access import straight_walk_seconds
 
@@ -399,6 +449,8 @@ def _nearest_stations_detailed(conn: psycopg.Connection, city: str, lon: float,
 
     out: dict[int, tuple[int, bool]] = {}
     for sid, s_lon, s_lat, metres in rows:
+        if metres > MAX_ENTRY_WALK_METRES:
+            continue
         seconds = straight_walk_seconds(metres)
         estimated = True
         if walker is not None:
@@ -425,13 +477,26 @@ def nearest_stations(conn: psycopg.Connection, city: str, lon: float, lat: float
             _nearest_stations_detailed(conn, city, lon, lat, k, walker=walker).items()}
 
 
+def _dedup_consecutive(points: list[list[float]]) -> list[list[float]]:
+    """Убирает подряд идущие повторы координат (R66, фикс-раунд 1) — платформа
+    ровно на пороге дома/цели иначе даёт две одинаковые точки геометрии
+    подряд."""
+    out: list[list[float]] = []
+    for point in points:
+        if not out or out[-1] != point:
+            out.append(point)
+    return out
+
+
 def door_to_door(conn: psycopg.Connection, city: str,
                  home: tuple[float, float], dest: tuple[float, float],
                  walker=None) -> tuple[MetroRide, list[list[float]]] | None:
     """Разбивка поездки от дома до цели и её геометрия для карты.
 
-    None — графа города нет, у дома/цели нет достижимых платформ, либо цель
-    недостижима по графу. Блок тогда деградирует до отсутствия: синтетический
+    None — графа города нет, у дома/цели нет достижимых платформ в пределах
+    MAX_ENTRY_WALK_METRES, цель недостижима по графу, либо вход и выход
+    схлопнулись в одну и ту же платформу (route.trivial — ехать незачем, это
+    не метро-поездка). Блок тогда деградирует до отсутствия: синтетический
     ноль вместо отсутствующего замера запрещён.
     """
     graph = load_graph(conn, city)
@@ -443,18 +508,46 @@ def door_to_door(conn: psycopg.Connection, city: str,
                                                   walker=walker)
     if not seeds_detailed or not targets_detailed:
         return None
-    seeds = {sid: seconds for sid, (seconds, _est) in seeds_detailed.items()}
-    targets = {sid: seconds for sid, (seconds, _est) in targets_detailed.items()}
+    # R66 (фикс-раунд 1, п.1): та же защита от устаревшего id, что R59 уже
+    # применяет внутри route()/_dijkstra — платформа могла исчезнуть между
+    # запросом к metro_station выше и текущим отпечатком графа (например,
+    # параллельная пересборка). Фильтруем сразу и работаем дальше только с
+    # id, которые graph.stations гарантированно знает — не полагаемся на то,
+    # что route() либо тихо отфильтрует их сама, либо кинет KeyError на
+    # необработанном прямом обращении к graph.stations ниже.
+    seeds = {sid: seconds for sid, (seconds, _est) in seeds_detailed.items()
+             if sid in graph.stations}
+    targets = {sid: seconds for sid, (seconds, _est) in targets_detailed.items()
+              if sid in graph.stations}
+    if not seeds or not targets:
+        return None
     route = graph.route(seeds, targets)
-    if route is None:
+    if route is None or route.trivial:
+        # route.trivial (R66, фикс-раунд 1): дом и цель ближе всего к одной и
+        # той же платформе — рельсовой части не было, ride_seconds — это
+        # просто сумма двух пеших плеч. Показать это как MetroRide с пустыми
+        # segments значило бы описать метро-поездку, которой не было; честнее
+        # отдать absence и дать вызывающему пропустить эту ногу.
         return None
 
     def _min(seconds: int) -> int:
         return max(1, int(round(seconds / 60)))
 
-    entry = graph.stations[min(seeds, key=lambda s: seeds[s])]
-    home_walk = _min(min(seeds.values()))
-    dest_walk = _min(min(targets.values()))
+    def _walk_min(seconds: int) -> int:
+        # В отличие от _min выше, здесь дно НЕ поднимается искусственно до 1
+        # (R66, фикс-раунд 1): дом прямо на платформе — это честные 0 минут,
+        # а не выдуманная минута ходьбы, которая иначе ломает и геометрию
+        # (см. _dedup_consecutive), и инвариант суммы частей MetroRide ниже.
+        return int(round(seconds / 60))
+
+    # R65 (фикс-раунд 1): пешее плечо считается ДЛЯ ТОЙ ЖЕ станции, что уже
+    # вошла в route.ride_seconds (route.entry_station/exit_station — выбор
+    # Дейкстры), а не для ближайшей по прямой из seeds/targets. Иначе
+    # walk_from_home_min мог занижать (или относиться к другой платформе,
+    # чем полотно geometry) плечо, которое total_minutes уже посчитал.
+    home_walk = _walk_min(seeds[route.entry_station])
+    dest_walk = _walk_min(targets[route.exit_station])
+    entry = graph.stations.get(route.entry_station)
 
     # R54/R57: route.estimated — это только рельсовая честность (рёбра,
     # пересадки, интервалы; см. докстроку route()). Пешие плечи в неё
@@ -462,38 +555,58 @@ def door_to_door(conn: psycopg.Connection, city: str,
     # добравшиеся straight-line-фолбэком (walker не дан или отказал на
     # конкретной платформе), красят итог так же, как listing_metro_access.
     # estimated красит офлайн-доступ. OR берётся по ВСЕМ кандидатам k
-    # платформ, а не только по фактически выигравшей у route() (её id route()
-    # наружу не отдаёт) — это осознанно консервативный выбор: может показать
-    # оценку там, где выигравший вход на деле был измерен, но никогда не
-    # спрячет реальную оценку как измеренный факт, что и запрещено проектом.
+    # платформ, а не только по фактически выигравшей у route() — это
+    # осознанно консервативный выбор: может показать оценку там, где
+    # выигравший вход на деле был измерен, но никогда не спрячет реальную
+    # оценку как измеренный факт, что и запрещено проектом.
     walk_estimated = (any(est for _, est in seeds_detailed.values())
                       or any(est for _, est in targets_detailed.values()))
 
+    segments = [MetroSegment(
+        line_ref=s.line_ref, line_name=s.line_name, system=s.system,
+        colour=s.colour, from_station=s.from_station,
+        to_station=s.to_station, stops=s.stops, minutes=_min(s.seconds),
+        estimated=s.estimated) for s in route.segments]
+    transfers = [MetroTransfer(
+        from_station=t.from_station, to_station=t.to_station,
+        minutes=_min(t.seconds), outdoor=t.outdoor,
+        estimated=t.estimated) for t in route.transfers]
+    # route.ride_seconds уже включает ОБА пеших плеча (см. докстроку route(),
+    # R56: `ride_seconds == times_from(seeds)[t] + walk`) — это ПОЛНОЕ время
+    # от двери до двери, отдельно прибавлять пешее плечо ещё раз не нужно.
+    total_minutes = _min(route.ride_seconds)
+    # R64 (фикс-раунд 1): wait_min — остаток после вычета уже показанных
+    # частей из total_minutes, а не независимо округлённый route.wait_seconds.
+    # Раздельное округление каждой части (пеших плеч, каждого segment,
+    # каждого transfer) и общего total_minutes по отдельности означает, что
+    # инвариант «сумма частей == total_minutes» обязан держаться СЧЁТОМ, а не
+    # совпадением — считать wait_min как остаток гарантирует это по
+    # построению. max(0, ...) — чисто защитный зажим на случай, если
+    # округление нескольких коротких частей в бо́льшую сторону разом
+    # (независимо друг от друга) обгонит округление total_minutes целиком;
+    # в реальных данных (секунды на линиях метро — от одной минуты) это не
+    # наблюдается, но `wait_min: int = Field(ge=0)` не должен упасть, даже
+    # если наблюдается.
+    wait_min = max(0, total_minutes - home_walk - dest_walk -
+                   sum(s.minutes for s in segments) -
+                   sum(t.minutes for t in transfers))
+
     ride = MetroRide(
         walk_from_home_min=home_walk, walk_to_dest_min=dest_walk,
-        # route.ride_seconds уже включает ОБА пеших плеча (см. докстроку
-        # route(), R56: `ride_seconds == times_from(seeds)[t] + walk`) — это
-        # ПОЛНОЕ время от двери до двери. Прибавлять сюда ещё раз
-        # min(targets.values()) значило бы посчитать пешее плечо до цели
-        # дважды.
-        total_minutes=_min(route.ride_seconds),
+        total_minutes=total_minutes, wait_min=wait_min,
         estimated=route.estimated or walk_estimated,
-        segments=[MetroSegment(
-            line_ref=s.line_ref, line_name=s.line_name, system=s.system,
-            colour=s.colour, from_station=s.from_station,
-            to_station=s.to_station, stops=s.stops, minutes=_min(s.seconds),
-            estimated=s.estimated) for s in route.segments],
-        transfers=[MetroTransfer(
-            from_station=t.from_station, to_station=t.to_station,
-            minutes=_min(t.seconds), outdoor=t.outdoor,
-            estimated=t.estimated) for t in route.transfers])
+        segments=segments, transfers=transfers)
 
     # Геометрия для карты: дом → станция входа → станции пути → цель.
-    geometry: list[list[float]] = [[home[0], home[1]], [entry.lon, entry.lat]]
+    # _dedup_consecutive убирает подряд идущие повторы (R66) — например,
+    # когда дом стоит прямо на платформе входа.
+    geometry: list[list[float]] = [[home[0], home[1]]]
+    if entry is not None:
+        geometry.append([entry.lon, entry.lat])
     for seg in route.segments:
         for st in graph.stations.values():
             if st.name == seg.to_station and st.line_ref == seg.line_ref:
                 geometry.append([st.lon, st.lat])
                 break
     geometry.append([dest[0], dest[1]])
-    return ride, geometry
+    return ride, _dedup_consecutive(geometry)

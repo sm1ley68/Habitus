@@ -201,13 +201,23 @@ class MetroTransfer(BaseModel):
 
 class MetroRide(BaseModel):
     """Разбивка метро-ноги. Итог «от двери до двери» живёт в RouteLeg.minutes,
-    здесь — из чего он сложился. Сумма частей равна RouteLeg.minutes; фронт
-    показывает разбивку и не складывает её заново, иначе округления разойдутся."""
+    здесь — из чего он сложился. Реальный инвариант: walk_from_home_min +
+    сумма minutes всех segments + сумма minutes всех transfers +
+    walk_to_dest_min + wait_min == RouteLeg.minutes (total_minutes). Фронт
+    показывает разбивку и не складывает её заново, иначе округления
+    разойдутся."""
     walk_from_home_min: int = Field(ge=0)
     walk_to_dest_min: int = Field(ge=0)
     segments: list[MetroSegment] = []
     transfers: list[MetroTransfer] = []
     total_minutes: int = Field(ge=0)
+    # Суммарное ожидание посадки: интервал линии, на которую садится
+    # пассажир у входа, плюс интервал каждой линии после пересадки. Ни один
+    # MetroSegment/MetroTransfer не несёт эту величину по отдельности — она
+    # реальна (заложена в total_minutes графом, Задача 9), но без этого поля
+    # была бы невидимой суммой части «сумма частей == total_minutes» ломалась
+    # бы на каждой поездке.
+    wait_min: int = Field(ge=0, default=0)
     estimated: bool = False
 
 

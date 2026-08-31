@@ -203,3 +203,51 @@ def test_no_graph_for_city_drops_the_block_instead_of_showing_zeros(
     payload = build_dossier(req, dossier_conn, geocoder=lambda q: (30.3, 59.93))
     # синтетический ноль вместо отсутствующего замера запрещён
     assert not any(b.key == "family_routing" for b in payload.blocks)
+
+
+# --- Фикс-раунд 1 -----------------------------------------------------------
+
+def test_family_data_geocodes_against_the_requests_own_city_r62():
+    # R62 (фикс-раунд 1): раньше суффикс геокода был жёстко "Москва"
+    # независимо от req.city — SPb-запрос находил московский адрес в 630 км
+    # от дома, а метро-ветка (не гейтится bbox Москвы намеренно) выдавала бы
+    # это за правдоподобный MetroRide с многочасовым пешим плечом.
+    captured = []
+
+    def spy_geocoder(query):
+        captured.append(query)
+        return (30.3, 59.93)   # где-то в Петербурге
+
+    req = DossierRequest(object_id="E1", city="spb",
+                         parsed_query=ParsedQuery.model_validate({
+        "household": [{"id": "son", "label": "Сын", "legs": [{
+            "to_label": "Работа", "to_kind": "work", "mode": "walk",
+            "depart": "08:00",
+        }]}],
+    }))
+    _family_data(None, req, ListingEvidence(30.3, 59.93, None, None, {}),
+                 RouteProvider(), spy_geocoder)
+    assert captured == ["Работа, Санкт-Петербург"]
+
+
+def test_family_routing_verdict_line_is_accurate_for_metro_legs(monkeypatch, dossier_conn):
+    # R66 (фикс-раунд 1, п.4): "Маршруты построены по дорожному графу" — было
+    # неверно для метро-ноги, она построена по графу рельсового транспорта
+    # (Задача 9), а не ORS.
+    from habitus.online import dossier as mod
+    from habitus.online.schema import MetroRide
+
+    ride = MetroRide(walk_from_home_min=1, walk_to_dest_min=1,
+                     total_minutes=10, wait_min=2)
+    stub = _StubMetro(ride, [[37.60, 55.75], [37.62, 55.76]])
+    monkeypatch.setattr(mod, "door_to_door", stub)
+
+    req = DossierRequest(
+        object_id="A", city="msk",
+        parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
+            id="me", label="я", legs=[HouseholdLegIntent(
+                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+    payload = build_dossier(req, dossier_conn, geocoder=lambda q: (37.62, 55.76))
+    block = next(b for b in payload.blocks if b.key == "family_routing")
+    assert "дорожному графу" not in block.verdict_line
+    assert "метро" in block.verdict_line.lower()

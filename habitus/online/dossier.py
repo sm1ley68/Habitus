@@ -40,6 +40,15 @@ ROUTE_PROFILE = {
 }
 SEASON_DAY = {"winter": 355, "spring": 79, "summer": 172, "autumn": 266}
 MSK_BOUNDS = (37.30, 55.48, 37.95, 55.95)
+# R62 (фикс-раунд 1): суффикс/маркер города для геокода зависел от жёстко
+# зашитой "Москва" вне зависимости от req.city — SPb-запрос геокодировал
+# "офис, Москва" и получал московский адрес за 630 км от дома, а метро-ветка
+# (сознательно не гейтится bbox Москвы — см. _family_data) превращала это в
+# правдоподобно выглядящий MetroRide с многочасовым пешим плечом.
+GEOCODE_CITY_NAME = {"msk": "Москва", "spb": "Санкт-Петербург"}
+#  Метки, по которым считаем, что город уже назван в самом to_label — тогда
+# суффикс не добавляется (иначе "Москва Сити, Москва" и т.п.).
+GEOCODE_CITY_HINTS = {"msk": ("моск",), "spb": ("петербург", "спб", "питер")}
 
 
 class DossierNotFound(LookupError):
@@ -147,8 +156,11 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
             profile = ROUTE_PROFILE.get(intent.mode)
             if profile is None or (intent.depart is None and intent.arrive is None):
                 continue
-            target = geocoder(intent.to_label if "моск" in intent.to_label.lower()
-                              else f"{intent.to_label}, Москва")
+            city_name = GEOCODE_CITY_NAME.get(req.city, "Москва")
+            hints = GEOCODE_CITY_HINTS.get(req.city, ("моск",))
+            label_lower = intent.to_label.lower()
+            target = geocoder(intent.to_label if any(h in label_lower for h in hints)
+                              else f"{intent.to_label}, {city_name}")
             if target is None:
                 continue
             # Гейт по границам Москвы применяется только к немаршрутным по
@@ -477,10 +489,21 @@ def build_dossier(req: DossierRequest, conn, *,
     family = _family_data(conn, req, listing, route_provider, geocoder)
     if family:
         blocks = [b for b in blocks if b.key != "logistics"]
+        legs_all = [leg for m in family.members for leg in m.legs]
+        has_metro = any(leg.mode == "metro" for leg in legs_all)
+        has_road = any(leg.mode != "metro" for leg in legs_all)
+        # R66 (фикс-раунд 1, п.4): "дорожный граф" — неверно для метро-ног,
+        # они построены по графу рельсового транспорта (Задача 9), не ORS.
+        if has_metro and has_road:
+            verdict_line = "Маршруты построены по дорожному графу и графу метро/МЦК/МЦД."
+        elif has_metro:
+            verdict_line = "Маршруты построены по графу метро/МЦК/МЦД."
+        else:
+            verdict_line = "Маршруты построены по дорожному графу."
         blocks.insert(0, LifestyleBlock(
             key="family_routing", tier="hero", title="Суточный ритм семьи",
             icon="route", score="A" if all(leg.safety == "safe" for m in family.members for leg in m.legs) else "B",
-            verdict_line="Маршруты построены по дорожному графу.",
+            verdict_line=verdict_line,
             description="Показаны только явно названные поездки и подтверждённые маршруты.", data=family))
         sources.add("route")
         routed = {(m.label, leg.to_label) for m in family.members for leg in m.legs}

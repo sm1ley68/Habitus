@@ -1,3 +1,5 @@
+import math
+
 import psycopg
 import pytest
 
@@ -6,8 +8,10 @@ from habitus.db.init_db import init_db
 from habitus.geo.metro import LineRaw, StationRaw, upsert_transit
 from habitus.geo.metro_times import CuratedTimes
 from habitus.online.metro_route import (
+    MAX_ENTRY_WALK_METRES,
     MetroGraph,
     Station,
+    _nearest_stations_detailed,
     clear_graph_cache,
     door_to_door,
     load_graph,
@@ -403,12 +407,23 @@ def test_door_to_door_ors_in_walking_leg_estimate_r54(conn):
     assert ride.estimated is True, "оценочное пешее плечо обязано покрасить итог"
 
 
+def _rough_metres(a, b):
+    # Пропорционален реальному расстоянию (в отличие от плоской константы) —
+    # плоский walker искусственно уравнивает все k кандидатов и делает
+    # "пеший заход до дальней станции" обманчиво дешёвым, отчего trivial-путь
+    # (R66) начинает выигрывать у настоящей рельсовой поездки.
+    dx = (b[0] - a[0]) * 111_320 * math.cos(math.radians(a[1]))
+    dy = (b[1] - a[1]) * 111_320
+    return (dx ** 2 + dy ** 2) ** 0.5
+
+
 def test_door_to_door_walking_leg_not_estimated_when_walker_succeeds(conn):
     # Тот же курированный граф, но живой walker отвечает на все вызовы —
     # оба пеших плеча измерены, итог не должен красить True из-за них.
     upsert_transit([_line()], conn, "msk", _curated())
     ride, _ = door_to_door(conn, "msk", (37.60, 55.75), (37.64, 55.75),
-                           walker=lambda a, b: 42.0)
+                           walker=lambda a, b: _rough_metres(a, b) / 1.3)
+    assert ride is not None
     assert ride.estimated is False
 
 
@@ -422,7 +437,162 @@ def test_door_to_door_walker_failure_on_one_station_still_taints_estimate(conn):
     def flaky(start, end):
         if end[0] > 37.62:   # дальние кандидаты недоступны сети
             raise RuntimeError("сеть недоступна")
-        return 42.0
+        return _rough_metres(start, end) / 1.3
 
     ride, _ = door_to_door(conn, "msk", (37.60, 55.75), (37.64, 55.75), walker=flaky)
+    assert ride is not None
     assert ride.estimated is True
+
+
+# --- Фикс-раунд 1 -----------------------------------------------------------
+
+# --- R63: потолок пешего плеча — target вне зоны охвата графа отдаёт absence
+
+def test_nearest_stations_detailed_drops_candidates_beyond_the_cap(conn):
+    upsert_transit([_line()], conn, "msk", _curated())
+    far = _nearest_stations_detailed(conn, "msk", 38.60, 56.75, walker=None)
+    assert far == {}, "все три станции линии дальше MAX_ENTRY_WALK_METRES"
+
+
+def test_door_to_door_reports_absence_when_target_walk_exceeds_the_cap(conn):
+    # R63 (фикс-раунд 1): цель геокодирована далеко за пределы реальной зоны
+    # охвата графа (соседний город, ошибка геокодера) — ни одна платформа не
+    # должна попасть в ответ вместо честной, но абсурдной оценки в часах.
+    upsert_transit([_line()], conn, "msk", _curated())
+    home = (37.60, 55.75)          # рядом с "A"
+    dest = (38.60, 56.75)          # десятки км от единственной линии графа
+    assert door_to_door(conn, "msk", home, dest, walker=None) is None
+
+
+def test_max_entry_walk_metres_is_generous_enough_for_a_real_in_city_walk():
+    # Потолок не должен отсекать легитимный дальний, но реальный пеший подход
+    # (пример из докстроки константы — не даёт регрессировать в 100-метровый
+    # потолок, который отсекал бы обычные дворы).
+    assert MAX_ENTRY_WALK_METRES >= 2000
+
+
+# --- R64: MetroRide.wait_min и реальный инвариант суммы частей -------------
+
+def test_door_to_door_wait_min_reconciles_parts_to_total_on_a_single_line_ride(conn):
+    upsert_transit([_line()], conn, "msk", _curated())
+    home, dest = (37.60, 55.75), (37.641, 55.751)   # рядом с "A" и с "C"
+    ride, _ = door_to_door(conn, "msk", home, dest, walker=None)
+    assert ride is not None
+    parts = (ride.walk_from_home_min + ride.walk_to_dest_min
+             + sum(s.minutes for s in ride.segments)
+             + sum(t.minutes for t in ride.transfers) + ride.wait_min)
+    assert parts == ride.total_minutes
+    assert ride.wait_min > 0, "headway линии 1 (120 с) обязан быть виден"
+
+
+def _curated_two_lines():
+    c = CuratedTimes()
+    c.headways = {"1": 120, "2": 300}
+    c.speeds = {"1": 40.0, "2": 40.0}
+    c.edges = {("1", "y", "b"): 150, ("1", "b", "c"): 150,
+              ("2", "b", "x"): 200, ("2", "x", "y2"): 200}
+    return c
+
+
+def test_door_to_door_wait_min_reconciles_parts_to_total_on_a_ride_with_a_transfer(conn):
+    upsert_transit([
+        _line("1", names=("Y", "B", "C"), lon0=37.60),
+        _line("2", names=("B", "X", "Y2"), lon0=37.62),
+    ], conn, "msk", _curated_two_lines())
+    home = (37.60, 55.75)      # рядом с "Y" на линии 1
+    dest = (37.661, 55.751)    # рядом с "Y2" на линии 2, после пересадки в B
+    ride, _ = door_to_door(conn, "msk", home, dest, walker=None)
+    assert ride is not None
+    assert ride.transfers, "сценарий обязан пройти через пересадку в B"
+    parts = (ride.walk_from_home_min + ride.walk_to_dest_min
+             + sum(s.minutes for s in ride.segments)
+             + sum(t.minutes for t in ride.transfers) + ride.wait_min)
+    assert parts == ride.total_minutes
+    assert ride.wait_min > 0, "headway посадки + headway после пересадки обязаны быть видны"
+
+
+def test_door_to_door_wait_min_tracks_the_actual_route_wait_seconds(conn):
+    # Инвариант выше держится по построению (wait_min — остаток), это само
+    # по себе не доказывает, что остаток отражает РЕАЛЬНОЕ ожидание, а не
+    # произвольное число. Сверяем с route.wait_seconds того же запроса.
+    upsert_transit([_line()], conn, "msk", _curated())
+    home, dest = (37.60, 55.75), (37.641, 55.751)
+    ride, _ = door_to_door(conn, "msk", home, dest, walker=None)
+    graph = load_graph(conn, "msk")
+    seeds = nearest_stations(conn, "msk", *home, walker=None)
+    targets = nearest_stations(conn, "msk", *dest, walker=None)
+    expected = graph.route(seeds, targets)
+    assert abs(ride.wait_min - round(expected.wait_seconds / 60)) <= 1
+
+
+# --- R65: пешее плечо и геометрия обязаны отражать станцию, которую выбрал
+#          route(), а не ближайшую по прямой из seeds/targets --------------
+
+def _curated_with_isolated_platform():
+    c = CuratedTimes()
+    c.headways = {"1": 120, "9": 120}
+    c.speeds = {"1": 40.0, "9": 40.0}
+    c.edges = {("1", "y", "b"): 150, ("1", "b", "c"): 150}
+    return c
+
+
+def test_door_to_door_walk_minutes_reflect_the_station_route_actually_chose(conn):
+    # "X" стоит буквально на пороге дома (walk≈0), но изолирована — своя
+    # линия без единого ребра, доехать через неё никуда нельзя. Настоящий
+    # вход — "Y", 100+ м пешком. До фикса home_walk брался как
+    # min(seeds.values()) — 0 мин через X, хотя реальный маршрут вошёл через Y.
+    upsert_transit([
+        _line("1", names=("Y", "B", "C"), lon0=37.60),
+        _line("9", names=("X",), lon0=37.5991),
+    ], conn, "msk", _curated_with_isolated_platform())
+    home = (37.599, 55.75)
+    dest = (37.641, 55.751)   # рядом с "C"
+    ride, geometry = door_to_door(conn, "msk", home, dest, walker=None)
+    assert ride is not None
+    assert ride.walk_from_home_min > 0, "вход через тупиковую X не должен победить"
+    # первая точка геометрии после дома — не координаты X (0 м от дома)
+    assert geometry[1] != geometry[0]
+
+
+# --- R66: защита от устаревшего id, честный 0 для пеших плеч, dedup,
+#          absence вместо MetroRide с пустыми segments -----------------------
+
+def test_door_to_door_filters_stale_station_ids_before_routing(conn, monkeypatch):
+    # id платформы мог устареть между запросом nearest_stations и текущим
+    # отпечатком графа (например, параллельная пересборка). Подмешиваем
+    # несуществующий id с самым дешёвым "пешим" временем — до фикса это было
+    # неограждённое graph.stations[...] и падение с KeyError.
+    upsert_transit([_line()], conn, "msk", _curated())
+    import habitus.online.metro_route as mod
+
+    real = mod._nearest_stations_detailed
+
+    def poisoned(conn_, city, lon, lat, k=3, walker=None):
+        out = dict(real(conn_, city, lon, lat, k, walker=walker))
+        out[999999] = (1, True)   # id вне графа, самый дешёвый по времени
+        return out
+
+    monkeypatch.setattr(mod, "_nearest_stations_detailed", poisoned)
+    ride, _ = mod.door_to_door(conn, "msk", (37.60, 55.75), (37.641, 55.751),
+                               walker=None)
+    assert ride is not None
+
+
+def test_door_to_door_allows_zero_walk_and_dedupes_geometry_when_home_is_on_the_platform(conn):
+    upsert_transit([_line()], conn, "msk", _curated())
+    home = (37.60, 55.75)     # ровно на "A"
+    dest = (37.641, 55.751)   # рядом с "C" — реальная рельсовая часть есть
+    ride, geometry = door_to_door(conn, "msk", home, dest, walker=None)
+    assert ride is not None
+    assert ride.walk_from_home_min == 0
+    assert all(geometry[i] != geometry[i + 1] for i in range(len(geometry) - 1))
+
+
+def test_door_to_door_returns_absence_for_a_trivial_route(conn):
+    # Дом и цель ближе всего к одной и той же платформе — это не
+    # метро-поездка (два пеших плеча без рельсовой части). MetroRide с
+    # пустыми segments не должен доехать до пользователя.
+    upsert_transit([_line()], conn, "msk", _curated())
+    home = (37.6199, 55.7501)   # у "B" с одной стороны
+    dest = (37.6201, 55.7499)   # у "B" с другой стороны
+    assert door_to_door(conn, "msk", home, dest, walker=None) is None

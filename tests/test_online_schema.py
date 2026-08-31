@@ -191,7 +191,7 @@ def test_metro_ride_field_sets_are_exact():
     }
     assert set(MetroRide.model_fields) == {
         "walk_from_home_min", "walk_to_dest_min", "segments", "transfers",
-        "total_minutes", "estimated",
+        "total_minutes", "wait_min", "estimated",
     }
 
 
