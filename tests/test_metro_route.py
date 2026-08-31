@@ -512,17 +512,38 @@ def test_door_to_door_wait_min_reconciles_parts_to_total_on_a_ride_with_a_transf
 
 
 def test_door_to_door_wait_min_tracks_the_actual_route_wait_seconds(conn):
-    # Инвариант выше держится по построению (wait_min — остаток), это само
-    # по себе не доказывает, что остаток отражает РЕАЛЬНОЕ ожидание, а не
-    # произвольное число. Сверяем с route.wait_seconds того же запроса.
-    upsert_transit([_line()], conn, "msk", _curated())
-    home, dest = (37.60, 55.75), (37.641, 55.751)
+    # R69b (фикс-раунд 2): переведён на маршрут С ПЕРЕСАДКОЙ (был на прямом
+    # одно-линейном маршруте, где ±1 мин — арифметический максимум расхождения
+    # для ОДНОГО независимо округлённого слагаемого, то есть допуск <= 1
+    # технически не мог провалиться — тест был почти беззубым). Допуск здесь
+    # выражен как функция числа независимо округляемых частей (оба пеших
+    # плеча, каждый segment, каждый transfer, плюс сам total_minutes) — у
+    # каждой макс. погрешность округления 0.5 мин, а wait_min как остаток
+    # вбирает их все разом (см. докстроку MetroRide.wait_min, R69b).
+    #
+    # Инвариант "сумма частей == total_minutes" (соседний тест) держится ПО
+    # ПОСТРОЕНИЮ (wait_min — остаток) и потому не может провалиться даже при
+    # сломанном route.wait_seconds — здесь сверяем именно с ним, независимо
+    # вычисленным через graph.route(), чтобы доказать, что остаток не
+    # оторвался от реального ожидания на величину больше объяснимой
+    # округлениями.
+    upsert_transit([
+        _line("1", names=("Y", "B", "C"), lon0=37.60),
+        _line("2", names=("B", "X", "Y2"), lon0=37.62),
+    ], conn, "msk", _curated_two_lines())
+    home = (37.60, 55.75)      # рядом с "Y" на линии 1
+    dest = (37.661, 55.751)    # рядом с "Y2" на линии 2, после пересадки в B
     ride, _ = door_to_door(conn, "msk", home, dest, walker=None)
+    assert ride is not None and ride.transfers, "нужен маршрут с пересадкой"
+
     graph = load_graph(conn, "msk")
     seeds = nearest_stations(conn, "msk", *home, walker=None)
     targets = nearest_stations(conn, "msk", *dest, walker=None)
     expected = graph.route(seeds, targets)
-    assert abs(ride.wait_min - round(expected.wait_seconds / 60)) <= 1
+
+    independently_rounded_parts = 2 + len(ride.segments) + len(ride.transfers) + 1
+    tolerance = math.ceil(independently_rounded_parts * 0.5)
+    assert abs(ride.wait_min - round(expected.wait_seconds / 60)) <= tolerance
 
 
 # --- R65: пешее плечо и геометрия обязаны отражать станцию, которую выбрал
@@ -557,11 +578,24 @@ def test_door_to_door_walk_minutes_reflect_the_station_route_actually_chose(conn
 # --- R66: защита от устаревшего id, честный 0 для пеших плеч, dedup,
 #          absence вместо MetroRide с пустыми segments -----------------------
 
-def test_door_to_door_filters_stale_station_ids_before_routing(conn, monkeypatch):
-    # id платформы мог устареть между запросом nearest_stations и текущим
-    # отпечатком графа (например, параллельная пересборка). Подмешиваем
-    # несуществующий id с самым дешёвым "пешим" временем — до фикса это было
-    # неограждённое graph.stations[...] и падение с KeyError.
+def test_door_to_door_does_not_crash_on_a_stale_station_id(conn, monkeypatch):
+    # R69c (фикс-раунд 2): переименовано и переописано — старое имя
+    # ("...filters_stale_station_ids_before_routing") утверждало покрытие
+    # ЯВНОГО фильтра `if sid in graph.stations` в door_to_door(), но этот
+    # тест продолжает проходить даже с временно убранным фильтром (см.
+    # отчёт, "Зубастость" пункта 5 в фикс-раунде 1) — крах на самом деле
+    # предотвращает R65 (route.entry_station всегда валиден, потому что
+    # route()/_dijkstra уже отбрасывает id не из self.stations, R59, Задача
+    # 9) вместе с `graph.stations.get(...)`. Фильтр в door_to_door остаётся
+    # (защита в глубину, дешёвая, не полагается молча на то, что вызываемый
+    # код всегда будет прав) — но именно ЕГО отдельную необходимость этот
+    # тест не доказывает и не должен был утверждать в своём имени.
+    #
+    # Что тест РЕАЛЬНО покрывает: id платформы мог устареть между запросом
+    # nearest_stations и текущим отпечатком графа (например, параллельная
+    # пересборка) — door_to_door на таком входе не падает и не выбирает
+    # несуществующую станцию входа, независимо от того, где именно в цепочке
+    # (door_to_door или route()/R59) это гасится.
     upsert_transit([_line()], conn, "msk", _curated())
     import habitus.online.metro_route as mod
 

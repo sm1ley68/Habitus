@@ -136,13 +136,19 @@ def test_search_request_top_n_bounds():
 
 
 def _ride(**over):
+    # wait_min — реальное (ненулевое) значение (R67, фикс-раунд 2): поле
+    # обязательное, без дефолта в 0 — фикстура не должна молча описывать
+    # поездку без ожидания посадки, которой в реальности не бывает. Эта
+    # фикстура проверяет валидацию полей, а не арифметику суммы частей
+    # (та end-to-end проверяется в tests/test_metro_route.py на реальном
+    # door_to_door) — wait_min здесь намеренно не пересчитан в total_minutes.
     base = dict(
         walk_from_home_min=7, walk_to_dest_min=5,
         segments=[MetroSegment(line_ref="1", line_name="Сокольническая",
                                system="subway", colour="#EF161E",
                                from_station="Сокольники", to_station="Охотный Ряд",
                                stops=6, minutes=13)],
-        transfers=[], total_minutes=25)
+        transfers=[], total_minutes=25, wait_min=3)
     base.update(over)
     return MetroRide(**base)
 

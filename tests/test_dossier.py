@@ -166,8 +166,12 @@ def test_metro_leg_carries_the_ride_breakdown(monkeypatch, dossier_conn):
     from habitus.online import dossier as mod
     from habitus.online.schema import MetroRide, MetroSegment
 
+    # wait_min — обязательное поле без дефолта (R67, фикс-раунд 2); значение
+    # ниже не пересчитано в total_minutes намеренно — этот тест проверяет
+    # проводку stub-ride через dossier, а не арифметику door_to_door (та
+    # покрыта end-to-end в tests/test_metro_route.py).
     ride = MetroRide(
-        walk_from_home_min=7, walk_to_dest_min=5, total_minutes=25,
+        walk_from_home_min=7, walk_to_dest_min=5, total_minutes=25, wait_min=2,
         segments=[MetroSegment(line_ref="1", line_name="Сокольническая",
                                system="subway", colour="#EF161E",
                                from_station="Сокольники", to_station="Охотный Ряд",
