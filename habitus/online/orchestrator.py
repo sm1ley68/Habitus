@@ -47,19 +47,34 @@ def retrieve_with_relaxation(
     min_r = min_results if min_results is not None else settings.min_results
     iters = max_iters if max_iters is not None else settings.relaxation_max_iters
 
+    # R70 (фикс-раунд 1): объявлен здесь, а не ниже, чтобы блок metro мог
+    # положить в него заметку о снятом фильтре ДО начала цикла ослабления —
+    # pipeline.py сознательно не пускает point-предикаты в
+    # constraint_diagnostics (комментарий у 4.5), так что relaxed — ЕДИНСТВЕННЫЙ
+    # канал, которым пользователь вообще может узнать, что его «метро ≤N мин»
+    # тихо не применился.
+    relaxed: list[str] = []
     base_sql, base_params = None, []
     if point is not None:
         if point.mode == "metro":
             # Метро считает внутренний движок по графу: изохроны ORS для
             # public transport непригодны (см. ORSProvider.directions).
             # Графа для города нет, либо у точки нет платформ в зоне охвата
-            # → ограничение не накладывается вовсе: молча обнулять выдачу
-            # нельзя, а врать оценкой — тем более (см. докстроку
-            # metro_predicate).
+            # (3-км потолок nearest_stations, R68) → ограничение не
+            # накладывается вовсе: молча обнулять выдачу нельзя, а врать
+            # оценкой — тем более. metro_predicate НЕ попадает в
+            # constraint_diagnostics (pipeline.py исключает point-предикаты
+            # из диагностики намеренно) — единственный способ дать
+            # пользователю знать об этом деградационном пути, это заметка в
+            # relaxed (R70): она доходит до текста объяснения через
+            # build_explanation(notes=...).
             got = metro_predicate(conn, city or "msk", point.lon, point.lat,
                                   point.minutes)
             if got is not None:
                 base_sql, base_params = got[0], list(got[1])
+            else:
+                relaxed.append(
+                    "метро: графа/платформ у точки нет — фильтр не наложен")
         else:
             s, p = point_predicate(point.lon, point.lat, point.minutes,
                                    provider, point.mode)
@@ -74,7 +89,6 @@ def retrieve_with_relaxation(
         sql = " AND ".join(f"({x})" for x in parts) if parts else None
         return sql, base_params + area_params
 
-    relaxed: list[str] = []
     cur_pq = pq
     gsql, gpar = geo()
     cands = search_fn(conn, cur_pq, model=model, query_vec=query_vec,

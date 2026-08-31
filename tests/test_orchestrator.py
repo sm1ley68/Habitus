@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+
+import habitus.online.orchestrator as orchestrator_mod
 from habitus.online.geo import AreaMatch
 from habitus.online.orchestrator import relax, retrieve_with_relaxation
 from habitus.online.retrieval import Candidate
@@ -124,6 +126,59 @@ def test_custom_point_mode_reaches_provider():
                               mode="driving-car"),
         provider=fake_provider, search_fn=fake_search, min_results=1)
     assert fake_provider.seen_mode == "driving-car"
+
+
+def test_custom_point_metro_mode_routes_to_metro_predicate(monkeypatch):
+    # R72: mode="metro" обязан пойти в metro_predicate, а не в point_predicate
+    # (изохроны ORS для рельсового транспорта непригодны — см. коммент у
+    # ветки в orchestrator.py). Подменяем metro_predicate целиком, чтобы не
+    # тянуть реальную БД/граф — задача теста только в маршрутизации вызова.
+    calls = []
+
+    def fake_metro_predicate(conn, city, lon, lat, minutes):
+        calls.append((city, lon, lat, minutes))
+        return "external_id IN (SELECT 1)", (123,)
+
+    monkeypatch.setattr(orchestrator_mod, "metro_predicate", fake_metro_predicate)
+
+    captured = {}
+
+    def fake_search(conn, q, *, geo_sql=None, geo_params=(), **kw):
+        captured["geo_sql"] = geo_sql
+        captured["geo_params"] = geo_params
+        return [_cand("A")] * 5
+
+    retrieve_with_relaxation(
+        None, ParsedQuery(semantic_text="x"),
+        point=PointConstraint(lon=37.6, lat=55.7, minutes=15, mode="metro"),
+        search_fn=fake_search, min_results=1, city="msk")
+
+    assert calls == [("msk", 37.6, 55.7, 15)]
+    assert captured["geo_sql"] == "(external_id IN (SELECT 1))"
+    assert list(captured["geo_params"]) == [123]
+
+
+def test_custom_point_metro_mode_none_drops_filter_with_visible_note(monkeypatch):
+    # R70: metro_predicate вернул None (нет графа/платформ у точки) →
+    # предикат не накладывается (geo_sql остаётся None), но это НЕ тихая
+    # деградация — пользователь обязан увидеть заметку в relaxed, потому что
+    # constraint_diagnostics point-предикаты не видит (pipeline.py, шаг 4.5).
+    monkeypatch.setattr(orchestrator_mod, "metro_predicate",
+                        lambda conn, city, lon, lat, minutes: None)
+
+    captured = {}
+
+    def fake_search(conn, q, *, geo_sql=None, geo_params=(), **kw):
+        captured["geo_sql"] = geo_sql
+        return [_cand("A")] * 5
+
+    cands, relaxed, _ = retrieve_with_relaxation(
+        None, ParsedQuery(semantic_text="x"),
+        point=PointConstraint(lon=37.6, lat=55.7, minutes=15, mode="metro"),
+        search_fn=fake_search, min_results=1, city="msk")
+
+    assert captured["geo_sql"] is None
+    assert any("метро" in note for note in relaxed)
 
 
 def test_area_auto_widens_when_too_few():

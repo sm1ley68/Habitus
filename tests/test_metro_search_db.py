@@ -74,3 +74,12 @@ def test_predicate_is_fully_parameterized(conn):
     sql, params = metro_predicate(conn, "msk", 37.70, 55.75, minutes=15)
     # никакой склейки значений в текст запроса — только плейсхолдеры
     assert "%s" in sql and str(15 * 60) not in sql
+
+
+def test_point_beyond_entry_cap_returns_none_not_crash(conn):
+    # R71: точка в открытом море — дальше MAX_ENTRY_WALK_METRES (3 км) от
+    # любой платформы графа msk. nearest_stations() отдаёт пустой словарь
+    # (R68), и metro_predicate обязан вернуть None здесь же, а не пропустить
+    # пустой times/targets дальше в VALUES-джойн (иначе "JOIN (VALUES )" —
+    # синтаксическая ошибка psycopg на пустом списке пар).
+    assert metro_predicate(conn, "msk", 30.0, 55.75, minutes=40) is None
