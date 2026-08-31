@@ -244,7 +244,7 @@ func TestMetroLayerCarriesLinesWithSystemAndColour(t *testing.T) {
 		{Kind: "metro", Name: "Сокольники", Lon: 37.68, Lat: 55.79},
 	}}
 	metro := &fakeMetroLister{lines: []domain.MetroLine{{
-		Ref: "D1", Name: "МЦД-1", System: "mcd", Colour: "#F6A800",
+		Ref: "D1", Name: "МЦД-1", System: "mcd", Colour: strp("#F6A800"),
 		GeometryJSON: `{"type":"LineString","coordinates":[[37.5,55.7],[37.6,55.8]]}`,
 	}}}
 	svc := NewGeoLayersService(pois, &fakeEvidenceLister{}, &fakeListingLister{}, metro)
@@ -268,6 +268,24 @@ func TestMetroLayerCarriesLinesWithSystemAndColour(t *testing.T) {
 			if f.Properties["colour"] != "#F6A800" {
 				t.Fatalf("цвет не доехал: %#v", f.Properties)
 			}
+			// R79: координаты в PostGIS/GeoJSON — [lng, lat]. Пинуем на
+			// конкретных числах (московские долгота ~37, широта ~55) —
+			// перестановка местами сразу заметна, в отличие от структурной
+			// проверки "это LineString".
+			coords, ok := f.Geometry.Coordinates.([]interface{})
+			if !ok || len(coords) != 2 {
+				t.Fatalf("geometry.coordinates не распакованы: %#v", f.Geometry.Coordinates)
+			}
+			first, ok := coords[0].([]interface{})
+			if !ok || len(first) != 2 {
+				t.Fatalf("первая точка линии не распакована: %#v", coords[0])
+			}
+			lng, lngOK := first[0].(float64)
+			lat, latOK := first[1].(float64)
+			if !lngOK || !latOK || lng != 37.5 || lat != 55.7 {
+				t.Fatalf("порядок координат должен быть [lng,lat] = [37.5,55.7], получено [%v,%v]",
+					first[0], first[1])
+			}
 		}
 	}
 	if points != 1 || lines != 1 {
@@ -278,6 +296,41 @@ func TestMetroLayerCarriesLinesWithSystemAndColour(t *testing.T) {
 	}
 }
 
+// R80a: NULL colour должен доехать до фронта явным null в properties, а не
+// пустой строкой — пустая строка была бы синтетическим значением вместо
+// отсутствующего замера.
+func TestMetroLayerKeepsMissingColourNullNotEmpty(t *testing.T) {
+	pois := &fakePOILister{pois: []domain.POI{
+		{Kind: "metro", Name: "Партизанская", Lon: 37.75, Lat: 55.79},
+	}}
+	metro := &fakeMetroLister{lines: []domain.MetroLine{{
+		Ref: "3", Name: "Арбатско-Покровская", System: "subway", Colour: nil,
+		GeometryJSON: `{"type":"LineString","coordinates":[[37.5,55.7],[37.6,55.8]]}`,
+	}}}
+	svc := NewGeoLayersService(pois, &fakeEvidenceLister{}, &fakeListingLister{}, metro)
+
+	got, _, err := svc.Layers(context.Background(), "msk", []string{"metro"}, nil)
+	if err != nil {
+		t.Fatalf("Layers() error = %v", err)
+	}
+	for _, f := range got["metro"].Features {
+		if f.Geometry.Type != "LineString" {
+			continue
+		}
+		if f.Properties["colour"] != nil {
+			t.Fatalf("отсутствующий цвет должен остаться nil, а не %#v", f.Properties["colour"])
+		}
+		if _, exists := f.Properties["colour"]; !exists {
+			t.Fatal("ключ colour должен присутствовать явным null, а не пропадать")
+		}
+	}
+}
+
+// R80b: раньше эта проверка смотрела только внутрь got["parks"] и оставалась
+// зелёной даже если удаление проверки «запрошен ли metro» протекло бы
+// незапрошенным ключом metro в общий ответ — она проверяла не тот инвариант.
+// Настоящий контракт — ключа "metro" не должно быть в ответе вовсе, если
+// слой не запрашивался.
 func TestOtherLayersHaveNoMetroLines(t *testing.T) {
 	pois := &fakePOILister{pois: []domain.POI{
 		{Kind: "park", Name: "Сокольники", Lon: 37.68, Lat: 55.79},
@@ -290,6 +343,9 @@ func TestOtherLayersHaveNoMetroLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Layers() error = %v", err)
 	}
+	if _, exists := got["metro"]; exists {
+		t.Fatalf("metro не запрашивался — ключ не должен появляться в ответе вовсе: %#v", got["metro"])
+	}
 	for _, f := range got["parks"].Features {
 		if f.Geometry.Type == "LineString" {
 			t.Fatal("линии метро протекли в слой парков")
@@ -297,27 +353,29 @@ func TestOtherLayersHaveNoMetroLines(t *testing.T) {
 	}
 }
 
-// metro_line_geom.geom nullable — часть линий легитимно без геометрии.
-// Репозиторий обязан их пропускать, а не подставлять пустую/нулевую фичу;
-// здесь это проверяется на уровне сервиса: слою нечего добавить сверх
-// станций, если репозиторий вернул пустой список линий.
-func TestMetroLayerWithNoLineGeometryAddsNoLines(t *testing.T) {
+// R78: раньше эта проверка кормила сервис ПУСТЫМ списком линий (lines: nil),
+// поэтому «нет LineString-фич» было верно по построению и не проверяло
+// ничего — репозиторий вообще не был в игре. Здесь фейк-репозиторий
+// сознательно нарушает контракт и возвращает линию с пустой GeometryJSON
+// (данные линии есть, геометрии нет), проверяя, что СЕРВИС не доверяет
+// репозиторию слепо и не превращает это в null-geometry фичу на карте.
+func TestMetroLayerSkipsLineWithEmptyGeometry(t *testing.T) {
 	pois := &fakePOILister{pois: []domain.POI{
 		{Kind: "metro", Name: "Сокольники", Lon: 37.68, Lat: 55.79},
 	}}
-	metro := &fakeMetroLister{lines: nil}
+	metro := &fakeMetroLister{lines: []domain.MetroLine{
+		{Ref: "1", Name: "Сокольническая", System: "subway", GeometryJSON: ""},
+	}}
 	svc := NewGeoLayersService(pois, &fakeEvidenceLister{}, &fakeListingLister{}, metro)
 
 	got, _, err := svc.Layers(context.Background(), "msk", []string{"metro"}, nil)
 	if err != nil {
 		t.Fatalf("Layers() error = %v", err)
 	}
-	for _, f := range got["metro"].Features {
-		if f.Geometry.Type == "LineString" {
-			t.Fatal("линия без геометрии не должна порождать фичу")
-		}
-	}
 	if len(got["metro"].Features) != 1 {
-		t.Fatalf("должна остаться только станция-точка: %#v", got["metro"].Features)
+		t.Fatalf("линия без геометрии не должна порождать фичу: %#v", got["metro"].Features)
+	}
+	if got["metro"].Features[0].Geometry.Type != "Point" {
+		t.Fatalf("осталась не станция-точка: %#v", got["metro"].Features[0])
 	}
 }

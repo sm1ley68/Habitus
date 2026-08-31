@@ -189,9 +189,9 @@ const (
 )
 
 type MetroSegment struct {
-	LineRef     string      `json:"line_ref"`
-	LineName    string      `json:"line_name"`
-	System      MetroSystem `json:"system"`
+	LineRef  string      `json:"line_ref"`
+	LineName string      `json:"line_name"`
+	System   MetroSystem `json:"system"`
 	// Не hex — МЦК отдаёт CSS-имя цвета («red»). Остаётся nullable: null —
 	// это «цвета нет», а не пропавшее поле и не пустая строка.
 	Colour      *string `json:"colour"`

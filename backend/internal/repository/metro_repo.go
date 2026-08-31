@@ -22,10 +22,13 @@ func NewMetroRepo(pool *pgxpool.Pool) *MetroRepo {
 // metro_line_geom.geom is nullable — a line may legitimately have no
 // geometry. Such lines are skipped here rather than surfaced with an empty
 // or zero-coordinate LineString: absence must stay absence, not a synthetic
-// feature that draws nothing (or draws garbage) on the map.
+// feature that draws nothing (or draws garbage) on the map. colour is left
+// NULL as-is (no COALESCE to ""): an invented empty string would be its own
+// small synthetic value standing in for "no colour", asymmetric with how
+// Задача 14 keeps MetroSegment.colour nullable on the same underlying data.
 func (r *MetroRepo) ListLines(ctx context.Context, city string) ([]domain.MetroLine, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT ml.ref, ml.name, ml.system, COALESCE(ml.colour, ''),
+		SELECT ml.ref, ml.name, ml.system, ml.colour,
 		       ST_AsGeoJSON(g.geom)
 		FROM metro_line ml
 		JOIN metro_line_geom g ON g.line_id = ml.id

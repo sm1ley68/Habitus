@@ -198,7 +198,9 @@ func (s *GeoLayersService) Layers(ctx context.Context, city string, requested []
 	// Слой metro — это не только точки станций: линии нужны, чтобы карта
 	// показывала, куда эти станции ведут. Цвет и система едут в properties,
 	// чтобы фронт не зашивал палитру у себя. Репозиторий уже отфильтровал
-	// линии без геометрии — здесь просто нечего добавлять сверх точек.
+	// линии без геометрии (см. TestMetroRepoListLinesSkipsNullGeometry), но
+	// сервис не доверяет этому слепо: пустая GeometryJSON здесь тоже
+	// пропускается, а не превращается в null-geometry фичу на карте.
 	if _, wantMetroLines := layersNeedingKinds["metro"]; wantMetroLines && s.metro != nil {
 		lines, err := s.metro.ListLines(ctx, city)
 		if err != nil {
@@ -206,9 +208,16 @@ func (s *GeoLayersService) Layers(ctx context.Context, city string, requested []
 		}
 		fc := out["metro"]
 		for _, l := range lines {
+			if l.GeometryJSON == "" {
+				continue
+			}
+			var colour any
+			if l.Colour != nil {
+				colour = *l.Colour
+			}
 			fc.Features = append(fc.Features, geojson.RawFeature(l.GeometryJSON,
 				map[string]any{"ref": l.Ref, "name": l.Name,
-					"system": l.System, "colour": l.Colour}))
+					"system": l.System, "colour": colour}))
 		}
 		out["metro"] = fc
 	}

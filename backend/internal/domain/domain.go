@@ -126,12 +126,14 @@ type POI struct {
 // enum, зафиксированный на трёх сторонах: subway / mck / mcd. GeometryJSON
 // приходит только для линий, у которых metro_line_geom.geom не NULL —
 // репозиторий отфильтровывает остальные, так что здесь всегда валидный
-// GeoJSON LineString, а не пустая или нулевая геометрия.
+// GeoJSON LineString, а не пустая или нулевая геометрия. Colour — nullable,
+// как и в MetroSegment (Задача 14): NULL остаётся nil, а не превращается в
+// "" — синтетическое значение вместо отсутствующего замера запрещено.
 type MetroLine struct {
 	Ref          string
 	Name         string
 	System       string
-	Colour       string
+	Colour       *string
 	GeometryJSON string
 }
 
