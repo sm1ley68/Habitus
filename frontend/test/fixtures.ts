@@ -1,9 +1,34 @@
 // Образцы данных ТОЛЬКО для тестов. Продакшн-код сюда не импортируется и не
 // должен: приложение берёт все факты из бэка (lib/api/*). Формы здесь повторяют
 // контракт, чтобы тесты рендерили компоненты на реалистичном входе.
-import type { Property, LifestyleBlock, HistoryItem, GeoZone, LayerId, Dossier } from "@/lib/agent/types";
+import type { Property, LifestyleBlock, HistoryItem, GeoZone, LayerId, Dossier, MetroRide } from "@/lib/agent/types";
 import type { RunResult } from "@/lib/agent/AgentClient";
 import { LAYER_LABELS } from "@/lib/agent/types";
+
+// Разбивка метро-ноги (RouteLeg.metro). Числа согласованы с инвариантом
+// schema.py: walk_from_home_min + Σ segments.minutes + Σ transfers.minutes +
+// walk_to_dest_min + wait_min === total_minutes (7+13+8+9+5+3 = 45).
+// Второй сегмент — МЦК: colour пришёл из OSM как CSS-имя "red", не hex —
+// фикстура намеренно это показывает, а не берёт удобный #rrggbb.
+export const metroRideFixture: MetroRide = {
+  walk_from_home_min: 7,
+  walk_to_dest_min: 5,
+  total_minutes: 45,
+  wait_min: 3,
+  estimated: false,
+  segments: [
+    { line_ref: "1", line_name: "Сокольническая", system: "subway",
+      colour: "#EF161E", from_station: "Сокольники", to_station: "Охотный Ряд",
+      stops: 6, minutes: 13, estimated: false },
+    { line_ref: "MCK", line_name: "МЦК", system: "mck", colour: "red",
+      from_station: "Белорусская", to_station: "Лужники",
+      stops: 4, minutes: 9, estimated: true },
+  ],
+  transfers: [
+    { from_station: "Охотный Ряд", to_station: "Белорусская",
+      minutes: 8, outdoor: true, estimated: false },
+  ],
+};
 
 // Real SPb coordinates near Лицей 239 (Кирочная ул.).
 export const SCHOOL_239: [number, number] = [30.3479, 59.9439];

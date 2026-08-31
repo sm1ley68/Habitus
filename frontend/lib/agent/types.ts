@@ -115,6 +115,53 @@ export type BlockTier = "hero" | "secondary";
 // --- Hero data payloads (Н.3) ---
 export type TravelMode = "walk" | "scooter" | "bus" | "car" | "metro";
 export type LegSafety = "safe" | "caution";
+
+/** Зафиксировано на трёх сторонах: habitus/online/schema.py ↔ Go ↔ здесь. */
+export type MetroSystem = "subway" | "mck" | "mcd";
+
+export interface MetroSegment {
+  line_ref: string;
+  line_name: string;
+  system: MetroSystem;
+  // Из OSM приходит CSS-имя цвета («red»), а не #rrggbb — hex не предполагать.
+  colour: string | null;
+  from_station: string;
+  to_station: string;
+  stops: number;
+  minutes: number;
+  /** Время выведено из расстояния, а не взято из курируемого файла. */
+  estimated: boolean;
+}
+
+export interface MetroTransfer {
+  from_station: string;
+  to_station: string;
+  minutes: number;
+  /** Переход улицей (типично метро↔МЦД) — рисуется отдельным пешим шагом. */
+  outdoor: boolean;
+  estimated: boolean;
+}
+
+/** Разбивка метро-ноги. Итог «от двери до двери» — в RouteLeg.minutes;
+ *  здесь то, из чего он сложился. Складывать разбивку заново нельзя:
+ *  округления разойдутся с итогом. */
+export interface MetroRide {
+  walk_from_home_min: number;
+  walk_to_dest_min: number;
+  segments: MetroSegment[];
+  transfers: MetroTransfer[];
+  total_minutes: number;
+  /** Не независимый замер ожидания посадки, а остаток округления:
+   *  total_minutes минус уже показанные части (оба пеших плеча, все
+   *  segments, все transfers), каждая из которых округлена независимо.
+   *  Обязательное поле, без дефолта: 0 неотличим от «ожидания нет», а для
+   *  реального рельсового маршрута это всегда ложь (headway линии всегда
+   *  > 0). Инвариант: walk_from_home_min + Σ segments.minutes +
+   *  Σ transfers.minutes + walk_to_dest_min + wait_min === total_minutes. */
+  wait_min: number;
+  estimated: boolean;
+}
+
 export interface RouteLeg {
   to_label: string;
   to_kind: DestinationKind | "poi";
@@ -124,6 +171,9 @@ export interface RouteLeg {
   minutes: number;
   safety: LegSafety;
   geometry: { type: "LineString"; coordinates: [number, number][] };
+  // Разбивка поездки на рельсовом транспорте. Отсутствует у ног любого
+  // другого режима — существующие потребители RouteLeg не ломаются.
+  metro?: MetroRide;
 }
 export interface HouseholdMember { id: string; label: string; legs: RouteLeg[]; }
 export interface FamilyRoutingData { home: [number, number]; members: HouseholdMember[]; }
