@@ -58,6 +58,7 @@ func main() {
 	listingRepo := repository.NewListingRepo(pool)
 	poiRepo := repository.NewPOIRepo(pool)
 	evidenceRepo := repository.NewEvidenceRepo(pool)
+	metroRepo := repository.NewMetroRepo(pool)
 
 	authService := service.NewAuthService(userRepo, sessionRepo)
 	service.StartSessionSweeper(ctx, sessionRepo,
@@ -72,7 +73,7 @@ func main() {
 		ownerRepo, mlClient, dossierTimeout, cfg.DossierTTLHours)
 	objectAskTimeout := time.Duration(cfg.MLObjectAskTimeoutS) * time.Second
 	objectAskService := service.NewObjectAskService(chatSearchRepo, mlClient, objectAskTimeout)
-	geoLayersService := service.NewGeoLayersService(poiRepo, evidenceRepo, listingRepo)
+	geoLayersService := service.NewGeoLayersService(poiRepo, evidenceRepo, listingRepo, metroRepo)
 	explainTimeout := time.Duration(cfg.MLExplainTimeoutS) * time.Second
 	streamService := service.NewSearchStreamService(chatRepo, messageRepo, chatSearchRepo, listingRepo, mlClient, mlTimeout, explainTimeout)
 	resultsService := service.NewResultsService(chatService, chatSearchRepo, listingRepo)

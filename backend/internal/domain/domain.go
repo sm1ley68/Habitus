@@ -122,6 +122,19 @@ type POI struct {
 	Lat  float64
 }
 
+// MetroLine — линия рельсового транспорта для отрисовки на карте. System —
+// enum, зафиксированный на трёх сторонах: subway / mck / mcd. GeometryJSON
+// приходит только для линий, у которых metro_line_geom.geom не NULL —
+// репозиторий отфильтровывает остальные, так что здесь всегда валидный
+// GeoJSON LineString, а не пустая или нулевая геометрия.
+type MetroLine struct {
+	Ref          string
+	Name         string
+	System       string
+	Colour       string
+	GeometryJSON string
+}
+
 // Lead — заявка покупателя по объявлению продавца. Name/Contact — то, что
 // покупатель сообщил о себе; контакт продавца в обратную сторону не уходит.
 // Продавец может снять и удалить объявление — заявка в его истории должна

@@ -23,7 +23,7 @@ func TestGeoLayersReturnsMetro(t *testing.T) {
 		{Kind: "metro", Name: "Тверская", Lon: 37.604, Lat: 55.765},
 		{Kind: "school", Name: "Школа", Lon: 37.6, Lat: 55.7},
 	}}
-	svc := NewGeoLayersService(repo, &fakeEvidenceLister{}, &fakeListingLister{})
+	svc := NewGeoLayersService(repo, &fakeEvidenceLister{}, &fakeListingLister{}, nil)
 
 	got, _, err := svc.Layers(context.Background(), "msk", []string{"metro", "unknown"}, nil)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestGeoLayersReturnsMetro(t *testing.T) {
 
 func TestGeoLayersDropsUnknownWithoutQuery(t *testing.T) {
 	repo := &fakePOILister{}
-	svc := NewGeoLayersService(repo, &fakeEvidenceLister{}, &fakeListingLister{})
+	svc := NewGeoLayersService(repo, &fakeEvidenceLister{}, &fakeListingLister{}, nil)
 	got, _, err := svc.Layers(context.Background(), "msk", []string{"unknown"}, nil)
 	if err != nil {
 		t.Fatalf("Layers() error = %v", err)
@@ -75,7 +75,7 @@ func (f *fakeEvidenceLister) ListByLayers(_ context.Context, _ string, layers []
 
 func TestEvidenceLayerRequiresBbox(t *testing.T) {
 	ev := &fakeEvidenceLister{}
-	svc := NewGeoLayersService(&fakePOILister{}, ev, &fakeListingLister{})
+	svc := NewGeoLayersService(&fakePOILister{}, ev, &fakeListingLister{}, nil)
 	out, truncated, err := svc.Layers(context.Background(), "msk", []string{"communal"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestEvidenceLayerCarriesGeometryAndSource(t *testing.T) {
 		Layer: "communal", Source: "reformagkh", Weight: &w,
 		GeometryJSON: `{"type":"Point","coordinates":[37.6,55.7]}`,
 	}}}
-	svc := NewGeoLayersService(&fakePOILister{}, ev, &fakeListingLister{})
+	svc := NewGeoLayersService(&fakePOILister{}, ev, &fakeListingLister{}, nil)
 	box := [4]float64{37.5, 55.6, 37.7, 55.8}
 	out, truncated, err := svc.Layers(context.Background(), "msk", []string{"communal"}, &box)
 	if err != nil {
@@ -131,7 +131,7 @@ func TestEvidenceLayerMarksTruncation(t *testing.T) {
 		rows[i] = domain.EvidenceFeature{Layer: "noise", Source: "osm",
 			GeometryJSON: `{"type":"Point","coordinates":[37.6,55.7]}`}
 	}
-	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{rows: rows}, &fakeListingLister{})
+	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{rows: rows}, &fakeListingLister{}, nil)
 	box := [4]float64{37.5, 55.6, 37.7, 55.8}
 	out, truncated, err := svc.Layers(context.Background(), "msk", []string{"noise"}, &box)
 	if err != nil {
@@ -171,7 +171,7 @@ func (f *fakeListingLister) ListInBBox(_ context.Context, city string, bbox [4]f
 
 func TestListingsLayerRequiresBbox(t *testing.T) {
 	lister := &fakeListingLister{}
-	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister)
+	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister, nil)
 	fc, err := svc.Listings(context.Background(), "msk", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +193,7 @@ func TestListingsLayerCarriesCardFields(t *testing.T) {
 		Lon: &lon, Lat: &lat, Address: strp("Москва, Снежная улица, 4"),
 		Photos: []string{"https://cdn/a.jpg"},
 	}}}
-	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister)
+	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister, nil)
 	box := [4]float64{37.5, 55.6, 37.7, 55.8}
 	fc, err := svc.Listings(context.Background(), "msk", &box)
 	if err != nil {
@@ -221,10 +221,103 @@ func TestListingsLayerCarriesCardFields(t *testing.T) {
 
 func TestListingsLayerSkipsRowsWithoutCoordinates(t *testing.T) {
 	lister := &fakeListingLister{rows: []domain.Listing{{ExternalID: "no_geo"}}}
-	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister)
+	svc := NewGeoLayersService(&fakePOILister{}, &fakeEvidenceLister{}, lister, nil)
 	box := [4]float64{37.5, 55.6, 37.7, 55.8}
 	fc, _ := svc.Listings(context.Background(), "msk", &box)
 	if len(fc.Features) != 0 {
 		t.Fatal("объект без координат на карту попасть не может")
+	}
+}
+
+type fakeMetroLister struct {
+	lines []domain.MetroLine
+	city  string
+}
+
+func (f *fakeMetroLister) ListLines(_ context.Context, city string) ([]domain.MetroLine, error) {
+	f.city = city
+	return f.lines, nil
+}
+
+func TestMetroLayerCarriesLinesWithSystemAndColour(t *testing.T) {
+	pois := &fakePOILister{pois: []domain.POI{
+		{Kind: "metro", Name: "Сокольники", Lon: 37.68, Lat: 55.79},
+	}}
+	metro := &fakeMetroLister{lines: []domain.MetroLine{{
+		Ref: "D1", Name: "МЦД-1", System: "mcd", Colour: "#F6A800",
+		GeometryJSON: `{"type":"LineString","coordinates":[[37.5,55.7],[37.6,55.8]]}`,
+	}}}
+	svc := NewGeoLayersService(pois, &fakeEvidenceLister{}, &fakeListingLister{}, metro)
+
+	got, _, err := svc.Layers(context.Background(), "msk", []string{"metro"}, nil)
+	if err != nil {
+		t.Fatalf("Layers() error = %v", err)
+	}
+
+	var points, lines int
+	for _, f := range got["metro"].Features {
+		switch f.Geometry.Type {
+		case "Point":
+			points++
+		case "LineString":
+			lines++
+			// палитра не зашивается на фронте — цвет и система едут в properties
+			if f.Properties["system"] != "mcd" {
+				t.Fatalf("система не доехала: %#v", f.Properties)
+			}
+			if f.Properties["colour"] != "#F6A800" {
+				t.Fatalf("цвет не доехал: %#v", f.Properties)
+			}
+		}
+	}
+	if points != 1 || lines != 1 {
+		t.Fatalf("ожидались точка и линия, получено %d и %d", points, lines)
+	}
+	if metro.city != "msk" {
+		t.Fatalf("репозиторий линий должен быть опрошен по городу: %q", metro.city)
+	}
+}
+
+func TestOtherLayersHaveNoMetroLines(t *testing.T) {
+	pois := &fakePOILister{pois: []domain.POI{
+		{Kind: "park", Name: "Сокольники", Lon: 37.68, Lat: 55.79},
+	}}
+	metro := &fakeMetroLister{lines: []domain.MetroLine{{Ref: "1", System: "subway",
+		GeometryJSON: `{"type":"LineString","coordinates":[[37.5,55.7],[37.6,55.8]]}`}}}
+	svc := NewGeoLayersService(pois, &fakeEvidenceLister{}, &fakeListingLister{}, metro)
+
+	got, _, err := svc.Layers(context.Background(), "msk", []string{"parks"}, nil)
+	if err != nil {
+		t.Fatalf("Layers() error = %v", err)
+	}
+	for _, f := range got["parks"].Features {
+		if f.Geometry.Type == "LineString" {
+			t.Fatal("линии метро протекли в слой парков")
+		}
+	}
+}
+
+// metro_line_geom.geom nullable — часть линий легитимно без геометрии.
+// Репозиторий обязан их пропускать, а не подставлять пустую/нулевую фичу;
+// здесь это проверяется на уровне сервиса: слою нечего добавить сверх
+// станций, если репозиторий вернул пустой список линий.
+func TestMetroLayerWithNoLineGeometryAddsNoLines(t *testing.T) {
+	pois := &fakePOILister{pois: []domain.POI{
+		{Kind: "metro", Name: "Сокольники", Lon: 37.68, Lat: 55.79},
+	}}
+	metro := &fakeMetroLister{lines: nil}
+	svc := NewGeoLayersService(pois, &fakeEvidenceLister{}, &fakeListingLister{}, metro)
+
+	got, _, err := svc.Layers(context.Background(), "msk", []string{"metro"}, nil)
+	if err != nil {
+		t.Fatalf("Layers() error = %v", err)
+	}
+	for _, f := range got["metro"].Features {
+		if f.Geometry.Type == "LineString" {
+			t.Fatal("линия без геометрии не должна порождать фичу")
+		}
+	}
+	if len(got["metro"].Features) != 1 {
+		t.Fatalf("должна остаться только станция-точка: %#v", got["metro"].Features)
 	}
 }

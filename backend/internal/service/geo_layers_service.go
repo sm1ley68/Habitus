@@ -52,15 +52,20 @@ type listingLister interface {
 	ListInBBox(ctx context.Context, city string, bbox [4]float64, limit int) ([]domain.Listing, error)
 }
 
+type metroLister interface {
+	ListLines(ctx context.Context, city string) ([]domain.MetroLine, error)
+}
+
 type GeoLayersService struct {
 	pois     poiLister
 	evidence evidenceLister
 	listings listingLister
+	metro    metroLister
 }
 
 func NewGeoLayersService(pois poiLister, evidence evidenceLister,
-	listings listingLister) *GeoLayersService {
-	return &GeoLayersService{pois: pois, evidence: evidence, listings: listings}
+	listings listingLister, metro metroLister) *GeoLayersService {
+	return &GeoLayersService{pois: pois, evidence: evidence, listings: listings, metro: metro}
 }
 
 // Listings — объявления в границах вьюпорта, точками для карты. Позволяет
@@ -189,5 +194,24 @@ func (s *GeoLayersService) Layers(ctx context.Context, city string, requested []
 		}
 		out[layer] = fc
 	}
+
+	// Слой metro — это не только точки станций: линии нужны, чтобы карта
+	// показывала, куда эти станции ведут. Цвет и система едут в properties,
+	// чтобы фронт не зашивал палитру у себя. Репозиторий уже отфильтровал
+	// линии без геометрии — здесь просто нечего добавлять сверх точек.
+	if _, wantMetroLines := layersNeedingKinds["metro"]; wantMetroLines && s.metro != nil {
+		lines, err := s.metro.ListLines(ctx, city)
+		if err != nil {
+			return nil, nil, err
+		}
+		fc := out["metro"]
+		for _, l := range lines {
+			fc.Features = append(fc.Features, geojson.RawFeature(l.GeometryJSON,
+				map[string]any{"ref": l.Ref, "name": l.Name,
+					"system": l.System, "colour": l.Colour}))
+		}
+		out["metro"] = fc
+	}
+
 	return out, truncated, nil
 }
