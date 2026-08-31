@@ -35,3 +35,19 @@ export function layerPaintColor(geometryType: string): string {
   if (geometryType === "LineString") return "#E0995A";
   return "#9BAAB8";
 }
+
+/** Запасной цвет для линии метро/МЦК/МЦД, у которой в OSM не проставлен colour. */
+export const METRO_FALLBACK_COLOUR = "#71717a";
+
+/**
+ * Цвет отрезка линии метро/МЦК/МЦД. В отличие от layerColor() (один цвет на
+ * весь слой), у линий метро своя палитра — она приходит из данных (задача 15
+ * отдаёт её в properties.colour каждой фичи), а не зашита здесь: иначе завели
+ * бы второй источник правды, который разойдётся с бэком при следующей линии.
+ * colour может быть CSS-именем («red» — так МЦК приходит из OSM), а не только
+ * #rrggbb — не предполагать формат. Пустая строка и null — обе формы
+ * «цвета нет в OSM» — уходят в запасной серый.
+ */
+export function metroLineColor(colour: string | null | undefined): string {
+  return colour ? colour : METRO_FALLBACK_COLOUR;
+}

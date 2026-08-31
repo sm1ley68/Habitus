@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import MapCanvas, { createPinElement, collectZonePositions } from "./MapCanvas";
+import MapCanvas, { createPinElement, collectZonePositions, dataLayerStyle } from "./MapCanvas";
 import type { GeoZone } from "@/lib/agent/types";
+import { METRO_FALLBACK_COLOUR } from "@/lib/map/style";
 
 vi.mock("@/lib/map/useMaplibre", () => ({
   useMaplibre: () => ({ map: null, ready: false, missingKey: true }),
@@ -97,5 +98,47 @@ describe("createPinElement", () => {
     expect(el.dataset.top).toBe("false");
     expect(el.className).not.toContain("pin--top");
     expect(el.style.getPropertyValue("--pin-index")).toBe("3");
+  });
+});
+
+// Фейковая google.maps.Data.Feature — достаточно двух методов, которые
+// реально дёргает dataLayerStyle для линий: getGeometry().getType() и
+// getProperty(). Полный google-мок здесь не нужен: ветка Point/MultiPoint
+// (единственная, что трогает google.maps.SymbolPath) в эти тесты не попадает.
+function fakeLineFeature(properties: Record<string, unknown>) {
+  return {
+    getGeometry: () => ({ getType: () => "LineString" }),
+    getProperty: (key: string) => properties[key],
+  } as unknown as google.maps.Data.Feature;
+}
+
+describe("dataLayerStyle — линии метро", () => {
+  it("красит линию метро цветом из properties.colour, а не зашитой палитрой слоя", () => {
+    const feature = fakeLineFeature({ colour: "#F6A800" });
+    const style = dataLayerStyle("metro", feature, 12);
+    // #D64545 — LAYER_COLORS.metro, единый цвет слоя; линия должна взять свой.
+    expect(style.strokeColor).toBe("#F6A800");
+    expect(style.strokeColor).not.toBe("#D64545");
+  });
+
+  it("принимает CSS-имя цвета (МЦК шлёт «red»), не только hex", () => {
+    const feature = fakeLineFeature({ colour: "red" });
+    expect(dataLayerStyle("metro", feature, 12).strokeColor).toBe("red");
+  });
+
+  it("не роняет карту на линии без цвета — берёт запасной серый", () => {
+    const feature = fakeLineFeature({ colour: "" });
+    expect(() => dataLayerStyle("metro", feature, 12)).not.toThrow();
+    expect(dataLayerStyle("metro", feature, 12).strokeColor).toBe(METRO_FALLBACK_COLOUR);
+
+    const nullColour = fakeLineFeature({ colour: null });
+    expect(dataLayerStyle("metro", nullColour, 12).strokeColor).toBe(METRO_FALLBACK_COLOUR);
+  });
+
+  it("не трогает остальные слои — их линии красятся палитрой слоя как раньше", () => {
+    const feature = fakeLineFeature({ colour: "#F6A800" });
+    // noise — единственный не-метро линейный слой в LAYER_COLORS.
+    const style = dataLayerStyle("noise", feature, 12);
+    expect(style.strokeColor).toBe("#E0995A");
   });
 });

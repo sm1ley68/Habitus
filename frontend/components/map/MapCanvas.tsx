@@ -14,7 +14,7 @@ import {
   replaceDataLayer,
   toLatLng,
 } from "@/lib/map/google";
-import { layerColor, layerPaintColor } from "@/lib/map/style";
+import { layerColor, layerPaintColor, metroLineColor } from "@/lib/map/style";
 import {
   isInViewport,
   isValidLngLat,
@@ -93,13 +93,20 @@ function pointFeatureInViewport(
   return true;
 }
 
-function dataLayerStyle(
+export function dataLayerStyle(
   id: LayerId,
   feature: google.maps.Data.Feature,
   zoom: number,
 ): google.maps.Data.StyleOptions {
   const geometry = feature.getGeometry()?.getType() ?? "Polygon";
-  const color = layerColor(id) ?? layerPaintColor(geometry);
+  // Линии метро/МЦК/МЦД красятся своим цветом из properties.colour (задача
+  // 15), а не единым layerColor("metro") — иначе все линии слились бы в один
+  // красный, а МЦК и линии со своей палитрой стали бы неотличимы от метро.
+  // Станции (Point) палитру слоя не трогают — их цвет остаётся прежним.
+  const isMetroLine = id === "metro" && (geometry === "LineString" || geometry === "MultiLineString");
+  const color = isMetroLine
+    ? metroLineColor(feature.getProperty("colour") as string | null | undefined)
+    : layerColor(id) ?? layerPaintColor(geometry);
   const visible = geometry === "Point" || geometry === "MultiPoint"
     ? zoom >= minimumPointZoom(id)
     : id !== "crime" || zoom < 15.5;
