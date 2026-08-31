@@ -1,6 +1,7 @@
 # habitus/online/orchestrator.py — маршрутизация + relaxation loop
 from habitus.config import settings
 from habitus.online.geo import AreaMatch, IsochroneProvider, point_predicate
+from habitus.online.metro_route import metro_predicate
 from habitus.online.retrieval import Candidate, hybrid_search
 from habitus.online.schema import GeoConstraint, ParsedQuery, PointConstraint
 
@@ -48,9 +49,21 @@ def retrieve_with_relaxation(
 
     base_sql, base_params = None, []
     if point is not None:
-        s, p = point_predicate(point.lon, point.lat, point.minutes,
-                               provider, point.mode)
-        base_sql, base_params = s, list(p)
+        if point.mode == "metro":
+            # Метро считает внутренний движок по графу: изохроны ORS для
+            # public transport непригодны (см. ORSProvider.directions).
+            # Графа для города нет, либо у точки нет платформ в зоне охвата
+            # → ограничение не накладывается вовсе: молча обнулять выдачу
+            # нельзя, а врать оценкой — тем более (см. докстроку
+            # metro_predicate).
+            got = metro_predicate(conn, city or "msk", point.lon, point.lat,
+                                  point.minutes)
+            if got is not None:
+                base_sql, base_params = got[0], list(got[1])
+        else:
+            s, p = point_predicate(point.lon, point.lat, point.minutes,
+                                   provider, point.mode)
+            base_sql, base_params = s, list(p)
 
     area_sql = area_match.sql if area_match else None
     area_params = list(area_match.params) if area_match else []

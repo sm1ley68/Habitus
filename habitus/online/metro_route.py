@@ -489,6 +489,60 @@ def nearest_stations(conn: psycopg.Connection, city: str, lon: float, lat: float
             _nearest_stations_detailed(conn, city, lon, lat, k, walker=walker).items()}
 
 
+def metro_predicate(conn: psycopg.Connection, city: str, lon: float, lat: float,
+                    minutes: int) -> tuple[str, tuple] | None:
+    """SQL-предикат «доехать до точки на метро не дольше N минут» (Задача 12).
+
+    Обход графа делает Python (SQL не умеет Дейкстру без pgRouting), а его
+    результат уезжает в запрос VALUES-джойном. Тот же механизм extra_sql, что у
+    изохронного фильтра (`point_predicate` в geo.py), — поэтому relaxation-петля
+    подхватывает ограничение как обычную клаузу, а constraint_diagnostics
+    показывает его вклад в пустую выдачу без доработок.
+
+    Время до каждой достижимой платформы берётся ИЗ ТОГО ЖЕ обхода `times_from`,
+    что и разбивка маршрута в `door_to_door()` (Задача 11) — единственный способ
+    гарантировать, что число фильтра и показанный пользователю маршрут не
+    разойдутся (см. докстроку `MetroGraph.times_from`). Никакой второй формулы
+    времени здесь нет и не должно появляться.
+
+    None — фильтровать нечем, и это ДВА разных случая, оба обязаны означать
+    «предикат не накладывается» (см. orchestrator: got is None → base_sql
+    остаётся None), а не «всё отфильтровано в ноль»:
+      1. графа для города нет (`load_graph` вернул None);
+      2. у цели нет ни одной платформы в пределах MAX_ENTRY_WALK_METRES —
+         `nearest_stations` теперь может вернуть пустой словарь (R68), и это
+         не «нигде не доехать за N минут» (синтетический ноль запрещён), а
+         «метро тут вообще не при чём» — фильтр снимается целиком, а не
+         схлопывает выдачу в пустоту.
+    """
+    graph = load_graph(conn, city)
+    if graph is None:
+        return None
+    targets = nearest_stations(conn, city, lon, lat)
+    if not targets:
+        return None
+    times = graph.times_from(targets)
+    if not times:
+        return None
+
+    # Время симметрично (граф неориентированный, ребро "и туда и обратно" —
+    # см. фикстуру): обход от цели даёт "секунды платформа → цель", и эта же
+    # величина — "секунды от платформы до цели" в другую сторону.
+    pairs = list(times.items())
+    values = ",".join(["(%s::bigint,%s::int)"] * len(pairs))
+    params: list = []
+    for station_id, seconds in pairs:
+        params.extend([station_id, seconds])
+    params.append(minutes * 60)
+
+    sql = (f"external_id IN (SELECT a.external_id FROM listing_metro_access a "
+           f"JOIN (VALUES {values}) AS t(station_id, seconds) "
+           f"ON t.station_id = a.station_id "
+           f"GROUP BY a.external_id "
+           f"HAVING min(a.walk_seconds + t.seconds) <= %s)")
+    return sql, tuple(params)
+
+
 def _dedup_consecutive(points: list[list[float]]) -> list[list[float]]:
     """Убирает подряд идущие повторы координат (R66, фикс-раунд 1) — платформа
     ровно на пороге дома/цели иначе даёт две одинаковые точки геометрии
