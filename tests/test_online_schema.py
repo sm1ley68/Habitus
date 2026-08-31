@@ -173,7 +173,43 @@ def test_estimated_defaults_to_false_everywhere():
     ride = _ride()
     assert ride.estimated is False
     assert ride.segments[0].estimated is False
-    assert MetroTransfer(from_station="A", to_station="B", minutes=3).outdoor is False
+    transfer = MetroTransfer(from_station="A", to_station="B", minutes=3)
+    assert transfer.outdoor is False
+    assert transfer.estimated is False
+
+
+def test_metro_ride_field_sets_are_exact():
+    # Ловит незамеченный rename поля: Task 14/16 диффятся по этой форме
+    # field-for-field, а без extra="forbid" переименование не бьёт по тестам,
+    # если сами модели не утверждают точный набор полей.
+    assert set(MetroSegment.model_fields) == {
+        "line_ref", "line_name", "system", "colour", "from_station",
+        "to_station", "stops", "minutes", "estimated",
+    }
+    assert set(MetroTransfer.model_fields) == {
+        "from_station", "to_station", "minutes", "outdoor", "estimated",
+    }
+    assert set(MetroRide.model_fields) == {
+        "walk_from_home_min", "walk_to_dest_min", "segments", "transfers",
+        "total_minutes", "estimated",
+    }
+
+
+def test_segment_accepts_mck_and_mcd_systems():
+    for system in ("mck", "mcd"):
+        seg = MetroSegment(line_ref="14", line_name="МЦК", system=system,
+                           colour=None, from_station="A", to_station="B",
+                           stops=2, minutes=5)
+        assert seg.system == system
+
+
+def test_segment_colour_accepts_css_name_not_only_hex():
+    # МЦК приходит из OSM как CSS-имя "red", не "#rrggbb" — валидатор формата
+    # цвета не должен был бы появиться здесь, эта проба это утверждает
+    seg = MetroSegment(line_ref="14", line_name="МЦК", system="mck",
+                       colour="red", from_station="A", to_station="B",
+                       stops=2, minutes=5)
+    assert seg.colour == "red"
 
 
 def test_ride_total_is_the_door_to_door_number():
