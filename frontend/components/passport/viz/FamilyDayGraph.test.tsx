@@ -23,3 +23,40 @@ it("разворачивает ленту метро под ногой с mode: 
   expect(screen.getByText(/Сокольники/)).toBeInTheDocument();
   expect(screen.getAllByText(/Охотный Ряд/).length).toBeGreaterThan(0);
 });
+
+// R84b: metro: null и отсутствующий ключ metro у обычной пешей/metro-ноги
+// должны рендерить отсутствие, а не пустую или синтетическую ленту —
+// «Лужники» встречается только внутри MetroRouteStrip (to_station второго
+// сегмента metroRideFixture), поэтому его отсутствие в DOM — прямой сигнал,
+// что лента не отрисовалась.
+function withMomMetroLeg(patch: (leg: Record<string, unknown>) => Record<string, unknown>) {
+  const data = block.data as {
+    home: unknown;
+    members: { id: string; label: string; legs: Record<string, unknown>[] }[];
+  };
+  return {
+    ...data,
+    members: data.members.map((m) =>
+      m.id !== "mom"
+        ? m
+        : {
+            ...m,
+            legs: m.legs.map((leg) => (leg.mode === "metro" ? patch(leg) : leg)),
+          },
+    ),
+  };
+}
+
+it("[R84b] не рисует ленту, когда leg.metro === null", () => {
+  const data = withMomMetroLeg((leg) => ({ ...leg, metro: null }));
+  render(<FamilyDayGraph metrics={block.metrics ?? {}} data={data} />);
+  expect(screen.queryByText(/Лужники/)).toBeNull();
+});
+
+it("[R84b] не рисует ленту, когда ключ metro вовсе отсутствует", () => {
+  const data = withMomMetroLeg((leg) =>
+    Object.fromEntries(Object.entries(leg).filter(([key]) => key !== "metro")),
+  );
+  render(<FamilyDayGraph metrics={block.metrics ?? {}} data={data} />);
+  expect(screen.queryByText(/Лужники/)).toBeNull();
+});

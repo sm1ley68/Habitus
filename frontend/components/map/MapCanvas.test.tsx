@@ -1,12 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import MapCanvas, { createPinElement, collectZonePositions, dataLayerStyle } from "./MapCanvas";
 import type { GeoZone } from "@/lib/agent/types";
 import { METRO_FALLBACK_COLOUR } from "@/lib/map/style";
-
-vi.mock("@/lib/map/useMaplibre", () => ({
-  useMaplibre: () => ({ map: null, ready: false, missingKey: true }),
-}));
 
 describe("MapCanvas", () => {
   it("renders a graceful placeholder when the map key is missing", () => {

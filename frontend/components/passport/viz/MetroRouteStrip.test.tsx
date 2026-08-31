@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import MetroRouteStrip, { FALLBACK_COLOUR } from "./MetroRouteStrip";
 import { metroRideFixture } from "@/test/fixtures";
@@ -125,5 +125,43 @@ describe("честность данных на ленте", () => {
     const ride = { ...metroRideFixture, total_minutes: 999 };
     render(<MetroRouteStrip ride={ride} />);
     expect(screen.getByTestId("total")).toHaveTextContent("999");
+  });
+
+  it("[R82] не рисует «≈0 мин» — wait_min = 0 запрещённый синтетический ноль, строка пропадает целиком", () => {
+    const ride = { ...metroRideFixture, wait_min: 0 };
+    render(<MetroRouteStrip ride={ride} />);
+    expect(screen.queryByTestId("wait-note")).toBeNull();
+  });
+
+  it("[R82] рисует остаток округления, когда wait_min > 0", () => {
+    render(<MetroRouteStrip ride={metroRideFixture} />);
+    expect(screen.getByTestId("wait-note")).toHaveTextContent("3 мин");
+  });
+
+  it("[R83] согласует «станция/станции/станций» с числом, а не жёстко «станций»", () => {
+    const ride = {
+      ...metroRideFixture,
+      segments: [
+        { ...metroRideFixture.segments[0], stops: 1 },
+        { ...metroRideFixture.segments[1], stops: 4 },
+      ],
+    };
+    render(<MetroRouteStrip ride={ride} />);
+    expect(screen.getByTestId("segment-0")).toHaveTextContent("1 станция");
+    expect(screen.getByTestId("segment-0")).not.toHaveTextContent("1 станций");
+    expect(screen.getByTestId("segment-1")).toHaveTextContent("4 станции");
+    expect(screen.getByTestId("segment-1")).not.toHaveTextContent("4 станций");
+  });
+
+  it("[R84c] предупреждает в консоль, если пересадок больше, чем сегментов, а не молчит о потере хвоста", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ride = {
+      ...metroRideFixture,
+      segments: [metroRideFixture.segments[0]],
+      transfers: [metroRideFixture.transfers[0], metroRideFixture.transfers[0]],
+    };
+    render(<MetroRouteStrip ride={ride} />);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
