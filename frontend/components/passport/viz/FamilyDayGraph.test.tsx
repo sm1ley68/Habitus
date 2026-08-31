@@ -12,3 +12,14 @@ it("renders a day lane per household member", () => {
     expect(screen.getByText(m.label)).toBeInTheDocument();
   }
 });
+
+// Задача 17: нога с mode: "metro" и заполненным leg.metro разворачивает
+// MetroRouteStrip под сжатой строкой Гантта.
+it("разворачивает ленту метро под ногой с mode: metro и заполненным leg.metro", () => {
+  render(<FamilyDayGraph metrics={block.metrics ?? {}} data={block.data} />);
+  // metroRideFixture: рельсовый отрезок Сокольники → Охотный Ряд, дальше
+  // пересадка на Охотный Ряд → Белорусская — «Охотный Ряд» встречается дважды
+  // (конец сегмента и начало пересадки), поэтому проверяем через getAllByText.
+  expect(screen.getByText(/Сокольники/)).toBeInTheDocument();
+  expect(screen.getAllByText(/Охотный Ряд/).length).toBeGreaterThan(0);
+});

@@ -136,6 +136,10 @@ export const LIFESTYLE_BLOCKS: LifestyleBlock[] = [
                 type: "LineString",
                 coordinates: [[30.356, 59.941], [30.347, 59.937], [30.339, 59.933]],
               },
+              // Разбивка для ленты MetroRouteStrip (Задача 17) — та же
+              // фикстура, что и metroRideFixture ниже, переиспользуется здесь,
+              // чтобы у ноги с mode: "metro" был реалистичный ride.
+              metro: metroRideFixture,
             },
           ],
         },

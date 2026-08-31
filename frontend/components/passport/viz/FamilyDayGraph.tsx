@@ -6,6 +6,7 @@ import { removeAdvancedMarker, toLatLng } from "@/lib/map/google";
 import { DUR, EASE } from "@/lib/motion";
 import type { FamilyRoutingData, TravelMode } from "@/lib/agent/types";
 import type { VizProps } from "./index";
+import MetroRouteStrip from "./MetroRouteStrip";
 
 // The one saturated brand color — the home anchor only.
 const ACCENT = "#7C8CFF";
@@ -425,6 +426,18 @@ export default function FamilyDayGraph({ data }: VizProps) {
                     <span className="absolute -top-0.5 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full" style={{ background: tint }} />
                   </div>
                 </div>
+
+                {/* Разбивка метро-ноги — разворачивается под сжатым Ганттом,
+                    а не внутри его узкой плашки: полная лента (станции,
+                    пересадки, честные оговорки по округлению и оценкам) не
+                    влезает в 28px высоты leg-кнопки. */}
+                {m.legs.map((leg, j) =>
+                  leg.mode === "metro" && leg.metro ? (
+                    <div key={`metro-${m.id}-${j}`} className="col-start-2 mt-1">
+                      <MetroRouteStrip ride={leg.metro} />
+                    </div>
+                  ) : null,
+                )}
               </motion.div>
             );
           })}
