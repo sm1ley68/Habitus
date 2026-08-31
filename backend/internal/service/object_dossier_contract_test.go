@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -128,5 +129,138 @@ func TestStandalonePassportHasNoInventedMatchScore(t *testing.T) {
 		if c[1] == "" {
 			t.Fatalf("%s должен быть пустым срезом, а не nil", c[0])
 		}
+	}
+}
+
+func TestMetroRideSurvivesPassthrough(t *testing.T) {
+	raw := []byte(`{"to_label":"офис","to_kind":"work","mode":"metro",
+		"depart":"08:00","arrive":"08:25","minutes":25,"safety":"safe",
+		"geometry":{"type":"LineString","coordinates":[[37.6,55.75],[37.62,55.76]]},
+		"metro":{"walk_from_home_min":7,"walk_to_dest_min":5,"total_minutes":25,
+			"wait_min":2,
+			"estimated":false,
+			"segments":[{"line_ref":"1","line_name":"Сокольническая",
+				"system":"subway","colour":"#EF161E","from_station":"Сокольники",
+				"to_station":"Охотный Ряд","stops":6,"minutes":8,"estimated":false}],
+			"transfers":[{"from_station":"Охотный Ряд","to_station":"Театральная",
+				"minutes":3,"outdoor":true,"estimated":false}]}}`)
+
+	var leg FamilyRouteLeg
+	if err := json.Unmarshal(raw, &leg); err != nil {
+		t.Fatalf("нога не разобралась: %v", err)
+	}
+	if leg.Metro == nil {
+		t.Fatal("разбивка поездки потеряна")
+	}
+	if leg.Metro.TotalMinutes != leg.Minutes {
+		t.Fatalf("итог разошёлся с разбивкой: %d против %d",
+			leg.Metro.TotalMinutes, leg.Minutes)
+	}
+	if leg.Metro.WaitMin != 2 {
+		t.Fatalf("ожидание посадки потеряно: %d", leg.Metro.WaitMin)
+	}
+	if len(leg.Metro.Segments) != 1 || leg.Metro.Segments[0].System != SystemSubway {
+		t.Fatalf("сегмент потерян: %#v", leg.Metro.Segments)
+	}
+	if leg.Metro.Segments[0].Colour == nil || *leg.Metro.Segments[0].Colour != "#EF161E" {
+		t.Fatalf("цвет линии потерян: %#v", leg.Metro.Segments[0].Colour)
+	}
+	if !leg.Metro.Transfers[0].Outdoor {
+		t.Fatal("признак уличной пересадки потерян")
+	}
+
+	back, err := json.Marshal(leg)
+	if err != nil {
+		t.Fatalf("обратная сериализация: %v", err)
+	}
+	if !bytes.Contains(back, []byte(`"outdoor":true`)) {
+		t.Fatalf("признак не доехал наружу: %s", back)
+	}
+	if !bytes.Contains(back, []byte(`"wait_min":2`)) {
+		t.Fatalf("ожидание посадки не доехало наружу: %s", back)
+	}
+}
+
+// R69b: wait_min — обязательное поле-остаток округления, а не независимый
+// замер интервала. Ноль в нём легитимен (части разбивки сошлись без
+// остатка), и omitempty стёр бы этот ноль так же, как отсутствие поля —
+// фронт не смог бы отличить «ожидания нет» от «поле потерялось».
+func TestMetroRideWaitMinSurvivesWhenZero(t *testing.T) {
+	raw := []byte(`{"to_label":"офис","to_kind":"work","mode":"metro",
+		"depart":"08:00","arrive":"08:20","minutes":20,"safety":"safe",
+		"geometry":{"type":"LineString","coordinates":[[37.6,55.75],[37.62,55.76]]},
+		"metro":{"walk_from_home_min":7,"walk_to_dest_min":5,"total_minutes":20,
+			"wait_min":0,"estimated":false,"segments":[],"transfers":[]}}`)
+
+	var leg FamilyRouteLeg
+	if err := json.Unmarshal(raw, &leg); err != nil {
+		t.Fatalf("нога не разобралась: %v", err)
+	}
+	back, err := json.Marshal(leg)
+	if err != nil {
+		t.Fatalf("обратная сериализация: %v", err)
+	}
+	if !bytes.Contains(back, []byte(`"wait_min":0`)) {
+		t.Fatalf("нулевое ожидание должно остаться в JSON явно: %s", back)
+	}
+}
+
+// МЦК отдаёт цвет линии CSS-именем («red»), а не #rrggbb — colour остаётся
+// нетипизированной строкой, hex нигде не предполагается. И для отсутствующего
+// цвета поле остаётся явным null, а не пропадает и не превращается в "".
+func TestMetroSegmentColourStaysNullableAndUnconstrained(t *testing.T) {
+	raw := []byte(`{"to_label":"офис","to_kind":"work","mode":"metro",
+		"depart":"08:00","arrive":"08:20","minutes":20,"safety":"safe",
+		"geometry":{"type":"LineString","coordinates":[[37.6,55.75],[37.62,55.76]]},
+		"metro":{"walk_from_home_min":7,"walk_to_dest_min":5,"total_minutes":20,
+			"wait_min":1,"estimated":false,
+			"segments":[
+				{"line_ref":"14","line_name":"МЦК","system":"mck","colour":"red",
+					"from_station":"Панфиловская","to_station":"Стрешнево",
+					"stops":1,"minutes":4,"estimated":false},
+				{"line_ref":"1","line_name":"Сокольническая","system":"subway",
+					"colour":null,"from_station":"Сокольники","to_station":"Красносельская",
+					"stops":1,"minutes":2,"estimated":true}],
+			"transfers":[]}}`)
+
+	var leg FamilyRouteLeg
+	if err := json.Unmarshal(raw, &leg); err != nil {
+		t.Fatalf("нога не разобралась: %v", err)
+	}
+	if leg.Metro.Segments[0].Colour == nil || *leg.Metro.Segments[0].Colour != "red" {
+		t.Fatalf("CSS-имя цвета МЦК не должно предполагаться hex'ом: %#v",
+			leg.Metro.Segments[0].Colour)
+	}
+	if leg.Metro.Segments[1].Colour != nil {
+		t.Fatalf("отсутствующий цвет должен остаться nil: %#v",
+			leg.Metro.Segments[1].Colour)
+	}
+
+	back, err := json.Marshal(leg)
+	if err != nil {
+		t.Fatalf("обратная сериализация: %v", err)
+	}
+	if !bytes.Contains(back, []byte(`"colour":"red"`)) {
+		t.Fatalf("цвет МЦК не доехал наружу как есть: %s", back)
+	}
+	if !bytes.Contains(back, []byte(`"colour":null`)) {
+		t.Fatalf("отсутствующий цвет должен уехать явным null, а не пропасть: %s", back)
+	}
+}
+
+func TestNonMetroLegHasNoMetroField(t *testing.T) {
+	raw := []byte(`{"to_label":"школа","to_kind":"school","mode":"walk",
+		"depart":"08:00","arrive":"08:15","minutes":15,"safety":"safe",
+		"geometry":{"type":"LineString","coordinates":[[37.6,55.75],[37.61,55.75]]}}`)
+	var leg FamilyRouteLeg
+	if err := json.Unmarshal(raw, &leg); err != nil {
+		t.Fatalf("нога не разобралась: %v", err)
+	}
+	if leg.Metro != nil {
+		t.Fatal("у пешей ноги не должно быть разбивки метро")
+	}
+	back, _ := json.Marshal(leg)
+	if bytes.Contains(back, []byte(`"metro"`)) {
+		t.Fatalf("пустое поле не должно уезжать наружу: %s", back)
 	}
 }

@@ -41,6 +41,24 @@ func TestNormalizePointFull(t *testing.T) {
 	}
 }
 
+// R60: mode:"metro" — добавленный Задачей 10 в PointConstraint и Задачей 12
+// подключённый на стороне оркестратора — не должен отбрасываться шлюзом:
+// без этой ветки metro-точка не могла дойти до ML-сервиса через публичный
+// API вовсе.
+func TestNormalizePointAcceptsMetroMode(t *testing.T) {
+	got, err := normalizePoint(&streamPointRequest{
+		Lon:  float64Ptr(37.6),
+		Lat:  float64Ptr(55.7),
+		Mode: stringPtr("metro"),
+	})
+	if err != nil {
+		t.Fatalf("normalizePoint() error = %v", err)
+	}
+	if got.Mode != "metro" {
+		t.Fatalf("normalizePoint() = %#v; want mode metro", got)
+	}
+}
+
 func TestNormalizePointRejectsInvalidValues(t *testing.T) {
 	tests := map[string]*streamPointRequest{
 		"missing longitude": {Lat: float64Ptr(55.7)},

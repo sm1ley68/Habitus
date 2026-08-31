@@ -178,6 +178,59 @@ type LineStringGeometry struct {
 	Coordinates [][]float64 `json:"coordinates"`
 }
 
+// MetroSystem — enum, зафиксированный на трёх сторонах:
+// habitus/online/schema.py ↔ здесь ↔ frontend/lib/agent/types.ts.
+type MetroSystem string
+
+const (
+	SystemSubway MetroSystem = "subway"
+	SystemMCK    MetroSystem = "mck"
+	SystemMCD    MetroSystem = "mcd"
+)
+
+type MetroSegment struct {
+	LineRef     string      `json:"line_ref"`
+	LineName    string      `json:"line_name"`
+	System      MetroSystem `json:"system"`
+	// Не hex — МЦК отдаёт CSS-имя цвета («red»). Остаётся nullable: null —
+	// это «цвета нет», а не пропавшее поле и не пустая строка.
+	Colour      *string `json:"colour"`
+	FromStation string  `json:"from_station"`
+	ToStation   string  `json:"to_station"`
+	Stops       int     `json:"stops"`
+	Minutes     int     `json:"minutes"`
+	// true — время выведено из расстояния, а не взято из курируемого файла.
+	Estimated bool `json:"estimated"`
+}
+
+type MetroTransfer struct {
+	FromStation string `json:"from_station"`
+	ToStation   string `json:"to_station"`
+	Minutes     int    `json:"minutes"`
+	// Переход улицей (типично метро↔МЦД) — вдвое-втрое длиннее подземного.
+	Outdoor   bool `json:"outdoor"`
+	Estimated bool `json:"estimated"`
+}
+
+// MetroRide — разбивка метро-ноги. Итог «от двери до двери» живёт в
+// FamilyRouteLeg.Minutes, здесь — из чего он сложился. Инвариант:
+// WalkFromHomeMin + Σ Segments.Minutes + Σ Transfers.Minutes +
+// WalkToDestMin + WaitMin == TotalMinutes.
+type MetroRide struct {
+	WalkFromHomeMin int             `json:"walk_from_home_min"`
+	WalkToDestMin   int             `json:"walk_to_dest_min"`
+	Segments        []MetroSegment  `json:"segments"`
+	Transfers       []MetroTransfer `json:"transfers"`
+	TotalMinutes    int             `json:"total_minutes"`
+	// R69b: остаток округления — total_minutes минус уже показанные части,
+	// каждая округлённая независимо. НЕ omitempty: 0 — легитимный остаток
+	// (части сошлись без него), а его пропажа неотличима от «поле
+	// потерялось» — фронт молча нарисовал бы ожидание нулевым, что этот
+	// проект запрещает (синтетический ноль вместо отсутствующего замера).
+	WaitMin   int  `json:"wait_min"`
+	Estimated bool `json:"estimated"`
+}
+
 type FamilyRouteLeg struct {
 	ToLabel  string             `json:"to_label"`
 	ToKind   DestinationKind    `json:"to_kind"`
@@ -187,6 +240,10 @@ type FamilyRouteLeg struct {
 	Minutes  int                `json:"minutes"`
 	Safety   LegSafety          `json:"safety"`
 	Geometry LineStringGeometry `json:"geometry"`
+	// Разбивка поездки на рельсовом транспорте; nil у ног любого другого
+	// режима — omitempty, чтобы ключ пропадал у фронта, а не приезжал явным
+	// null (TS-тип — metro?: MetroRide | null, но Go должен опускать ключ).
+	Metro *MetroRide `json:"metro,omitempty"`
 }
 
 type FamilyMember struct {

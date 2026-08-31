@@ -66,7 +66,7 @@ func normalizePoint(p *streamPointRequest) (*client.PointConstraint, error) {
 		mode = *p.Mode
 	}
 	switch mode {
-	case "foot-walking", "cycling-regular", "driving-car":
+	case "foot-walking", "cycling-regular", "driving-car", "metro":
 	default:
 		return nil, fmt.Errorf("point.mode is invalid")
 	}
