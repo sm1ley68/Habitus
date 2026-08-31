@@ -171,9 +171,11 @@ export interface RouteLeg {
   minutes: number;
   safety: LegSafety;
   geometry: { type: "LineString"; coordinates: [number, number][] };
-  // Разбивка поездки на рельсовом транспорте. Отсутствует у ног любого
-  // другого режима — существующие потребители RouteLeg не ломаются.
-  metro?: MetroRide;
+  // Разбивка поездки на рельсовом транспорте. Отсутствует (или явный null —
+  // сегодня ML-сервис сериализует его как null, пока Go его не отфильтрует
+  // через omitempty) у ног любого другого режима — существующие потребители
+  // RouteLeg не ломаются в обоих случаях.
+  metro?: MetroRide | null;
 }
 export interface HouseholdMember { id: string; label: string; legs: RouteLeg[]; }
 export interface FamilyRoutingData { home: [number, number]; members: HouseholdMember[]; }
