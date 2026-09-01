@@ -255,3 +255,68 @@ def test_family_routing_verdict_line_is_accurate_for_metro_legs(monkeypatch, dos
     block = next(b for b in payload.blocks if b.key == "family_routing")
     assert "дорожному графу" not in block.verdict_line
     assert "метро" in block.verdict_line.lower()
+
+
+# --- сквозное ревью ветки: R93 ----------------------------------------------
+
+
+def test_metro_leg_gets_the_walker_when_ors_is_configured(monkeypatch, dossier_conn):
+    """R93: пешие плечи метро-ноги считаются пешей сетью ORS, если провайдер
+    вообще инжектирован. Без walker'а door_to_door() красил КАЖДОЕ плечо
+    оценкой по прямой — MetroRide.estimated был True всегда и переставал
+    различать оценку и замер."""
+    from habitus.online import dossier as mod
+    from habitus.online.schema import MetroRide
+
+    seen = {}
+
+    def fake_door_to_door(conn, city, home, dest, walker=None):
+        seen["walker"] = walker
+        return (MetroRide(walk_from_home_min=3, walk_to_dest_min=2,
+                          total_minutes=20, wait_min=1, segments=[]),
+                [[37.60, 55.75], [37.62, 55.76]])
+
+    monkeypatch.setattr(mod, "door_to_door", fake_door_to_door)
+
+    class _Provider:
+        def directions(self, start, end, profile):
+            return {"type": "LineString", "coordinates": [list(start), list(end)]}, 300.0
+
+    req = DossierRequest(
+        object_id="A", city="msk",
+        parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
+            id="me", label="я", legs=[HouseholdLegIntent(
+                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+    build_dossier(req, dossier_conn, route_provider=_Provider(),
+                  geocoder=lambda q: (37.62, 55.76))
+
+    walker = seen["walker"]
+    assert walker is not None, "ORS настроен, а плечи всё равно считаются по прямой"
+    # walker обязан ходить в ТОТ ЖЕ инжектированный провайдер, а не строить
+    # второй клиент по ключу из настроек.
+    assert walker((37.60, 55.75), (37.61, 55.75)) == 300.0
+
+
+def test_metro_leg_has_no_walker_when_ors_is_absent(monkeypatch, dossier_conn):
+    """Обратная сторона: без провайдера walker не изобретается — плечи
+    деградируют до оценки по прямой, как и раньше."""
+    from habitus.online import dossier as mod
+    from habitus.online.schema import MetroRide
+
+    seen = {}
+
+    def fake_door_to_door(conn, city, home, dest, walker=None):
+        seen["walker"] = walker
+        return (MetroRide(walk_from_home_min=3, walk_to_dest_min=2,
+                          total_minutes=20, wait_min=1, segments=[]),
+                [[37.60, 55.75], [37.62, 55.76]])
+
+    monkeypatch.setattr(mod, "door_to_door", fake_door_to_door)
+
+    req = DossierRequest(
+        object_id="A", city="msk",
+        parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
+            id="me", label="я", legs=[HouseholdLegIntent(
+                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+    build_dossier(req, dossier_conn, geocoder=lambda q: (37.62, 55.76))
+    assert seen["walker"] is None

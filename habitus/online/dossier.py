@@ -17,6 +17,7 @@ import requests
 from psycopg.rows import dict_row
 
 from habitus.clean.geocode import geocode_address
+from habitus.geo.metro_access import ORSWalker
 from habitus.online.geo import DirectionsProvider
 from habitus.online.metro_route import door_to_door
 from habitus.online.schema import (
@@ -147,6 +148,18 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
     # ВЕСЬ блок: все режимы ходили через ORS. Метро — свой движок по графу и
     # ORS не требует, поэтому дальше отсутствие route_provider отсекает
     # только немаршрутные-по-метро ноги (см. ниже), а не блок целиком.
+    # R93 (сквозное ревью ветки): пешие плечи метро-ноги считает ORS, если
+    # он вообще настроен. Без walker'а door_to_door() красил КАЖДОЕ плечо
+    # оценкой по прямой, из-за чего MetroRide.estimated был True всегда и
+    # переставал различать оценку и замер — флаг честности, который никогда
+    # не бывает False, не несёт информации. Провайдер берётся тот же, что уже
+    # инжектирован для дорожных ног (то же условие на ключ, что в
+    # habitus/cli.py и habitus/online/service.py — второго места, решающего
+    # «настроен ли ORS», не заводим). Это разовый вызов на одно досье, а не
+    # массовый офлайн-проход: квоте ORS ничего не грозит. Отказ на конкретной
+    # платформе внутри _nearest_stations_detailed по-прежнему деградирует до
+    # оценки по прямой, а не роняет ногу.
+    walker = ORSWalker(provider=route_provider) if route_provider is not None else None
     members = []
     home = (listing.lon, listing.lat)
     for member_intent in req.parsed_query.household:
@@ -170,7 +183,7 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
             if intent.mode != "metro" and req.city == "msk" and not _inside_moscow(target):
                 continue
             if intent.mode == "metro":
-                got = door_to_door(conn, req.city, start, target)
+                got = door_to_door(conn, req.city, start, target, walker=walker)
                 if got is None:
                     # графа города нет или цель недостижима — ногу пропускаем,
                     # нулей не выдумываем

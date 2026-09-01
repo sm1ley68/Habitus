@@ -137,9 +137,10 @@ def test_custom_point_metro_mode_routes_to_metro_predicate(monkeypatch):
 
     def fake_metro_predicate(conn, city, lon, lat, minutes):
         calls.append((city, lon, lat, minutes))
-        return "external_id IN (SELECT 1)", (123,)
+        return ("external_id IN (SELECT 1)", (123,)), None
 
-    monkeypatch.setattr(orchestrator_mod, "metro_predicate", fake_metro_predicate)
+    monkeypatch.setattr(orchestrator_mod, "metro_predicate_with_note",
+                        fake_metro_predicate)
 
     captured = {}
 
@@ -163,8 +164,10 @@ def test_custom_point_metro_mode_none_drops_filter_with_visible_note(monkeypatch
     # предикат не накладывается (geo_sql остаётся None), но это НЕ тихая
     # деградация — пользователь обязан увидеть заметку в relaxed, потому что
     # constraint_diagnostics point-предикаты не видит (pipeline.py, шаг 4.5).
-    monkeypatch.setattr(orchestrator_mod, "metro_predicate",
-                        lambda conn, city, lon, lat, minutes: None)
+    monkeypatch.setattr(
+        orchestrator_mod, "metro_predicate_with_note",
+        lambda conn, city, lon, lat, minutes: (
+            None, "метро: графа города нет — фильтр по времени не наложен"))
 
     captured = {}
 
@@ -193,3 +196,29 @@ def test_area_auto_widens_when_too_few():
         search_fn=fake_search, min_results=1, max_iters=0)
     assert len(cands) == 2                       # расширились до округа
     assert any("ЦАО" in r for r in relaxed)      # пометка расширения
+
+
+def test_metro_note_reaches_relaxed_even_when_the_filter_was_applied(monkeypatch):
+    """R90 (сквозное ревью ветки): разорванный граф в пределах допуска
+    оставляет фильтр наложенным, но часть города он оценить не может.
+    Пользователь обязан увидеть это в relaxed — иначе выдача снова сужается
+    молча, только на меньшем масштабе."""
+    monkeypatch.setattr(
+        orchestrator_mod, "metro_predicate_with_note",
+        lambda conn, city, lon, lat, minutes: (
+            ("external_id IN (SELECT 1)", (7,)),
+            "метро: часть объявлений (43 из 6738) не оценена — платформы вне графа"))
+
+    captured = {}
+
+    def fake_search(conn, q, *, geo_sql=None, geo_params=(), **kw):
+        captured["geo_sql"] = geo_sql
+        return [_cand("A")] * 5
+
+    _, relaxed, _ = retrieve_with_relaxation(
+        None, ParsedQuery(semantic_text="x"),
+        point=PointConstraint(lon=37.6, lat=55.7, minutes=15, mode="metro"),
+        search_fn=fake_search, min_results=1, city="msk")
+
+    assert captured["geo_sql"] == "(external_id IN (SELECT 1))"
+    assert any("не оценена" in note for note in relaxed)

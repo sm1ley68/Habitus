@@ -1,7 +1,7 @@
 # habitus/online/orchestrator.py — маршрутизация + relaxation loop
 from habitus.config import settings
 from habitus.online.geo import AreaMatch, IsochroneProvider, point_predicate
-from habitus.online.metro_route import metro_predicate
+from habitus.online.metro_route import metro_predicate_with_note
 from habitus.online.retrieval import Candidate, hybrid_search
 from habitus.online.schema import GeoConstraint, ParsedQuery, PointConstraint
 
@@ -68,13 +68,22 @@ def retrieve_with_relaxation(
             # пользователю знать об этом деградационном пути, это заметка в
             # relaxed (R70): она доходит до текста объяснения через
             # build_explanation(notes=...).
-            got = metro_predicate(conn, city or "msk", point.lon, point.lat,
-                                  point.minutes)
+            # R90/R91 (сквозное ревью ветки): причин деградации теперь
+            # четыре (нет графа; у точки нет платформ; по городу не
+            # рассчитаны пешие плечи; граф города разорван), и заметка
+            # приходит ГОТОВОЙ из metro_predicate_with_note — здесь её
+            # нельзя переформулировать общей фразой, потому что «графа нет»
+            # и «граф есть, но разорван» — разные факты о городе, а писать
+            # неверный из них пользователю запрещено ровно так же, как
+            # выдумывать числа. Заметка приходит и при ПРИМЕНЁННОМ фильтре:
+            # разорванный граф в пределах допуска оставляет часть города
+            # неоценённой, и молчать об этом тоже нельзя.
+            got, note = metro_predicate_with_note(
+                conn, city or "msk", point.lon, point.lat, point.minutes)
             if got is not None:
                 base_sql, base_params = got[0], list(got[1])
-            else:
-                relaxed.append(
-                    "метро: графа/платформ у точки нет — фильтр не наложен")
+            if note:
+                relaxed.append(note)
         else:
             s, p = point_predicate(point.lon, point.lat, point.minutes,
                                    provider, point.mode)

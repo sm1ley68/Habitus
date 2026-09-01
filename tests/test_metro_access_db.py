@@ -157,10 +157,18 @@ def test_all_k_nearest_non_subway_still_gets_a_subway_row(conn):
     диаметра вдали от метро), walk_min_metro не должен остаться NULL — раньше
     прямая по воздуху всегда давала значение. Изолированный кластер МЦК
     далеко от фикстуры msk, чтобы «ближайшие 3» гарантированно не задели
-    подземные «Ближняя»/«Дальняя»."""
+    подземные «Ближняя»/«Дальняя».
+
+    R92 (сквозное ревью ветки): подземная платформа-гарантия стоит в ~1.1 км
+    от дома, а не за тысячи километров, как в первой версии этого теста.
+    Потолок MAX_ENTRY_WALK_METRES теперь применяется и к гарантии тоже, и на
+    старой фикстуре тест проверял бы не то, что заявляет докстрока, а
+    отсутствие потолка. Проверяемое поведение осталось прежним: гарантия
+    добирается СВЕРХ k ближайших, если среди них нет ни одной подземной."""
     conn.execute("""INSERT INTO metro_line
                    (id, city, system, ref, name, headway_s, fallback_speed_kmh)
-                   VALUES (3,'msk','mck','R1','мцк',420,60);""")
+                   VALUES (3,'msk','mck','R1','мцк',420,60),
+                          (4,'msk','subway','2','л2',120,40);""")
     conn.execute("""INSERT INTO metro_station
                    (id, city, line_id, name, name_norm, geom, order_index)
                    VALUES
@@ -169,7 +177,9 @@ def test_all_k_nearest_non_subway_still_gets_a_subway_row(conn):
                    (21,'msk',3,'МЦК-2','мцк-2',
                     ST_SetSRID(ST_MakePoint(10.002,10.0),4326),1),
                    (22,'msk',3,'МЦК-3','мцк-3',
-                    ST_SetSRID(ST_MakePoint(10.003,10.0),4326),2);""")
+                    ST_SetSRID(ST_MakePoint(10.003,10.0),4326),2),
+                   (23,'msk',4,'Подземная','подземная',
+                    ST_SetSRID(ST_MakePoint(10.01,10.0),4326),0);""")
     conn.execute("""INSERT INTO listings (external_id, source, is_active, city, geom)
                    VALUES ('C','test',TRUE,'msk',
                            ST_SetSRID(ST_MakePoint(10.0,10.0),4326));""")
@@ -180,7 +190,7 @@ def test_all_k_nearest_non_subway_still_gets_a_subway_row(conn):
         "SELECT station_id FROM listing_metro_access WHERE external_id='C'"
     ).fetchall()}
     assert {20, 21, 22} <= ids, "три ближайшие МЦК всё ещё должны быть записаны"
-    assert ids & {10, 11}, "гарантированной подземной платформы нет вовсе"
+    assert 23 in ids, "гарантированной подземной платформы нет вовсе"
 
     refresh_walk_min_metro(conn, "msk")
     got = conn.execute(
@@ -252,3 +262,65 @@ def test_ors_index_error_degrades_the_station_not_the_run(conn):
         "SELECT estimated FROM listing_metro_access").fetchall()]
     assert any(estimated_flags), "упавшая на IndexError станция обязана остаться estimated=True"
     assert not all(estimated_flags), "остальные станции должны были получить сетевое время"
+
+
+# --- сквозное ревью ветки: R92 ----------------------------------------------
+
+
+def test_candidates_beyond_entry_cap_are_not_written(conn):
+    """R92: офлайновый писатель отбрасывает платформы дальше
+    MAX_ENTRY_WALK_METRES — тем же потолком, что и рантайм
+    (habitus/online/metro_route.py). Пока потолок стоял только в рантайме,
+    объявление вроде этого имело строки доступа с плечом в 50+ минут: фильтр
+    по времени на метро их принимал за настоящее плечо и пропускал
+    объявление, а досье того же объекта показывало пустое место — там
+    door_to_door() те же платформы по потолку отбрасывал.
+
+    Строк доступа не остаётся вовсе, и walk_min_metro становится NULL — это
+    отсутствие замера, а не синтетический ноль."""
+    conn.execute("""INSERT INTO listings (external_id, source, is_active, city, geom)
+                    VALUES ('FAR','test',TRUE,'msk',
+                            ST_SetSRID(ST_MakePoint(37.70,55.75),4326));""")
+    conn.commit()
+    # 37.70 против 37.603/37.610/37.601 на широте 55.75 — от 5.6 до 6.2 км,
+    # то есть все три платформы фикстуры (включая подземную гарантию) дальше
+    # потолка в 3 км.
+    refresh_listing_metro_access(conn, "msk", walker=None, k=3)
+    ids = [r[0] for r in conn.execute(
+        "SELECT station_id FROM listing_metro_access WHERE external_id='FAR'"
+    ).fetchall()]
+    assert ids == [], "платформа дальше потолка попала в строки доступа"
+
+    refresh_walk_min_metro(conn, "msk")
+    got = conn.execute(
+        "SELECT walk_min_metro FROM listings WHERE external_id='FAR'").fetchone()[0]
+    assert got is None
+
+    # Объявление фикстуры (платформы в сотнях метров) не задето.
+    near = conn.execute(
+        "SELECT count(*) FROM listing_metro_access WHERE external_id='A'").fetchone()[0]
+    assert near == 3
+
+
+def test_stale_rows_beyond_cap_are_cleaned_on_rerun(conn):
+    """Потолок применяется и к УЖЕ записанным строкам: пересчёт объявления,
+    чьи платформы оказались за потолком (граф пересобрали, станция уехала,
+    объявление перегеокодировали), обязан снести старые строки, а не
+    оставить их жить вечно — DELETE стоит до вставки и выполняется даже
+    тогда, когда вставлять нечего."""
+    conn.execute("""INSERT INTO listings (external_id, source, is_active, city, geom)
+                    VALUES ('MOVED','test',TRUE,'msk',
+                            ST_SetSRID(ST_MakePoint(37.60,55.75),4326));""")
+    conn.commit()
+    refresh_listing_metro_access(conn, "msk", walker=None, k=3,
+                                 external_ids=["MOVED"])
+    assert conn.execute("SELECT count(*) FROM listing_metro_access "
+                        "WHERE external_id='MOVED'").fetchone()[0] == 3
+
+    conn.execute("""UPDATE listings SET geom = ST_SetSRID(ST_MakePoint(37.70,55.75),4326)
+                    WHERE external_id='MOVED';""")
+    conn.commit()
+    refresh_listing_metro_access(conn, "msk", walker=None, k=3,
+                                 external_ids=["MOVED"])
+    assert conn.execute("SELECT count(*) FROM listing_metro_access "
+                        "WHERE external_id='MOVED'").fetchone()[0] == 0
