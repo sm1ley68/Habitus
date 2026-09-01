@@ -10,6 +10,7 @@ import { fetchMoreResults } from "@/lib/api/results";
 import type { StreamFailure } from "@/lib/api/streamError";
 import { CITY_CENTER } from "@/lib/map/constants";
 import { expandViewport, type Viewport } from "@/lib/map/viewport";
+import { shouldFetchLayer } from "@/lib/map/layers";
 
 export type Screen = "chat" | "result" | "map" | "passport";
 
@@ -38,6 +39,9 @@ interface SessionState {
   hoveredId: string | null;
   /** Границы вьюпорта карты [minLon, minLat, maxLon, maxLat] — нужны evidence-слоям. */
   viewport: [number, number, number, number] | null;
+  /** Текущий зум карты. По нему решается, какие слои вообще имеет смысл
+   *  запрашивать: точечный слой ниже своего порога не рисуется. */
+  zoom: number | null;
   /** Все объявления под вьюпортом — чтобы открыть любое, а не только из выдачи. */
   mapListings: GeoJSON.FeatureCollection | null;
   /** Карта движется или получает данные для только что выбранной области. */
@@ -80,8 +84,8 @@ interface SessionState {
   loadLayer: (id: LayerId) => Promise<void>;
   setHoveredProperty: (id: string | null) => void;
   setMapUpdating: (value: boolean) => void;
-  setViewport: (b: Viewport) => void;
-  refreshViewport: (b: Viewport) => Promise<void>;
+  setViewport: (b: Viewport, zoom?: number) => void;
+  refreshViewport: (b: Viewport, zoom?: number) => Promise<void>;
   loadMapListings: () => Promise<void>;
   openListingFromMap: (p: Property) => void;
 }
@@ -102,6 +106,7 @@ const initial = {
   areaLabel: null as string | null,
   hoveredId: null as string | null,
   viewport: null as [number, number, number, number] | null,
+  zoom: null as number | null,
   mapListings: null as GeoJSON.FeatureCollection | null,
   mapUpdating: false,
   mapProperty: null as Property | null,
@@ -357,7 +362,10 @@ export const useSession = create<SessionState>((set, get) => ({
   // города: экран размышления не должен заранее тянуть и держать весь город.
   loadLayer: async (id) => {
     try {
-      const { city, viewport } = get();
+      const { city, viewport, zoom } = get();
+      // Тот же порог, что в refreshViewport: включённый тумблер не повод
+      // качать слой, который на текущем зуме не отрисуется.
+      if (!shouldFetchLayer(id, zoom)) return;
       const fetched = await fetchLayers(city, [id], expandViewport(viewport ?? fallbackViewport(city)));
       const current = get();
       if (current.city !== city || !sameViewport(current.viewport, viewport)) return;
@@ -369,26 +377,30 @@ export const useSession = create<SessionState>((set, get) => ({
 
   setHoveredProperty: (hoveredId) => set({ hoveredId }),
   setMapUpdating: (mapUpdating) => set({ mapUpdating }),
-  setViewport: (viewport) => {
-    void get().refreshViewport(viewport);
+  setViewport: (viewport, zoom) => {
+    void get().refreshViewport(viewport, zoom);
   },
 
-  refreshViewport: async (viewport) => {
+  refreshViewport: async (viewport, zoom) => {
     cancelViewportRequest();
     const requestId = viewportRequestId;
     const controller = new AbortController();
     viewportController = controller;
     const { city, activeLayers } = get();
+    const nextZoom = zoom ?? get().zoom;
     const bufferedViewport = expandViewport(viewport);
-    const layers = RENDERED_LAYER_IDS.filter((id) => activeLayers[id]);
-    set({ mapUpdating: true });
+    // Слой, который на этом зуме не рисуется, не запрашивается вовсе: его
+    // фичи всё равно были бы скрыты стилем, а трафик и парсинг — настоящие.
+    const layers = RENDERED_LAYER_IDS.filter(
+      (id) => activeLayers[id] && shouldFetchLayer(id, nextZoom));
+    set({ mapUpdating: true, zoom: nextZoom });
     try {
       const [mapListings, layerData] = await Promise.all([
         fetchListings(city, bufferedViewport, controller.signal),
         fetchLayers(city, layers, bufferedViewport, controller.signal),
       ]);
       if (requestId !== viewportRequestId) return;
-      set({ viewport, mapListings, layerData, mapUpdating: false });
+      set({ viewport, zoom: nextZoom, mapListings, layerData, mapUpdating: false });
     } catch (error) {
       if (!isAbortError(error) && requestId === viewportRequestId) {
         set({ mapUpdating: false });

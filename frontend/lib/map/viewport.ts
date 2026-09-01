@@ -68,6 +68,29 @@ export function expandViewport(
   ];
 }
 
+/** Сдвинулся ли вьюпорт настолько, чтобы перезапрашивать данные.
+ *
+ *  Любой `idle` карты раньше публиковал новый вьюпорт, а тот запускал полный
+ *  цикл «скачать объявления и все активные слои» — мегабайты на каждое
+ *  микродвижение. Порог измеряется в долях ТЕКУЩЕГО вьюпорта, поэтому работает
+ *  одинаково на любом зуме. */
+export function viewportChangedEnough(
+  previous: Viewport | null,
+  next: Viewport,
+  ratio = 0.02,
+): boolean {
+  if (!previous) return true;
+  const [west, south, east, north] = previous;
+  const width = Math.abs((east < west ? east + 360 : east) - west);
+  const height = Math.abs(north - south);
+  const lngTolerance = width * ratio;
+  const latTolerance = height * ratio;
+  return Math.abs(next[0] - west) > lngTolerance
+    || Math.abs(next[2] - east) > lngTolerance
+    || Math.abs(next[1] - south) > latTolerance
+    || Math.abs(next[3] - north) > latTolerance;
+}
+
 /** Match stays primary. Scores inside one five-point band are close enough
  * for proximity to the map centre to become the tie-breaker. */
 export function rankVisibleProperties(

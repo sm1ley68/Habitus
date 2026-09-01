@@ -16,10 +16,12 @@ import {
 } from "@/lib/map/google";
 import { layerColor, layerPaintColor, metroLineColor } from "@/lib/map/style";
 import {
-  isInViewport,
   isValidLngLat,
   rankVisibleProperties,
+  viewportChangedEnough,
 } from "@/lib/map/viewport";
+import { minimumPointZoom, zoomStyleKey } from "@/lib/map/layers";
+import { diffKeys, featureKey, keyById, keyed } from "@/lib/map/sync";
 import { useSession } from "@/lib/store/session";
 import { RENDERED_LAYER_IDS, type GeoZone, type LayerId } from "@/lib/agent/types";
 import MapPreviewCard, { type PreviewData } from "./MapPreviewCard";
@@ -68,29 +70,6 @@ function densityOpacity(zoom: number) {
   if (zoom >= 15.5) return 0;
   if (zoom <= 11) return 0.22;
   return 0.22 * (15.5 - zoom) / 4.5;
-}
-
-function minimumPointZoom(id: LayerId) {
-  if (id === "metro") return 10.5;
-  if (id === "schools") return 12;
-  if (id === "bars") return 14;
-  return 12;
-}
-
-function pointFeatureInViewport(
-  feature: GeoJSON.Feature,
-  viewport: [number, number, number, number] | null,
-) {
-  if (!viewport || !feature.geometry) return true;
-  if (feature.geometry.type === "Point") {
-    const coordinates = feature.geometry.coordinates as [number, number];
-    return isValidLngLat(coordinates) && isInViewport(coordinates, viewport);
-  }
-  if (feature.geometry.type === "MultiPoint") {
-    return feature.geometry.coordinates.some((coordinates) =>
-      isValidLngLat(coordinates) && isInViewport(coordinates, viewport));
-  }
-  return true;
 }
 
 export function dataLayerStyle(
@@ -172,11 +151,21 @@ export default function MapCanvas() {
     [properties, viewport],
   );
 
-  const resultMarkers = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
-  const listingMarkers = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  // Маркеры и фичи держатся между обновлениями и диффятся по ключу: панорама
+  // почти всегда показывает те же объекты, а пересборка с нуля стоила ~8800
+  // фич и 2000 DOM-узлов на каждый шаг зума.
+  const resultMarkers = useRef(new Map<string, {
+    marker: google.maps.marker.AdvancedMarkerElement;
+    sourceIndex: number;
+  }>());
+  const listingMarkers = useRef(new Map<string, google.maps.marker.AdvancedMarkerElement>());
   const clusterer = useRef<MarkerClusterer | null>(null);
   const projection = useRef<google.maps.OverlayView | null>(null);
-  const geoLayers = useRef<Partial<Record<LayerId, google.maps.Data>>>({});
+  const geoLayers = useRef(new Map<LayerId, {
+    layer: google.maps.Data;
+    features: Map<string, google.maps.Data.Feature>;
+    styleKey: string;
+  }>());
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
@@ -259,12 +248,37 @@ export default function MapCanvas() {
 
   useEffect(() => {
     if (!map || !ready) return;
-    resultMarkers.current.forEach(removeAdvancedMarker);
-    setPreviewIndex(null);
     const topId = visibleProperties[0]?.property.id;
+    const next = new Map(visibleProperties.map((item) => [item.property.id, item]));
 
-    resultMarkers.current = visibleProperties.map(({ property, sourceIndex }, index) => {
-      const element = createPinElement(property, property.id === topId, index);
+    // Ушедшие из выдачи или сменившие место в исходном массиве (слушатели
+    // замкнуты на sourceIndex) — снимаются. Остальные переживают панораму.
+    for (const [id, entry] of resultMarkers.current) {
+      const item = next.get(id);
+      if (!item || item.sourceIndex !== entry.sourceIndex) {
+        removeAdvancedMarker(entry.marker);
+        resultMarkers.current.delete(id);
+      }
+    }
+    // Превью закрывается, только если его объект действительно исчез с карты.
+    setPreviewIndex((current) => {
+      if (current == null) return current;
+      const shown = properties[current];
+      return shown && next.has(shown.id) ? current : null;
+    });
+
+    visibleProperties.forEach(({ property, sourceIndex }, index) => {
+      const isTop = property.id === topId;
+      const existing = resultMarkers.current.get(property.id);
+      if (existing) {
+        const element = existing.marker.content as HTMLElement | null;
+        if (element) {
+          element.classList.toggle("pin--top", isTop);
+          element.dataset.top = String(isTop);
+        }
+        return;
+      }
+      const element = createPinElement(property, isTop, index);
       element.addEventListener("mouseenter", () => { setHovered(property.id); openPreview(sourceIndex); });
       element.addEventListener("mouseleave", () => { setHovered(null); scheduleClose(); });
       element.addEventListener("focus", () => { setHovered(property.id); openPreview(sourceIndex); });
@@ -276,22 +290,31 @@ export default function MapCanvas() {
           selectProperty(sourceIndex);
         }
       });
-      return new google.maps.marker.AdvancedMarkerElement({
-        map,
-        position: toLatLng(property.coordinates),
-        content: element,
-        title: property.address || property.name,
+      resultMarkers.current.set(property.id, {
+        sourceIndex,
+        marker: new google.maps.marker.AdvancedMarkerElement({
+          map,
+          position: toLatLng(property.coordinates),
+          content: element,
+          title: property.address || property.name,
+        }),
       });
     });
+  }, [map, ready, properties, visibleProperties, setHovered, openPreview, scheduleClose, selectProperty]);
 
+  // Снятие маркеров — отдельным эффектом на размонтирование карты, а не в
+  // cleanup эффекта выше: тот теперь переживает смену данных.
+  useEffect(() => {
+    if (!map || !ready) return;
+    const markers = resultMarkers.current;
     return () => {
-      resultMarkers.current.forEach(removeAdvancedMarker);
-      resultMarkers.current = [];
+      markers.forEach(({ marker }) => removeAdvancedMarker(marker));
+      markers.clear();
     };
-  }, [map, ready, visibleProperties, setHovered, openPreview, scheduleClose, selectProperty]);
+  }, [map, ready]);
 
   useEffect(() => {
-    resultMarkers.current.forEach((marker) => {
+    resultMarkers.current.forEach(({ marker }) => {
       const element = marker.content as HTMLElement | null;
       element?.classList.toggle("pin--active", element.dataset.pinId === hoveredId);
     });
@@ -302,7 +325,17 @@ export default function MapCanvas() {
     let timer: number | undefined;
     const publish = () => {
       const bounds = map.getBounds()?.toJSON();
-      if (bounds) setViewport(boundsLiteralToViewport(bounds));
+      if (!bounds) return;
+      const next = boundsLiteralToViewport(bounds);
+      const zoom = map.getZoom();
+      const { viewport: previous, zoom: previousZoom } = useSession.getState();
+      // Микросдвиг после idle не стоит полного цикла «перекачать объявления и
+      // все активные слои» — это мегабайты на каждое дрожание карты.
+      if (previousZoom === (zoom ?? null) && !viewportChangedEnough(previous, next)) {
+        setMapUpdating(false);
+        return;
+      }
+      setViewport(next, zoom ?? undefined);
     };
     const schedulePublish = () => {
       if (timer) window.clearTimeout(timer);
@@ -330,14 +363,27 @@ export default function MapCanvas() {
 
   useEffect(() => {
     if (!map || !ready) return;
-    clusterer.current?.clearMarkers();
-    listingMarkers.current.forEach(removeAdvancedMarker);
-    listingMarkers.current = [];
+    if (!clusterer.current) clusterer.current = new MarkerClusterer({ map, markers: [] });
+    const cluster = clusterer.current;
 
-    for (const feature of mapListings?.features ?? []) {
-      if (feature.geometry?.type !== "Point") continue;
-      const coordinates = feature.geometry.coordinates as [number, number];
-      if (!isValidLngLat(coordinates) || (viewport && !isInViewport(coordinates, viewport))) continue;
+    // Фильтрации по вьюпорту здесь больше нет: bbox уже применён на сервере, а
+    // клиентский фильтр только заставлял пересобирать все маркеры на панораму.
+    const next = keyById((mapListings?.features ?? []) as GeoJSON.Feature[]);
+    const { added, removed } = diffKeys(listingMarkers.current.keys(), next.keys());
+    if (!added.length && !removed.length) return;
+
+    const goneMarkers = removed
+      .map((id) => listingMarkers.current.get(id))
+      .filter((marker): marker is google.maps.marker.AdvancedMarkerElement => !!marker);
+    removed.forEach((id) => listingMarkers.current.delete(id));
+
+    const newMarkers: google.maps.marker.AdvancedMarkerElement[] = [];
+    for (const id of added) {
+      const feature = next.get(id);
+      const geometry = feature?.geometry;
+      if (!feature || geometry?.type !== "Point") continue;
+      const coordinates = geometry.coordinates as [number, number];
+      if (!isValidLngLat(coordinates)) continue;
       const properties = (feature.properties ?? {}) as Record<string, unknown>;
       const element = listingDot();
       const marker = new google.maps.marker.AdvancedMarkerElement({
@@ -361,49 +407,103 @@ export default function MapCanvas() {
           anchor: projected,
         });
       });
-      listingMarkers.current.push(marker);
+      listingMarkers.current.set(id, marker);
+      newMarkers.push(marker);
     }
 
-    clusterer.current = new MarkerClusterer({ map, markers: listingMarkers.current });
-    return () => {
-      clusterer.current?.clearMarkers();
-      clusterer.current = null;
-      listingMarkers.current.forEach(removeAdvancedMarker);
-      listingMarkers.current = [];
-    };
-  }, [map, ready, mapListings, viewport]);
+    // Кластеризатор переиспользуется: раньше на каждое движение карты
+    // создавался новый, а он пересчитывает всё дерево кластеров с нуля.
+    if (goneMarkers.length) cluster.removeMarkers(goneMarkers, true);
+    if (newMarkers.length) cluster.addMarkers(newMarkers, true);
+    cluster.render();
+  }, [map, ready, mapListings]);
 
   useEffect(() => {
     if (!map || !ready) return;
-    Object.values(geoLayers.current).forEach((layer) => layer?.setMap(null));
-    geoLayers.current = {};
+    const markers = listingMarkers.current;
+    return () => {
+      clusterer.current?.clearMarkers();
+      clusterer.current = null;
+      markers.forEach(removeAdvancedMarker);
+      markers.clear();
+    };
+  }, [map, ready]);
+
+  useEffect(() => {
+    if (!map || !ready) return;
 
     for (const id of RENDERED_LAYER_IDS) {
       const data = layerData[id];
-      if (!activeLayers[id] || !data?.features.length) continue;
-      const layer = new google.maps.Data({ map });
-      layer.addGeoJson({
-        ...data,
-        features: data.features.filter((feature) => pointFeatureInViewport(feature, viewport)),
-      } as GeoJSON.GeoJsonObject);
-      layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
-      geoLayers.current[id] = layer;
-    }
+      const entry = geoLayers.current.get(id);
 
-    const zoom = map.addListener("zoom_changed", () => {
-      for (const id of RENDERED_LAYER_IDS) {
-        const layer = geoLayers.current[id];
-        if (layer) {
-          layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
+      // Слой выключен или пуст — снимаем с карты, но инстанс не выбрасываем:
+      // повторное включение тогда не строит Data-слой заново.
+      if (!activeLayers[id] || !data?.features.length) {
+        if (entry) {
+          entry.features.forEach((feature) => entry.layer.remove(feature));
+          entry.features.clear();
+          entry.layer.setMap(null);
         }
+        continue;
+      }
+
+      const current = entry ?? (() => {
+        const layer = new google.maps.Data();
+        const created = { layer, features: new Map<string, google.maps.Data.Feature>(), styleKey: "" };
+        geoLayers.current.set(id, created);
+        return created;
+      })();
+      current.layer.setMap(map);
+
+      // Диф по ключу фичи: панорама внутри уже загруженной области не трогает
+      // ни одной фичи, вместо addGeoJson по тысячам точек на каждый шаг.
+      const next = keyed(data.features as GeoJSON.Feature[], featureKey);
+      const { added, removed } = diffKeys(current.features.keys(), next.keys());
+      for (const key of removed) {
+        const feature = current.features.get(key);
+        if (feature) current.layer.remove(feature);
+        current.features.delete(key);
+      }
+      if (added.length) {
+        const created = current.layer.addGeoJson({
+          type: "FeatureCollection",
+          features: added.map((key) => next.get(key)!),
+        } as GeoJSON.GeoJsonObject);
+        created.forEach((feature, index) => current.features.set(added[index], feature));
+      }
+
+      const styleKey = zoomStyleKey(id, map.getZoom() ?? 12);
+      if (current.styleKey !== styleKey) {
+        current.styleKey = styleKey;
+        current.layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
+      }
+    }
+  }, [map, ready, activeLayers, layerData]);
+
+  // Перестиль — только при переходе через границу зума, на которой стиль
+  // реально меняется: setStyle прогоняет стайлер по КАЖДОЙ фиче слоя.
+  useEffect(() => {
+    if (!map || !ready) return;
+    const listener = map.addListener("zoom_changed", () => {
+      const zoom = map.getZoom() ?? 12;
+      for (const [id, entry] of geoLayers.current) {
+        const styleKey = zoomStyleKey(id, zoom);
+        if (entry.styleKey === styleKey) continue;
+        entry.styleKey = styleKey;
+        entry.layer.setStyle((feature) => dataLayerStyle(id, feature, map.getZoom() ?? 12));
       }
     });
+    return () => listener.remove();
+  }, [map, ready]);
+
+  useEffect(() => {
+    if (!map || !ready) return;
+    const layers = geoLayers.current;
     return () => {
-      zoom.remove();
-      Object.values(geoLayers.current).forEach((layer) => layer?.setMap(null));
-      geoLayers.current = {};
+      layers.forEach((entry) => entry.layer.setMap(null));
+      layers.clear();
     };
-  }, [map, ready, activeLayers, layerData, viewport]);
+  }, [map, ready]);
 
   useEffect(() => {
     if (!map || !ready || !projection.current) return;
