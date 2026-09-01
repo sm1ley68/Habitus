@@ -10,11 +10,15 @@ import (
 
 type fakePOILister struct {
 	kinds []string
+	city  string
+	bbox  *[4]float64
 	pois  []domain.POI
 }
 
-func (f *fakePOILister) ListByKinds(_ context.Context, kinds []string) ([]domain.POI, error) {
+func (f *fakePOILister) ListByKinds(_ context.Context, kinds []string, city string,
+	bbox *[4]float64) ([]domain.POI, error) {
 	f.kinds = append([]string(nil), kinds...)
+	f.city, f.bbox = city, bbox
 	return f.pois, nil
 }
 
@@ -41,6 +45,26 @@ func TestGeoLayersReturnsMetro(t *testing.T) {
 	}
 	if _, exists := got["unknown"]; exists {
 		t.Fatal("unknown layer must be silently omitted")
+	}
+}
+
+// Точки POI обязаны скоупиться по городу и вьюпорту так же, как объявления и
+// urban_evidence. Пока в `poi` лежала только Москва, это было незаметно; с
+// наполнением второго города запрос по одному kind тащил питерские станции на
+// московскую карту.
+func TestGeoLayersScopesPOIToCityAndBBox(t *testing.T) {
+	repo := &fakePOILister{}
+	svc := NewGeoLayersService(repo, &fakeEvidenceLister{}, &fakeListingLister{}, nil)
+	box := [4]float64{37.3, 55.55, 37.9, 55.95}
+
+	if _, _, err := svc.Layers(context.Background(), "spb", []string{"metro", "schools"}, &box); err != nil {
+		t.Fatalf("Layers() error = %v", err)
+	}
+	if repo.city != "spb" {
+		t.Fatalf("ListByKinds() city = %q; want spb", repo.city)
+	}
+	if repo.bbox == nil || *repo.bbox != box {
+		t.Fatalf("ListByKinds() bbox = %v; want %v", repo.bbox, box)
 	}
 }
 

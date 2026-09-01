@@ -35,7 +35,8 @@ const (
 )
 
 type poiLister interface {
-	ListByKinds(ctx context.Context, kinds []string) ([]domain.POI, error)
+	ListByKinds(ctx context.Context, kinds []string, city string,
+		bbox *[4]float64) ([]domain.POI, error)
 }
 
 type evidenceLister interface {
@@ -109,9 +110,10 @@ func (s *GeoLayersService) Listings(ctx context.Context, city string,
 }
 
 // Layers returns a FeatureCollection per requested (and recognized) layer
-// name, плюс карту усечённых слоёв. Слои из urban_evidence скоупятся по городу
-// и вьюпорту; POI-слои пока московские (в poi city появился, но выборка идёт по
-// kind — сужение по городу отдельной задачей).
+// name, плюс карту усечённых слоёв. Слои из urban_evidence и POI скоупятся по
+// городу и вьюпорту. Разница между ними — в поведении без вьюпорта: evidence
+// без bbox отдаёт пустой слой (сырой шум — 46 335 линий), POI без bbox —
+// весь город (тысячи точек, посильно для первого кадра карты).
 func (s *GeoLayersService) Layers(ctx context.Context, city string, requested []string,
 	bbox *[4]float64) (map[string]geojson.FeatureCollection, map[string]bool, error) {
 	out := make(map[string]geojson.FeatureCollection)
@@ -172,7 +174,7 @@ func (s *GeoLayersService) Layers(ctx context.Context, city string, requested []
 		return out, truncated, nil
 	}
 
-	pois, err := s.pois.ListByKinds(ctx, kindsToFetch)
+	pois, err := s.pois.ListByKinds(ctx, kindsToFetch, city, bbox)
 	if err != nil {
 		return nil, nil, err
 	}
