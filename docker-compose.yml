@@ -49,9 +49,9 @@ services:
       # их можно было только правкой кода. Числа обязаны быть непустыми: пустую
       # строку pydantic не приведёт к int и уронит сервис на старте. Значения
       # дублируют дефолты habitus/config.py — источник правды там.
-      RERANK_POOL_N: "${RERANK_POOL_N:-40}"
-      RERANK_POOL_N_CPU: "${RERANK_POOL_N_CPU:-25}"
-      RERANK_MAX_LENGTH: "${RERANK_MAX_LENGTH:-256}"
+      RERANK_POOL_N: "${RERANK_POOL_N:-30}"
+      RERANK_POOL_N_CPU: "${RERANK_POOL_N_CPU:-30}"
+      RERANK_MAX_LENGTH: "${RERANK_MAX_LENGTH:-128}"
     volumes:
       - habitus_hf:/root/.cache/huggingface
     depends_on:
