@@ -467,6 +467,17 @@ def _view_climate_sources(conn, lon: float, lat: float, city: str) -> list[Block
     ]
 
 
+def _family_sources(conn, *, has_metro: bool) -> list[BlockSource]:
+    sources = [BlockSource(key="road_graph", label="Дорожный граф",
+                           kind="computation", basis="маршрут по дорожному графу")]
+    if has_metro:
+        sources.append(BlockSource(
+            key="metro_graph", label="Граф метро/МЦК/МЦД", kind="computation",
+            basis="перегоны, пересадки и интервалы",
+            observed_at=_table_updated_at(conn, "metro_station")))
+    return sources
+
+
 def _fact_num(facts: dict, key: str) -> float | None:
     value = facts.get(key)
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
@@ -569,20 +580,14 @@ def build_dossier(req: DossierRequest, conn, *,
         blocks = [b for b in blocks if b.key != "logistics"]
         legs_all = [leg for m in family.members for leg in m.legs]
         has_metro = any(leg.mode == "metro" for leg in legs_all)
-        has_road = any(leg.mode != "metro" for leg in legs_all)
-        # R66 (фикс-раунд 1, п.4): "дорожный граф" — неверно для метро-ног,
-        # они построены по графу рельсового транспорта (Задача 9), не ORS.
-        if has_metro and has_road:
-            verdict_line = "Маршруты построены по дорожному графу и графу метро/МЦК/МЦД."
-        elif has_metro:
-            verdict_line = "Маршруты построены по графу метро/МЦК/МЦД."
-        else:
-            verdict_line = "Маршруты построены по дорожному графу."
         blocks.insert(0, LifestyleBlock(
             key="family_routing", tier="hero", title="Суточный ритм семьи",
-            icon="route", score="A" if all(leg.safety == "safe" for m in family.members for leg in m.legs) else "B",
-            verdict_line=verdict_line,
-            description="Показаны только явно названные поездки и подтверждённые маршруты.", data=family))
+            icon="route",
+            score="A" if all(leg.safety == "safe" for m in family.members for leg in m.legs) else "B",
+            verdict_line="Маршруты построены по подтверждённым данным.",
+            description="Показаны только явно названные поездки и подтверждённые маршруты.",
+            data=family,
+            sources=_family_sources(conn, has_metro=has_metro)))
         sources.add("route")
         routed = {(m.label, leg.to_label) for m in family.members for leg in m.legs}
         for item in brief:

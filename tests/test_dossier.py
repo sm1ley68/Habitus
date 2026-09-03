@@ -8,7 +8,7 @@ from habitus.online.dossier import (ListingEvidence, ROUTE_PROFILE,
                                     _climate_data, _family_data,
                                     _solar_samples, build_dossier,
                                     _evidence_observed_at, _table_updated_at,
-                                    _secondary_blocks)
+                                    _secondary_blocks, _family_sources)
 from habitus.online.schema import (DossierRequest, HouseholdLegIntent,
                                    HouseholdMemberIntent, ParsedQuery)
 
@@ -238,9 +238,9 @@ def test_family_data_geocodes_against_the_requests_own_city_r62():
 
 
 def test_family_routing_verdict_line_is_accurate_for_metro_legs(monkeypatch, dossier_conn):
-    # R66 (фикс-раунд 1, п.4): "Маршруты построены по дорожному графу" — было
-    # неверно для метро-ноги, она построена по графу рельсового транспорта
-    # (Задача 9), а не ORS.
+    # R66 (фикс-раунд 1, п.4): метро-нога построена по графу рельсового
+    # транспорта (Задача 9), а не ORS. Информация о происхождении теперь
+    # в sources, а не в прозе.
     from habitus.online import dossier as mod
     from habitus.online.schema import MetroRide
 
@@ -256,8 +256,8 @@ def test_family_routing_verdict_line_is_accurate_for_metro_legs(monkeypatch, dos
                 to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
     payload = build_dossier(req, dossier_conn, geocoder=lambda q: (37.62, 55.76))
     block = next(b for b in payload.blocks if b.key == "family_routing")
-    assert "дорожному графу" not in block.verdict_line
-    assert "метро" in block.verdict_line.lower()
+    source_keys = {s.key for s in block.sources}
+    assert "metro_graph" in source_keys
 
 
 # --- сквозное ревью ветки: R93 ----------------------------------------------
@@ -414,3 +414,19 @@ def test_view_block_separates_computed_light_from_modelled_noise():
     assert sources["solar"] == "computation"
     assert sources["noise"] == "proxy"
     assert sources["cloudiness"] == "observation"
+
+
+# --- Task 5: Источники блока семейного маршрута -----
+
+def test_family_block_declares_graph_computation_without_date():
+    """Маршрут считается на месте — датировать его нечем, и выдумывать
+    дату нельзя."""
+    sources = {s.key: s for s in _family_sources(None, has_metro=False)}
+    assert sources["road_graph"].kind == "computation"
+    assert sources["road_graph"].observed_at is None
+    assert "metro_graph" not in sources
+
+
+def test_family_block_adds_metro_source_only_when_metro_used():
+    keys = {s.key for s in _family_sources(None, has_metro=True)}
+    assert keys == {"road_graph", "metro_graph"}
