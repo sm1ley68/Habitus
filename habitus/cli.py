@@ -280,6 +280,10 @@ def main():
     sub.add_parser("import-osm-features")
     windows = sub.add_parser("extract-windows")
     windows.add_argument("--limit", type=int, default=None)
+    # Возобновление пакета: external_id, на котором прошлый чанк остановился
+    # (печатается как last_id). Без него повторный прогон перебирает тот же
+    # префикс, про который уже известно, что стороны света в нём нет.
+    windows.add_argument("--after", default=None)
     metro = sub.add_parser("metro")
     metro.add_argument("--city", choices=["msk", "spb"], default="msk")
     metro.add_argument("--no-ors", action="store_true",
@@ -380,7 +384,8 @@ def main():
         elif args.cmd == "extract-windows":
             from habitus.clean.windows import extract_windows
             from habitus.online.llm import OpenRouterLLM
-            print(extract_windows(conn, OpenRouterLLM(), limit=args.limit))
+            print(extract_windows(conn, OpenRouterLLM(), limit=args.limit,
+                                  after=args.after))
 
 
 if __name__ == "__main__":

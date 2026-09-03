@@ -64,7 +64,7 @@ def test_extract_windows_gates_hallucinated_dirs(conn_gate):
     # LLM вернул E,W для текста без якорей → строка остаётся NULL
     fake = FakeLLM([_tool_resp({"window_orientation": ["E", "W"]})])
     stats = extract_windows(conn_gate, fake)
-    assert stats == {"checked": 1, "extracted": 0}
+    assert stats == {"checked": 1, "extracted": 0, "last_id": "G1"}
     with conn_gate.cursor() as cur:
         cur.execute("SELECT window_orientation FROM listings "
                     "WHERE external_id='G1';")
@@ -124,7 +124,7 @@ def test_extract_windows_updates_only_mentions(conn):
     fake = FakeLLM([_tool_resp({"window_orientation": ["S", "W"]}),
                     _tool_resp({"window_orientation": ["E"]})])
     stats = extract_windows(conn, fake)
-    assert stats == {"checked": 2, "extracted": 2}
+    assert stats == {"checked": 2, "extracted": 2, "last_id": "W3"}
     with conn.cursor() as cur:
         cur.execute("SELECT external_id, window_orientation FROM listings "
                     "ORDER BY external_id;")
@@ -138,7 +138,7 @@ def test_extract_windows_skips_failed_parse(conn):
     fake = FakeLLM([LLMResponse(content="мусор", tool_arguments=None)] * 3 +
                    [_tool_resp({"window_orientation": ["E"]})])
     stats = extract_windows(conn, fake)
-    assert stats == {"checked": 2, "extracted": 1}
+    assert stats == {"checked": 2, "extracted": 1, "last_id": "W3"}
 
 
 def test_extract_windows_idempotent(conn):
@@ -147,4 +147,44 @@ def test_extract_windows_idempotent(conn):
     extract_windows(conn, fake)
     # повторный прогон: заполненные строки не перепроверяются
     stats2 = extract_windows(conn, FakeLLM([]))
-    assert stats2 == {"checked": 0, "extracted": 0}
+    assert stats2 == {"checked": 0, "extracted": 0, "last_id": None}
+
+
+# --- возобновление пакета ---------------------------------------------------
+# Пакет по 3000+ строк не переживает обрыв, если каждый повторный прогон
+# начинается с начала: начало — это как раз строки, про которые уже известно,
+# что стороны света в них нет (они остались с NULL и снова попадают в выборку).
+# Прогон с --limit из-за этого перепроверял один и тот же непродуктивный
+# префикс и не двигался вовсе.
+
+def test_extract_windows_resumes_after_given_id(conn):
+    fake = FakeLLM([_tool_resp({"window_orientation": ["E"]})])
+    stats = extract_windows(conn, fake, after="W1")
+    # W1 пропущен, обработан только W3 (W2 отсекает префильтр по упоминаниям)
+    assert stats == {"checked": 1, "extracted": 1, "last_id": "W3"}
+    with conn.cursor() as cur:
+        cur.execute("SELECT window_orientation FROM listings WHERE external_id='W1';")
+        assert cur.fetchone()[0] is None
+
+
+def test_last_id_lets_the_next_chunk_move_forward(conn):
+    """Ключевое свойство: два чанка по одной строке проходят РАЗНЫЕ строки.
+    До появления last_id/after второй чанк повторял первый."""
+    first = extract_windows(conn, FakeLLM([_tool_resp({"window_orientation": []})]),
+                            limit=1)
+    assert first["last_id"] == "W1"
+    second = extract_windows(conn, FakeLLM([_tool_resp({"window_orientation": ["E"]})]),
+                             limit=1, after=first["last_id"])
+    assert second["last_id"] == "W3"
+    assert second["checked"] == 1
+
+
+def test_limit_without_after_repeats_the_same_unproductive_prefix(conn):
+    """Так это выглядело как баг: строка, не давшая результата, остаётся с NULL
+    и снова возглавляет выборку. Тест фиксирует, что лечится это именно
+    параметром after, а не изменением выборки."""
+    first = extract_windows(conn, FakeLLM([_tool_resp({"window_orientation": []})]),
+                            limit=1)
+    again = extract_windows(conn, FakeLLM([_tool_resp({"window_orientation": []})]),
+                            limit=1)
+    assert first["last_id"] == again["last_id"] == "W1"

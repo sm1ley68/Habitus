@@ -98,22 +98,41 @@ def parse_windows(text: str, llm: LLMClient, max_retries: int = 3) -> list[str]:
 
 
 def extract_windows(conn: psycopg.Connection, llm: LLMClient,
-                    limit: int | None = None) -> dict:
+                    limit: int | None = None, after: str | None = None) -> dict:
     """Батч по listings: строки с прозой про окна и пустой window_orientation.
+
     Успешная экстракция пишет колонку; пустой результат и провал парса
-    оставляют NULL (перепроверятся при следующем прогоне). Коммит на строку —
-    длинный LLM-батч не должен терять сделанное при обрыве."""
+    оставляют NULL. Коммит на строку — длинный LLM-батч не должен терять
+    сделанное при обрыве.
+
+    `after` — возобновление с места обрыва: обрабатываются только строки с
+    external_id строго больше указанного. Без него ЛЮБОЙ повторный прогон (в
+    том числе с --limit) начинается с начала того же порядка по external_id, а
+    начало — это как раз строки, про которые уже известно, что стороны света в
+    них нет: они остались с NULL и снова попадают в выборку. На полном проходе
+    это просто лишняя работа, а на прогоне с лимитом — тупик: чанк за чанком
+    перепроверяется один и тот же непродуктивный префикс, и пакет не движется.
+    Возвращаемый `last_id` — то, что нужно передать в `after` следующим чанком.
+    """
+    params: list = [MENTION_REGEX]
+    sql = ("SELECT external_id, description FROM listings "
+           "WHERE is_active AND description ~* %s "
+           "AND (window_orientation IS NULL OR window_orientation = '{}') ")
+    if after:
+        sql += "AND external_id > %s "
+        params.append(after)
+    sql += "ORDER BY external_id"
+    if limit:
+        sql += " LIMIT %s"
+        params.append(limit)
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT external_id, description FROM listings "
-            "WHERE is_active AND description ~* %s "
-            "AND (window_orientation IS NULL OR window_orientation = '{}') "
-            "ORDER BY external_id" + (" LIMIT %s" if limit else ""),
-            [MENTION_REGEX] + ([limit] if limit else []))
+        cur.execute(sql, params)
         rows = cur.fetchall()
     checked = extracted = 0
+    last_id: str | None = None
     for eid, desc in rows:
         checked += 1
+        last_id = eid
         try:
             dirs = parse_windows(desc, llm)
         except WindowParseError:
@@ -128,4 +147,4 @@ def extract_windows(conn: psycopg.Connection, llm: LLMClient,
                         (dirs, eid))
         conn.commit()
         extracted += 1
-    return {"checked": checked, "extracted": extracted}
+    return {"checked": checked, "extracted": extracted, "last_id": last_id}
