@@ -264,3 +264,25 @@ func TestNonMetroLegHasNoMetroField(t *testing.T) {
 		t.Fatalf("пустое поле не должно уезжать наружу: %s", back)
 	}
 }
+
+func TestDecodeDossierKeepsSourcesOnBlockWithoutData(t *testing.T) {
+	// data:null — обычное состояние вторичного блока. У Block.UnmarshalJSON
+	// на нём стоит ранний return, и присваивание Sources после него молча
+	// теряло бы источники именно там, где они особенно нужны.
+	var raw map[string]any
+	_ = json.Unmarshal([]byte(`{
+		"verdict":{"headline":"ok","confidence":0.5,"layers_checked":1},
+		"brief":[],"compromises":[],"relaxation":[],"zone_rationale":"",
+		"blocks":[{"key":"view_and_climate","title":"Вид и климат","score":"B",
+		"description":"","data":null,"sources":[
+		{"key":"noise","label":"Шум","kind":"proxy","basis":"модель по типам дорог",
+		"observed_at":"2026-04-10"}]}]}`), &raw)
+	dossier, ok := decodeDossier(raw)
+	if !ok || len(dossier.Blocks) != 1 {
+		t.Fatalf("decodeDossier() = %#v, %v", dossier, ok)
+	}
+	sources := dossier.Blocks[0].Sources
+	if len(sources) != 1 || sources[0].Kind != "proxy" || sources[0].ObservedAt != "2026-04-10" {
+		t.Fatalf("sources = %#v", sources)
+	}
+}

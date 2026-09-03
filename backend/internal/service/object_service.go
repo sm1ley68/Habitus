@@ -91,6 +91,17 @@ var ValidHeroKeys = map[string]bool{
 	"family_routing": true, "social_environment": true, "view_and_climate": true,
 }
 
+// BlockSource — происхождение одной величины блока. Kind: observation |
+// computation | proxy. ObservedAt пустой означает «дата неприменима»:
+// величина считается на месте.
+type BlockSource struct {
+	Key        string `json:"key"`
+	Label      string `json:"label"`
+	Kind       string `json:"kind"`
+	Basis      string `json:"basis"`
+	ObservedAt string `json:"observed_at,omitempty"`
+}
+
 type Block struct {
 	Key         string         `json:"key"`
 	Tier        BlockTier      `json:"tier,omitempty"`
@@ -101,6 +112,7 @@ type Block struct {
 	Description string         `json:"description"`
 	Metrics     map[string]any `json:"metrics,omitempty"`
 	Data        any            `json:"data,omitempty"`
+	Sources     []BlockSource  `json:"sources,omitempty"`
 }
 
 func (b *Block) UnmarshalJSON(data []byte) error {
@@ -114,6 +126,7 @@ func (b *Block) UnmarshalJSON(data []byte) error {
 		Description string          `json:"description"`
 		Metrics     map[string]any  `json:"metrics"`
 		Data        json.RawMessage `json:"data"`
+		Sources     []BlockSource   `json:"sources"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -122,6 +135,7 @@ func (b *Block) UnmarshalJSON(data []byte) error {
 	b.Icon, b.Score = LifestyleIcon(raw.Icon), Grade(raw.Score)
 	b.VerdictLine, b.Description = raw.VerdictLine, raw.Description
 	b.Metrics = raw.Metrics
+	b.Sources = raw.Sources
 	if len(raw.Data) == 0 || string(raw.Data) == "null" {
 		b.Data = nil
 		return nil
