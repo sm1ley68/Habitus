@@ -464,6 +464,13 @@ def _view_climate_sources(conn, lon: float, lat: float, city: str) -> list[Block
                     observed_at=_evidence_observed_at(conn, "noise", lon, lat, city)),
         BlockSource(key="cloudiness", label="Облачность", kind="observation",
                     basis="климатология NASA POWER"),
+        # Блок не собирается без стороны света (_climate_data возвращает None),
+        # и вся инсоляция считается от неё — значит информант обязан быть назван
+        # и здесь, а не только во вторичном блоке. Даты у наблюдения нет:
+        # объявление не датирует момент замера.
+        BlockSource(key="window_orientation", label="Сторона света",
+                    kind="observation",
+                    basis="указана продавцом в описании объявления"),
     ]
 
 

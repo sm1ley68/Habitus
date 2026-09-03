@@ -416,6 +416,19 @@ def test_view_block_separates_computed_light_from_modelled_noise():
     assert sources["cloudiness"] == "observation"
 
 
+def test_view_block_names_the_seller_as_informant_of_orientation():
+    """Hero-блок существует только при известной стороне света, и вся инсоляция
+    считается от неё. Наблюдение сделал продавец, а не продукт, — значит
+    информант должен быть назван здесь, а не только во вторичном блоке.
+    Даты у такого наблюдения нет: объявление не датирует замер."""
+    from habitus.online.dossier import _view_climate_sources
+    sources = {s.key: s for s in _view_climate_sources(None, 37.6, 55.7, "msk")}
+    orientation = sources["window_orientation"]
+    assert orientation.kind == "observation"
+    assert "продавцом" in orientation.basis
+    assert orientation.observed_at is None
+
+
 # --- Task 5: Источники блока семейного маршрута -----
 
 def test_family_block_declares_graph_computation_without_date():
