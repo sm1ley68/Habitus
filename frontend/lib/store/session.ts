@@ -7,6 +7,7 @@ import { nextStage } from "@/lib/agent/stageMachine";
 import type { AgentClient, RunResult } from "@/lib/agent/AgentClient";
 import { fetchLayers, fetchListings, type LayerCollections } from "@/lib/api/geo";
 import { fetchMoreResults } from "@/lib/api/results";
+import { listMessages, type Chat } from "@/lib/api/chats";
 import type { StreamFailure } from "@/lib/api/streamError";
 import { CITY_CENTER } from "@/lib/map/constants";
 import { expandViewport, type Viewport } from "@/lib/map/viewport";
@@ -71,6 +72,9 @@ interface SessionState {
   startQuery: (client: AgentClient, query: string) => void;
   refineQuery: (client: AgentClient, query: string) => void;
   hydrateAllResults: (chatId: string) => Promise<void>;
+  restoreChat: (chat: Chat) => Promise<void>;
+  /** Идёт ли восстановление чата из истории. */
+  restoring: boolean;
   applyEvent: (e: AgentEvent) => void;
   finish: (result: RunResult) => void;
   finishRefinement: (result: RunResult) => void;
@@ -114,6 +118,7 @@ const initial = {
   totalResults: 0,
   hasMore: false,
   loadingMore: false,
+  restoring: false,
   diagnostics: [] as ConstraintDiagnostic[],
   errorMessage: null as string | null,
   errorCode: null as string | null,
@@ -251,6 +256,54 @@ export const useSession = create<SessionState>((set, get) => ({
       }
     } finally {
       if (requestId === resultsRequestId) resultsController = null;
+    }
+  },
+
+  // Клик по чату в истории. Восстанавливаем то, что бэк действительно
+  // хранит: реплики диалога (GET /chats/{id}/messages) и сохранённый пул
+  // последнего поиска (GET /chats/{id}/results). Полигон зоны, area_label и
+  // диагностику пустой выдачи не восстанавливаем — они не сохраняются, и
+  // подставить сюда прошлые значения значило бы выдать их за текущие.
+  //
+  // chatId выставляется тем же движением, поэтому следующая реплика уходит
+  // в ЭТОТ чат и шлюз подмешает разбор предыдущего шага: восстановленный
+  // диалог можно продолжать, а не только смотреть.
+  restoreChat: async (chat) => {
+    get()._cancel?.();
+    cancelViewportRequest();
+    cancelResultsRequest();
+    set({
+      ...initial,
+      city: chat.city,
+      chatId: chat.chat_id,
+      screen: "result",
+      stage: "done",
+      restoring: true,
+      historyOpen: false,
+    });
+    try {
+      const [messages, page] = await Promise.all([
+        listMessages(chat.chat_id),
+        fetchMoreResults(chat.chat_id, 0, 50),
+      ]);
+      // Пока грузили, пользователь мог уйти в другой чат — не затираем его.
+      if (get().chatId !== chat.chat_id) return;
+      set({
+        searchMessages: messages.map((m) => ({
+          id: m.message_id, role: m.role, text: m.text,
+        })),
+        properties: page.objects,
+        totalResults: page.total,
+        hasMore: page.objects.length < page.total,
+        restoring: false,
+      });
+    } catch {
+      if (get().chatId !== chat.chat_id) return;
+      set({
+        restoring: false,
+        stage: "error",
+        errorMessage: "Не удалось открыть сохранённый поиск",
+      });
     }
   },
 

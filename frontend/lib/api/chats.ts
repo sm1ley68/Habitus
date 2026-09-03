@@ -23,3 +23,25 @@ export async function listChats(limit = 20, offset = 0): Promise<Chat[]> {
   const body = await res.json();
   return (body.chats ?? []) as Chat[];
 }
+
+export interface ChatMessage {
+  message_id: string;
+  role: "user" | "assistant";
+  text: string;
+  created_at: string;
+  meta?: { suggested_object_ids?: string[] } | null;
+}
+
+/** Реплики сохранённого диалога, старые сверху. Нужны, чтобы клик по чату в
+ *  истории возвращал разговор, а не только его последнюю выдачу. */
+export async function listMessages(
+  chatId: string, limit = 50, offset = 0, signal?: AbortSignal,
+): Promise<ChatMessage[]> {
+  const res = await fetch(
+    `${API_BASE}/chats/${chatId}/messages?limit=${limit}&offset=${offset}`,
+    { credentials: "include", signal },
+  );
+  if (!res.ok) throw new Error(`listMessages failed: ${res.status}`);
+  const body = await res.json();
+  return (body.messages ?? []) as ChatMessage[];
+}

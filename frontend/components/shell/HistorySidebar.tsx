@@ -23,6 +23,7 @@ function when(iso: string): string {
 export default function HistorySidebar() {
   const open = useSession((s) => s.historyOpen);
   const chatId = useSession((s) => s.chatId);
+  const restore = useSession((s) => s.restoreChat);
   const [chats, setChats] = useState<Chat[] | null>(null);
 
   // Перечитываем при каждом открытии и после нового поиска — шлюз переименовывает
@@ -52,7 +53,14 @@ export default function HistorySidebar() {
               <p className="px-3 py-2 text-xs text-zinc-400">Здесь появятся ваши запросы</p>
             )}
             {chats?.map((c) => (
-              <button key={c.chat_id} className="text-left rounded-lg px-3 py-2 hover:bg-zinc-100">
+              <button
+                key={c.chat_id}
+                onClick={() => void restore(c)}
+                aria-current={c.chat_id === chatId ? "true" : undefined}
+                className={`text-left rounded-lg px-3 py-2 cursor-pointer transition-colors hover:bg-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                  c.chat_id === chatId ? "bg-zinc-100" : ""
+                }`}
+              >
                 <p className="text-sm text-[#1c1d20] line-clamp-1">{c.title}</p>
                 <p className="text-xs text-zinc-400">{when(c.created_at)}</p>
               </button>
