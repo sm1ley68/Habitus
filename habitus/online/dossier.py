@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 from habitus.clean.geocode import geocode_address
 from habitus.geo.metro_access import ORSWalker, straight_walk_seconds
 from habitus.online.geo import DirectionsProvider
+from habitus.online.household import geocode_leg
 from habitus.online.metro_route import door_to_door
 from habitus.online.schema import (
     BlockSource, BriefItem, CompromiseNote, DirectLight, DossierPayload, DossierRequest,
@@ -41,16 +42,6 @@ ROUTE_PROFILE = {
     "metro": "metro",
 }
 SEASON_DAY = {"winter": 355, "spring": 79, "summer": 172, "autumn": 266}
-MSK_BOUNDS = (37.30, 55.48, 37.95, 55.95)
-# R62 (фикс-раунд 1): суффикс/маркер города для геокода зависел от жёстко
-# зашитой "Москва" вне зависимости от req.city — SPb-запрос геокодировал
-# "офис, Москва" и получал московский адрес за 630 км от дома, а метро-ветка
-# (сознательно не гейтится bbox Москвы — см. _family_data) превращала это в
-# правдоподобно выглядящий MetroRide с многочасовым пешим плечом.
-GEOCODE_CITY_NAME = {"msk": "Москва", "spb": "Санкт-Петербург"}
-#  Метки, по которым считаем, что город уже назван в самом to_label — тогда
-# суффикс не добавляется (иначе "Москва Сити, Москва" и т.п.).
-GEOCODE_CITY_HINTS = {"msk": ("моск",), "spb": ("петербург", "спб", "питер")}
 
 
 class DossierNotFound(LookupError):
@@ -97,12 +88,6 @@ class NASACloudinessProvider:
 
 
 DEFAULT_CLIMATE_PROVIDER = NASACloudinessProvider()
-
-
-def _inside_moscow(point: tuple[float, float]) -> bool:
-    lon, lat = point
-    west, south, east, north = MSK_BOUNDS
-    return west <= lon <= east and south <= lat <= north
 
 
 def _fetch_listing(conn, object_id: str) -> ListingEvidence:
@@ -223,18 +208,11 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
             # остаются пустыми.
             if profile is None:
                 continue
-            city_name = GEOCODE_CITY_NAME.get(req.city, "Москва")
-            hints = GEOCODE_CITY_HINTS.get(req.city, ("моск",))
-            label_lower = intent.to_label.lower()
-            target = geocoder(intent.to_label if any(h in label_lower for h in hints)
-                              else f"{intent.to_label}, {city_name}")
+            # Правило «метка → точка» одно на весь продукт и живёт в
+            # habitus/online/household.py: им же ранжируется выдача, и два
+            # разных ответа об одном адресе здесь недопустимы.
+            target = geocode_leg(intent, req.city, geocoder)
             if target is None:
-                continue
-            # Гейт по границам Москвы применяется только к немаршрутным по
-            # метро ногам. Для метро границей служит сам граф — он у Москвы
-            # шире города (МЦД уходят в область), а Петербург вообще вне
-            # MSK_BOUNDS по определению.
-            if intent.mode != "metro" and req.city == "msk" and not _inside_moscow(target):
                 continue
             if intent.mode == "metro":
                 got = door_to_door(conn, req.city, start, target, walker=walker)

@@ -7,6 +7,7 @@ from habitus.online.cache import embed_cache, explain_cache, parse_cache
 from habitus.online.explain import cache_key as explain_cache_key
 from habitus.online.explain import explain as build_explanation
 from habitus.online.geo import IsochroneProvider
+from habitus.online.household import household_points
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, merge_parsed, parse_turn
 from habitus.online.orchestrator import retrieve_with_relaxation
@@ -79,6 +80,33 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
             log.warning("подсчёт покрытия ориентации окон не удался: %s",
                        exc, exc_info=True)
 
+    # 1.7 точки домохозяйства → сигнал ранжирования. Раньше pq.household
+    #     доезжал только до досье: состав семьи объяснял уже выбранный объект,
+    #     но никак не влиял на то, какие объекты вообще попадут в выдачу.
+    #     Геокод сетевой и лимитирован 1 req/s, поэтому зовём его один раз на
+    #     поиск и только когда семья в запросе действительно названа. Отказ
+    #     геокодера — не ошибка поиска: сигнала просто не будет.
+    household: list[tuple[float, float]] = []
+    if pq.household:
+        try:
+            with trace.span("household"):
+                household = household_points(pq, city)
+        except Exception as exc:
+            log.warning("резолв точек домохозяйства не удался: %s",
+                        exc, exc_info=True)
+        named = sum(len(m.legs) for m in pq.household)
+        if household:
+            notes.append(
+                f"учли {len(household)} из {named} названных мест семьи как "
+                f"предпочтение по расположению — это близость по прямой, "
+                f"время в пути считается в досье объекта")
+        elif named:
+            # Молчать нельзя: пользователь назвал места и вправе знать, что на
+            # выдачу они не повлияли.
+            notes.append(
+                f"места семьи ({named}) не удалось найти на карте — на порядок "
+                f"выдачи они не повлияли")
+
     # 2. кодирование запроса (кэш; отказ → filter-only retrieval)
     query_vec = None
     search_pq = pq
@@ -141,7 +169,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     # rerank_top_n, а top_n запроса или settings.result_max_n (settings.rerank_top_n
     # остаётся размером страницы для explain, но перестаёт быть потолком выдачи).
     top = proximity_rerank(
-        pq, ranked,
+        pq, ranked, household=household,
         top_n=top_n if top_n is not None else settings.result_max_n)
 
     results = [to_result_item(c) for c in top]

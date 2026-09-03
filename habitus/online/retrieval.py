@@ -29,6 +29,13 @@ class Candidate:
     facts: dict
     score: float
     updated_at: datetime
+    # Координаты объекта — отдельными полями, а НЕ в facts: facts целиком
+    # уезжают в ResultItem.address_facts и оттуда в промпт объяснения, где
+    # сырые градусы ничего не объясняют и только жрут контекст. Нужны
+    # ранжированию по точкам домохозяйства (rerank._household_norm).
+    # None — у объявления нет geom; такой кандидат в сигнале не участвует.
+    lon: float | None = None
+    lat: float | None = None
 
 
 def rrf_merge(rankings: Sequence[Sequence[str]], k: int = 60) -> list[tuple[str, float]]:
@@ -147,7 +154,8 @@ def _fetch_candidates(conn: psycopg.Connection, ext_ids: list[str],
     cols = ", ".join(("external_id", "doc_text", "price", "area", "rooms",
                       "updated_at") + FACT_COLUMNS)
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(f"SELECT {cols} FROM listings WHERE external_id = ANY(%s);",
+        cur.execute(f"SELECT {cols}, ST_X(geom) AS lon, ST_Y(geom) AS lat "
+                    f"FROM listings WHERE external_id = ANY(%s);",
                     (ext_ids,))
         rows = {r["external_id"]: r for r in cur.fetchall()}
     out = []
@@ -159,7 +167,8 @@ def _fetch_candidates(conn: psycopg.Connection, ext_ids: list[str],
             external_id=eid, doc_text=r["doc_text"] or "", price=r["price"],
             area=r["area"], rooms=r["rooms"],
             facts={c: r[c] for c in FACT_COLUMNS},
-            score=scores.get(eid, 0.0), updated_at=r["updated_at"]))
+            score=scores.get(eid, 0.0), updated_at=r["updated_at"],
+            lon=r["lon"], lat=r["lat"]))
     return out
 
 

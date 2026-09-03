@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from habitus.config import settings
 from habitus.embed.encode import RERANK_LOCK
+from habitus.online.household import total_metres
 from habitus.online.retrieval import Candidate
 from habitus.online.schema import ParsedQuery
 
@@ -115,6 +116,33 @@ def _orientation_bonus(pq: ParsedQuery, candidates: list[Candidate]) -> list[flo
             else 0.0 for c in candidates]
 
 
+def _household_norm(points: list[tuple[float, float]],
+                    candidates: list[Candidate]) -> list[float]:
+    """Нормированная близость объекта к точкам, которые назвала семья.
+
+    1.0 — суммарно ближе всех к работе/школе/секции, 0.0 — дальше всех.
+    Считается по прямой: это сигнал ранжирования, а не публикуемый факт, и
+    показывать его как «время в пути» нельзя — маршрут строит досье.
+
+    Кандидат без geom в сигнале не участвует и получает 0.0. Это не штраф за
+    «далеко», а отсутствие данных, и разницу видно по тому, что такой объект
+    не может подняться этим сигналом — но и не опускается ниже других
+    безкоординатных.
+    """
+    if not points or not candidates:
+        return [0.0] * len(candidates)
+    raws: list[float | None] = [
+        None if c.lon is None or c.lat is None
+        else total_metres((c.lon, c.lat), points) for c in candidates]
+    known = [r for r in raws if r is not None]
+    if not known:
+        return [0.0] * len(candidates)
+    lo, hi = min(known), max(known)
+    span = hi - lo
+    return [0.0 if r is None else (1.0 if span == 0 else 1.0 - (r - lo) / span)
+            for r in raws]
+
+
 def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
                    pool_n: int | None = None) -> list[Candidate]:
     """Сузить кандидатов до пула, который увидит кросс-энкодер (settings.rerank_pool_n).
@@ -164,7 +192,8 @@ def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
 
 def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,
                      weight: float | None = None,
-                     top_n: int | None = None) -> list[Candidate]:
+                     top_n: int | None = None,
+                     household: list[tuple[float, float]] | None = None) -> list[Candidate]:
     """Блендинг структурного сигнала точной близости с семантическим score.
 
     Cross-encoder-реранкер слеп к точным минутам (в doc_text они — крошечный хвост
@@ -185,16 +214,24 @@ def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,
     n = top_n or settings.rerank_top_n
     w = settings.proximity_weight if weight is None else weight
     orient_bonus = _orientation_bonus(pq, candidates)
+    # Точки домохозяйства — такой же аддитивный сигнал поверх бленда, как
+    # ориентация окон: они двигают порядок, но не подменяют семантику запроса
+    # и ничего не отфильтровывают. Пустой список (семьи нет в запросе или ни
+    # одну цель не удалось геокодировать) даёт нули и не влияет на порядок.
+    house = _household_norm(household or [], candidates)
+    hw = settings.household_weight
+    house_bonus = [hw * h for h in house]
 
     # нет оси близости в запросе или нулевой вес → близость не при чём. Если
     # вдобавок нет и запроса на ориентацию — сохраняем входной порядок
     # (RRF / реранкер / свежесть), только срез top-N; иначе поверх семантики
     # подмешивается только бонус ориентации.
     if not pq.geo or w <= 0.0:
-        if not pq.window_orientation:
+        if not pq.window_orientation and not any(house_bonus):
             return candidates[:n]
         score_norm = _minmax([c.score for c in candidates])
-        blended = [s + o for s, o in zip(score_norm, orient_bonus)]
+        blended = [s + o + hb
+                   for s, o, hb in zip(score_norm, orient_bonus, house_bonus)]
         # тай-брейк по входному индексу, а не по external_id: на деградированном
         # пути (filter_only_search — все score равны, порядок по updated_at)
         # алфавит подменил бы свежесть выдачи
@@ -214,8 +251,9 @@ def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,
         prox_norm = [0.0] * len(candidates)     # ни по кому нет данных → сигнала нет
     score_norm = _minmax([c.score for c in candidates])
 
-    blended = [w * p + (1.0 - w) * s + o
-              for p, s, o in zip(prox_norm, score_norm, orient_bonus)]
+    blended = [w * p + (1.0 - w) * s + o + hb
+              for p, s, o, hb in zip(prox_norm, score_norm, orient_bonus,
+                                     house_bonus)]
     order = sorted(zip(candidates, blended),
                    key=lambda cb: (-cb[1], cb[0].external_id))
     return [replace(c, score=float(b)) for c, b in order[:n]]
