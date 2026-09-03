@@ -117,7 +117,9 @@ export default function Chapter(
             </motion.dl>
           )}
 
-          <BlockSources sources={block.sources} />
+          <motion.div variants={clueItem}>
+            <BlockSources sources={block.sources} />
+          </motion.div>
         </motion.div>
 
         {/* Instrument column. */}

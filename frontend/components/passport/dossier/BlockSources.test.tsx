@@ -48,11 +48,12 @@ test("глава hero-блока показывает источники и пл
   expect(screen.getByText(/модель по типам дорог/)).toBeInTheDocument();
 });
 
-test("карточка вторичного блока тоже показывает источники", () => {
+test("карточка вторичного блока показывает источники и плашку", () => {
   const block: LifestyleBlock = {
     key: "unknown_layer", title: "Вид и климат", icon: "sun", score: "B",
     description: "Описание", sources: [proxy],
   };
   render(<SecondaryGrid blocks={[block]} />);
+  expect(screen.getByText("оценка по модели")).toBeInTheDocument();
   expect(screen.getByText(/модель по типам дорог/)).toBeInTheDocument();
 });
