@@ -143,6 +143,14 @@ export default function FamilyDayGraph({ data }: VizProps) {
   const reduce = useReducedMotion();
   const routing = data as FamilyRoutingData | undefined;
   const members = (routing?.members ?? []).slice(0, MEMBER_TINTS.length);
+  // Часы поездок есть только тогда, когда их назвал пользователь: ML запрещено
+  // их выдумывать. Суточная лента (Гантт, плейхед, скраббер) без времени
+  // нарисовала бы всё в начале суток, поэтому при неполном времени она
+  // заменяется списком маршрутов — те же поездки и минуты, без выдуманных часов.
+  const timed = members.length > 0 &&
+    members.every((m) => m.legs.length > 0 &&
+      m.legs.every((l) => Boolean(l.depart && l.arrive)));
+  const estimated = members.some((m) => m.legs.some((l) => l.estimated));
 
   const container = useRef<HTMLDivElement>(null);
   const { map, ready, unavailable } = useGoogleMap(container, { interactive: false, zoom: 13 });
@@ -174,11 +182,15 @@ export default function FamilyDayGraph({ data }: VizProps) {
     const runtime: MemberRun[] = members.map((m, i) => ({
       id: m.id,
       tint: tints[i],
-      legs: m.legs.map((leg) => ({
-        prep: prepare(leg.geometry.coordinates as LngLat[]),
-        departH: hoursOf(leg.depart),
-        arriveH: hoursOf(leg.arrive),
-      })),
+      // Без времени бегунок по маршруту двигать нечем: положение считается из
+      // depart/arrive. Маршруты при этом рисуются как есть.
+      legs: timed
+        ? m.legs.map((leg) => ({
+            prep: prepare(leg.geometry.coordinates as LngLat[]),
+            departH: hoursOf(leg.depart as string),
+            arriveH: hoursOf(leg.arrive as string),
+          }))
+        : [],
       marker: null,
     }));
     runtimeRef.current = runtime;
@@ -242,6 +254,7 @@ export default function FamilyDayGraph({ data }: VizProps) {
       }
 
       // Traveller dot, positioned by the scrubbed hour (updated in a separate effect).
+      if (!timed) return;
       const dotEl = document.createElement("div");
       dotEl.className = "lmap-traveller";
       dotEl.style.background = run.tint;
@@ -345,23 +358,29 @@ export default function FamilyDayGraph({ data }: VizProps) {
 
       {/* Gantt day-lane band — plain HTML, independent of the map. */}
       <div className="border-t border-zinc-100 bg-white px-3.5 pt-3 pb-2">
-        {/* Time axis */}
-        <div className="relative ml-[5.5rem] mb-1.5 h-4 text-[10px] text-zinc-400">
-          {ticks.map((t) => (
-            <span
-              key={t}
-              className="absolute top-0 -translate-x-1/2 font-mono tabular-nums"
-              style={{ left: `${xPct(t)}%` }}
-            >
-              {pad2(t)}
-            </span>
-          ))}
-        </div>
+        {/* Time axis — только когда время поездок известно. */}
+        {timed ? (
+          <div className="relative ml-[5.5rem] mb-1.5 h-4 text-[10px] text-zinc-400">
+            {ticks.map((t) => (
+              <span
+                key={t}
+                className="absolute top-0 -translate-x-1/2 font-mono tabular-nums"
+                style={{ left: `${xPct(t)}%` }}
+              >
+                {pad2(t)}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="ml-[5.5rem] mb-1.5 text-[10px] leading-4 text-zinc-400">
+            Время поездок не названо — показаны маршруты и их длительность.
+          </p>
+        )}
 
         <div className="flex flex-col gap-1.5">
           {members.map((m, i) => {
             const tint = MEMBER_TINTS[i];
-            const arrive = m.legs.length ? m.legs[m.legs.length - 1].arrive : "";
+            const arrive = m.legs.length ? m.legs[m.legs.length - 1].arrive : null;
             const isActive = active === m.id;
             return (
               <motion.div
@@ -383,22 +402,45 @@ export default function FamilyDayGraph({ data }: VizProps) {
                 </div>
 
                 <div
-                  className="relative h-9 rounded-md bg-zinc-50 ring-1 ring-inset ring-black/[0.04]"
+                  className={`relative rounded-md bg-zinc-50 ring-1 ring-inset ring-black/[0.04] ${
+                    timed ? "h-9" : "flex flex-wrap items-center gap-1 p-1"}`}
                   onMouseEnter={() => setActive(m.id)}
                   onMouseLeave={() => setActive(null)}
                 >
                   {m.legs.map((leg, j) => {
                     const mode = MODE[leg.mode];
-                    const x0 = xPct(hoursOf(leg.depart));
-                    const x1 = xPct(hoursOf(leg.arrive));
                     const caution = leg.safety === "caution";
+                    if (!timed) {
+                      // Без часов плашка встаёт в поток, а не на временную ось,
+                      // и несёт длительность — она измерена, в отличие от времени.
+                      return (
+                        <span
+                          key={j}
+                          className="flex h-7 items-center gap-1 rounded px-1.5 text-[10px] font-medium text-zinc-700"
+                          style={{
+                            background: `${mode.color}22`,
+                            borderLeft: `3px solid ${mode.color}`,
+                          }}
+                        >
+                          <span className="truncate">{leg.to_label}</span>
+                          <span className="font-mono tabular-nums text-zinc-500">
+                            {leg.minutes} мин
+                          </span>
+                          {leg.estimated && (
+                            <span className="text-[9px] text-zinc-400">оценка</span>
+                          )}
+                        </span>
+                      );
+                    }
+                    const x0 = xPct(hoursOf(leg.depart as string));
+                    const x1 = xPct(hoursOf(leg.arrive as string));
                     return (
                       <button
                         key={j}
                         type="button"
                         onFocus={() => setActive(m.id)}
                         onBlur={() => setActive(null)}
-                        aria-label={`${m.label}: ${leg.to_label}, ${mode.label}, ${leg.depart}–${leg.arrive}${caution ? ", осторожный участок" : ""}`}
+                        aria-label={`${m.label}: ${leg.to_label}, ${mode.label}, ${leg.depart}–${leg.arrive}${leg.estimated ? ", оценка по прямой" : ""}${caution ? ", осторожный участок" : ""}`}
                         className="group absolute top-1 flex h-7 items-center overflow-hidden rounded px-1.5 text-left transition-[box-shadow,transform] duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent active:scale-[0.99]"
                         style={{
                           left: `${x0}%`,
@@ -417,14 +459,16 @@ export default function FamilyDayGraph({ data }: VizProps) {
                     );
                   })}
 
-                  {/* Time playhead for this lane. */}
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute top-0 bottom-0 z-10 w-px -translate-x-1/2"
-                    style={{ left: `${xPct(hour)}%`, background: "rgba(63,63,70,0.55)" }}
-                  >
-                    <span className="absolute -top-0.5 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full" style={{ background: tint }} />
-                  </div>
+                  {/* Time playhead for this lane — только на суточной ленте. */}
+                  {timed && (
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute top-0 bottom-0 z-10 w-px -translate-x-1/2"
+                      style={{ left: `${xPct(hour)}%`, background: "rgba(63,63,70,0.55)" }}
+                    >
+                      <span className="absolute -top-0.5 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full" style={{ background: tint }} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Разбивка метро-ноги — разворачивается под сжатым Ганттом,
@@ -443,7 +487,9 @@ export default function FamilyDayGraph({ data }: VizProps) {
           })}
         </div>
 
-        {/* Time scrubber — drag to move the whole family through the day. */}
+        {/* Time scrubber — drag to move the whole family through the day.
+            Без часов двигать нечего: скраббер скрыт вместе с лентой. */}
+        {timed && (
         <div className="ml-[5.5rem] mt-2.5 flex items-center gap-2.5">
           {!reduce && (
             <button
@@ -480,6 +526,7 @@ export default function FamilyDayGraph({ data }: VizProps) {
             {fmtTime(hour)}
           </span>
         </div>
+        )}
 
         {/* Mode legend + caution note — colour is never the only signal. */}
         <div className="ml-[5.5rem] mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-zinc-500">
@@ -494,6 +541,9 @@ export default function FamilyDayGraph({ data }: VizProps) {
               <span className="h-0 w-4 border-b-2 border-dashed" style={{ borderColor: CAUTION }} />
               <span style={{ color: "#b45309" }}>осторожный участок</span>
             </span>
+          )}
+          {estimated && (
+            <span>оценка — плечо посчитано по прямой, а не по сети</span>
           )}
         </div>
       </div>

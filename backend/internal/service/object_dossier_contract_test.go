@@ -33,6 +33,50 @@ func TestDecodeDossierNarrowsHeroDataByKey(t *testing.T) {
 	}
 }
 
+// Нога без времени и без замера безопасности должна доехать до фронта именно
+// как null, а не как пустая строка: "" неотличимо от «полночь», и фронт
+// нарисовал бы поездку в начале суток вместо честного «время не названо».
+func TestDecodeDossierKeepsUntimedLegNull(t *testing.T) {
+	var raw map[string]any
+	_ = json.Unmarshal([]byte(`{
+		"verdict":{"headline":"Подходит","confidence":0.9,"layers_checked":2},
+		"brief":[],"compromises":[],"relaxation":[],"zone_rationale":"",
+		"blocks":[{"key":"family_routing","tier":"hero","title":"Маршруты",
+		"icon":"route","score":"B","description":"Оценка","data":{
+		"home":[37.6,55.7],"members":[{"id":"son","label":"Сын","legs":[{
+		"to_label":"Школа","to_kind":"school","mode":"walk","depart":null,
+		"arrive":null,"minutes":13,"safety":null,"estimated":true,"geometry":{
+		"type":"LineString","coordinates":[[37.6,55.7],[37.61,55.71]]}}]}]}}]}`), &raw)
+	dossier, ok := decodeDossier(raw)
+	if !ok {
+		t.Fatal("decodeDossier() failed")
+	}
+	data := dossier.Blocks[0].Data.(FamilyRoutingData)
+	leg := data.Members[0].Legs[0]
+	if leg.Depart != nil || leg.Arrive != nil {
+		t.Fatalf("время выдумано из null: depart=%v arrive=%v", leg.Depart, leg.Arrive)
+	}
+	if leg.Safety != nil {
+		t.Fatalf("безопасность выдумана из null: %v", *leg.Safety)
+	}
+	if !leg.Estimated || leg.Minutes != 13 {
+		t.Fatalf("оценка потеряна: estimated=%v minutes=%d", leg.Estimated, leg.Minutes)
+	}
+
+	// И обратно наружу: ключи должны быть именно null, а не "".
+	out, err := json.Marshal(leg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back map[string]any
+	_ = json.Unmarshal(out, &back)
+	for _, key := range []string{"depart", "arrive", "safety"} {
+		if back[key] != nil {
+			t.Fatalf("%s ушёл наружу как %#v вместо null", key, back[key])
+		}
+	}
+}
+
 func TestParsedQueryPersistenceKeepsHouseholdTrips(t *testing.T) {
 	depart := "08:15"
 	parsed := client.ParsedQuery{Household: []client.HouseholdMemberIntent{{

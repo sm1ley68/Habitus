@@ -246,14 +246,23 @@ type MetroRide struct {
 }
 
 type FamilyRouteLeg struct {
-	ToLabel  string             `json:"to_label"`
-	ToKind   DestinationKind    `json:"to_kind"`
-	Mode     TravelMode         `json:"mode"`
-	Depart   string             `json:"depart"`
-	Arrive   string             `json:"arrive"`
-	Minutes  int                `json:"minutes"`
-	Safety   LegSafety          `json:"safety"`
-	Geometry LineStringGeometry `json:"geometry"`
+	ToLabel string          `json:"to_label"`
+	ToKind  DestinationKind `json:"to_kind"`
+	Mode    TravelMode      `json:"mode"`
+	// Указатели, а не строки: время поездки есть только тогда, когда его назвал
+	// пользователь, — ML запрещено его выдумывать. Пустая строка вместо null
+	// стёрла бы разницу между «08:15» и «не сказано», и фронт рисовал бы
+	// поездку в начале суток.
+	Depart  *string `json:"depart"`
+	Arrive  *string `json:"arrive"`
+	Minutes int     `json:"minutes"`
+	// nil — безопасность маршрута не измеряли. Слоя безопасности у продукта
+	// нет; раньше ML проставлял константу по режиму, и это был выдуманный факт.
+	Safety *LegSafety `json:"safety"`
+	// true — минуты и геометрия выведены из расстояния по прямой, а не
+	// построены по сети. Тот же признак честности, что MetroRide.Estimated.
+	Estimated bool               `json:"estimated"`
+	Geometry  LineStringGeometry `json:"geometry"`
 	// Разбивка поездки на рельсовом транспорте; nil у ног любого другого
 	// режима — omitempty, чтобы ключ пропадал у фронта, а не приезжал явным
 	// null (TS-тип — metro?: MetroRide | null, но Go должен опускать ключ).

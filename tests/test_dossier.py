@@ -53,16 +53,24 @@ def test_family_data_uses_explicit_time_and_ors_geometry():
     assert leg.arrive == "08:26" and leg.minutes == 11
     assert leg.geometry.coordinates[-1] == (37.61, 55.71)
     assert provider.calls[0][2] == "foot-walking"
-    assert leg.safety == "caution"  # safety is conservative unless proven
+    # safety не проставляется вовсе: слоя безопасности маршрута у продукта нет,
+    # а прежняя константа по режиму была выдуманным фактом.
+    assert leg.safety is None
+    # маршрут построен по сети — это не оценка
+    assert leg.estimated is False
 
 
-def test_family_data_does_not_invent_time_or_public_transport_route(monkeypatch):
-    # раньше mode="metro" молча выбрасывался (ROUTE_PROFILE его не знал);
-    # теперь метро — реальный внутренний движок, и «нет маршрута» должно
-    # прийти от самого движка (door_to_door → None), а не от отсутствия
-    # профиля. Стаб возвращает None, как это делает движок при недостижимой
-    # цели/неизвестном городе — досье не должно ходить в БД ради этого теста.
+def test_family_data_keeps_untimed_leg_but_invents_no_clock(monkeypatch):
+    """Нога без depart/arrive остаётся — теряется только время, не поездка.
+
+    Раньше такая нога выбрасывалась целиком, и на каноническом запросе («ребёнок
+    в школу пешком, супруг в Сити») блок «Суточный ритм семьи» не собирался
+    никогда: NLU запрещено выдумывать часы, а пользователь их не называет.
+    Длительность считается всегда — она измерена, а не названа.
+    """
     from habitus.online import dossier as mod
+    # Метро-движок не находит маршрута — та нога и должна пропасть: «нет
+    # маршрута» приходит от самого движка, нулей вместо него не выдумываем.
     monkeypatch.setattr(mod, "door_to_door", lambda *a, **kw: None)
 
     req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
@@ -71,8 +79,32 @@ def test_family_data_does_not_invent_time_or_public_transport_route(monkeypatch)
             {"to_label": "Метро", "to_kind": "metro", "mode": "metro", "depart": "09:00"},
         ]}],
     }))
-    assert _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
-                        RouteProvider(), lambda _: (37.7, 55.8)) is None
+    data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
+                        RouteProvider(), lambda _: (37.7, 55.8))
+    legs = data.members[0].legs
+    assert [leg.to_label for leg in legs] == ["Работа"]
+    assert legs[0].depart is None and legs[0].arrive is None
+    assert legs[0].minutes == 11
+
+
+def test_family_data_estimates_leg_when_ors_is_not_configured():
+    """Без ORS_API_KEY нога не пропадает, а приходит помеченной оценкой.
+
+    Раньше route_provider=None выбрасывал все немаршрутные-по-метро ноги, и в
+    деплое без ключа блок оставался максимум с поездками на метро.
+    """
+    req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
+        "household": [{"id": "son", "label": "Сын", "legs": [{
+            "to_label": "Школа", "to_kind": "school", "mode": "walk",
+        }]}],
+    }))
+    data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
+                        None, lambda _: (37.61, 55.71))
+    leg = data.members[0].legs[0]
+    assert leg.estimated is True
+    assert leg.minutes > 0
+    # геометрия — та самая прямая, по которой посчитано; не выдаём её за маршрут
+    assert leg.geometry.coordinates == [(37.6, 55.7), (37.61, 55.71)]
 
 
 def test_family_data_rejects_geocode_outside_moscow():

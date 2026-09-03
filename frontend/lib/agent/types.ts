@@ -166,10 +166,17 @@ export interface RouteLeg {
   to_label: string;
   to_kind: DestinationKind | "poi";
   mode: TravelMode;
-  depart: string;   // "08:15"
-  arrive: string;   // "08:26"
+  /** "08:15" — только если время назвал сам пользователь. null/отсутствует —
+   *  времени нет: ML запрещено его выдумывать, а длительность известна всегда. */
+  depart?: string | null;
+  arrive?: string | null;
   minutes: number;
-  safety: LegSafety;
+  /** null/отсутствует — безопасность маршрута не измеряли. Слоя безопасности у
+   *  продукта нет, и подставлять «caution» вместо замера нельзя. */
+  safety?: LegSafety | null;
+  /** true — минуты и геометрия выведены из расстояния по прямой, а не
+   *  построены по сети. Оценка показывается как оценка. */
+  estimated?: boolean;
   geometry: { type: "LineString"; coordinates: [number, number][] };
   // Разбивка поездки на рельсовом транспорте. Отсутствует (или явный null —
   // сегодня ML-сервис сериализует его как null, пока Go его не отфильтрует

@@ -18,7 +18,7 @@ import requests
 from psycopg.rows import dict_row
 
 from habitus.clean.geocode import geocode_address
-from habitus.geo.metro_access import ORSWalker
+from habitus.geo.metro_access import ORSWalker, straight_walk_seconds
 from habitus.online.geo import DirectionsProvider
 from habitus.online.metro_route import door_to_door
 from habitus.online.schema import (
@@ -140,6 +140,53 @@ def _minutes_to_clock(clock: str, delta: int) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
+def _leg_clock(intent, minutes: int) -> tuple[str | None, str | None]:
+    """Часы поездки. Если пользователь назвал одну границу — вторая считается
+    от неё и длительности. Если не назвал ни одной, часов нет: выдумывать
+    правдоподобное «08:00» значит подписывать модельное время как сказанное
+    пользователем."""
+    if intent.depart is None and intent.arrive is None:
+        return None, None
+    depart = intent.depart or _minutes_to_clock(intent.arrive, -minutes)
+    arrive = intent.arrive or _minutes_to_clock(intent.depart, minutes)
+    return depart, arrive
+
+
+#: Множители к пешей скорости для режимов, которые ORS считает по своим
+#: профилям. Числа грубые и применяются только к оценке по прямой — она и
+#: помечается estimated.
+_ESTIMATE_SPEEDUP = {"walk": 1.0, "scooter": 3.0, "bus": 4.0, "car": 5.0}
+
+
+def _straight_line_leg(intent, start: tuple[float, float],
+                       target: tuple[float, float]) -> RouteLeg | None:
+    """Оценка ноги по прямой, когда сети нет. Расстояние настоящее, коэффициент
+    извилистости тот же, что у пеших плеч метро (WALK_DETOUR в
+    habitus/geo/metro_access.py). Возвращает None, если точки совпали: нулевая
+    геометрия — не LineString, а нулевые минуты неотличимы от «не считали»."""
+    metres = _geodesic_metres(start, target)
+    if metres <= 0:
+        return None
+    walk_seconds = straight_walk_seconds(metres)
+    speedup = _ESTIMATE_SPEEDUP.get(intent.mode, 1.0)
+    minutes = max(1, int(math.ceil(walk_seconds / speedup / 60)))
+    depart, arrive = _leg_clock(intent, minutes)
+    return RouteLeg(
+        to_label=intent.to_label, to_kind=intent.to_kind, mode=intent.mode,
+        depart=depart, arrive=arrive, minutes=minutes, estimated=True,
+        geometry=LineStringGeometry(coordinates=[start, target]))
+
+
+def _geodesic_metres(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """Гаверсинус по [lng, lat]."""
+    r = 6371000.0
+    lon1, lat1 = math.radians(a[0]), math.radians(a[1])
+    lon2, lat2 = math.radians(b[0]), math.radians(b[1])
+    dlon, dlat = lon2 - lon1, lat2 - lat1
+    h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(h)))
+
+
 def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
                  route_provider: DirectionsProvider | None,
                  geocoder: Callable[[str], tuple[float, float] | None]) -> FamilyRoutingData | None:
@@ -168,7 +215,13 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
         start = home
         for intent in member_intent.legs:
             profile = ROUTE_PROFILE.get(intent.mode)
-            if profile is None or (intent.depart is None and intent.arrive is None):
+            # Раньше здесь же отбрасывалась нога без depart/arrive. Но NLU
+            # запрещено выдумывать время (промпт в nlu.py), а пользователь его
+            # обычно и не называет — «ребёнок в школу пешком, супруг в Сити»
+            # не содержит ни одного часа. Отсутствие времени больше не повод
+            # выбрасывать поездку: длительность мы считаем сами, а часы просто
+            # остаются пустыми.
+            if profile is None:
                 continue
             city_name = GEOCODE_CITY_NAME.get(req.city, "Москва")
             hints = GEOCODE_CITY_HINTS.get(req.city, ("моск",))
@@ -191,29 +244,42 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
                     continue
                 ride, geometry = got
                 minutes = ride.total_minutes
-                depart = intent.depart or _minutes_to_clock(intent.arrive, -minutes)
-                arrive = intent.arrive or _minutes_to_clock(intent.depart, minutes)
+                depart, arrive = _leg_clock(intent, minutes)
                 legs.append(RouteLeg(
                     to_label=intent.to_label, to_kind=intent.to_kind,
                     mode="metro", depart=depart, arrive=arrive,
-                    minutes=minutes, safety="safe", metro=ride,
+                    minutes=minutes, metro=ride, estimated=ride.estimated,
                     geometry=LineStringGeometry(coordinates=[tuple(p) for p in geometry])))
                 start = target
                 continue
             if route_provider is None:
+                # ORS не настроен — сеть строить нечем. Раньше нога здесь
+                # молча пропадала, и без ключа блок оставался максимум с
+                # метро-поездками. Оценка по прямой хуже маршрута, но она
+                # ЧЕСТНО помечена estimated и несёт настоящее расстояние —
+                # это не выдуманный факт, а измерение другого рода.
+                leg = _straight_line_leg(intent, start, target)
+                if leg is not None:
+                    legs.append(leg)
+                    start = target
                 continue
             try:
                 geometry, seconds = route_provider.directions(start, target, profile)
                 minutes = max(1, int(math.ceil(seconds / 60)))
-                depart = intent.depart or _minutes_to_clock(intent.arrive, -minutes)
-                arrive = intent.arrive or _minutes_to_clock(intent.depart, minutes)
+                depart, arrive = _leg_clock(intent, minutes)
                 legs.append(RouteLeg(
                     to_label=intent.to_label, to_kind=intent.to_kind,
                     mode=intent.mode, depart=depart, arrive=arrive,
-                    minutes=minutes, safety="caution",
+                    minutes=minutes,
                     geometry=LineStringGeometry.model_validate(geometry)))
                 start = target
             except (requests.RequestException, KeyError, TypeError, ValueError):
+                # Отказ ORS на конкретной ноге — тоже повод показать оценку,
+                # а не потерять поездку целиком.
+                leg = _straight_line_leg(intent, start, target)
+                if leg is not None:
+                    legs.append(leg)
+                    start = target
                 continue
         if legs:
             members.append(HouseholdMember(id=member_intent.id,
@@ -474,9 +540,47 @@ def _view_climate_sources(conn, lon: float, lat: float, city: str) -> list[Block
     ]
 
 
-def _family_sources(conn, *, has_metro: bool) -> list[BlockSource]:
-    sources = [BlockSource(key="road_graph", label="Дорожный граф",
-                           kind="computation", basis="маршрут по дорожному графу")]
+def _routing_grade(legs: list[RouteLeg]) -> str:
+    """Оценка блока по САМОЙ ДЛИННОЙ поездке дня: именно она ограничивает
+    расписание семьи, среднее её маскирует.
+
+    Пороги те же по духу, что у вторичного блока логистики (_secondary_blocks),
+    только шкала шире: там пешие минуты до ближайшей точки, здесь — поездка от
+    двери до двери любым режимом.
+
+    Раньше оценка выводилась из RouteLeg.safety, а safety проставлялся
+    константой по режиму («метро — safe, остальное — caution»). Слоя
+    безопасности маршрута у продукта нет, поэтому оценка была не про объект, а
+    про то, ехал ли человек на метро.
+    """
+    worst = max(leg.minutes for leg in legs)
+    if worst <= 20:
+        return "A"
+    if worst <= 35:
+        return "B+"
+    if worst <= 50:
+        return "B"
+    return "C"
+
+
+def _routing_description(legs: list[RouteLeg], estimated: bool) -> str:
+    worst = max(leg.minutes for leg in legs)
+    tail = (" Часть плеч посчитана по прямой — это оценка, а не замер."
+            if estimated else "")
+    return (f"Самая долгая поездка дня — {worst} мин от двери до двери. "
+            f"Показаны только явно названные поездки.{tail}")
+
+
+def _family_sources(conn, *, has_metro: bool,
+                    estimated: bool = False) -> list[BlockSource]:
+    # kind="proxy", когда сеть построить было нечем: величина получена из
+    # расстояния по прямой, а не из графа. Тот же словарь происхождения, что у
+    # остальных блоков — фронт красит блок по худшему источнику.
+    sources = [BlockSource(
+        key="road_graph", label=("Оценка по прямой" if estimated else "Дорожный граф"),
+        kind=("proxy" if estimated else "computation"),
+        basis=("расстояние по прямой с коэффициентом извилистости"
+               if estimated else "маршрут по дорожному графу"))]
     if has_metro:
         sources.append(BlockSource(
             key="metro_graph", label="Граф метро/МЦК/МЦД", kind="computation",
@@ -587,14 +691,19 @@ def build_dossier(req: DossierRequest, conn, *,
         blocks = [b for b in blocks if b.key != "logistics"]
         legs_all = [leg for m in family.members for leg in m.legs]
         has_metro = any(leg.mode == "metro" for leg in legs_all)
+        estimated = any(leg.estimated for leg in legs_all)
         blocks.insert(0, LifestyleBlock(
             key="family_routing", tier="hero", title="Суточный ритм семьи",
             icon="route",
-            score="A" if all(leg.safety == "safe" for m in family.members for leg in m.legs) else "B",
-            verdict_line="Маршруты построены по подтверждённым данным.",
-            description="Показаны только явно названные поездки и подтверждённые маршруты.",
+            score=_routing_grade(legs_all),
+            verdict_line=("Часть плеч оценена по прямой — сеть построить нечем."
+                          if estimated else
+                          "Маршруты построены по сети, а не по прямой."),
+            description=_routing_description(legs_all, estimated),
+            metrics={"longest_leg_minutes": max(leg.minutes for leg in legs_all)},
             data=family,
-            sources=_family_sources(conn, has_metro=has_metro)))
+            sources=_family_sources(conn, has_metro=has_metro,
+                                    estimated=estimated)))
         sources.add("route")
         routed = {(m.label, leg.to_label) for m in family.members for leg in m.legs}
         for item in brief:
