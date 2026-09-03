@@ -8,6 +8,7 @@ const Icon = {
   grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   pin: "M12 21s7-5.5 7-11a7 7 0 10-14 0c0 5.5 7 11 7 11z",
   clock: "M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+  heart: "M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21.2l7.8-7.8 1-1a5.5 5.5 0 000-7.8z",
 };
 
 function RailBtn({
@@ -52,6 +53,7 @@ export default function LeftRail() {
       <RailBtn d={Icon.plus} label="Новый поиск" active={screen === "chat"} onClick={() => reset()} />
       <RailBtn d={Icon.grid} label="Результаты" active={screen === "result" || screen === "passport"} onClick={() => setScreen("result")} />
       <RailBtn d={Icon.pin} label="Карта" active={screen === "map"} onClick={() => setScreen("map")} />
+      <RailBtn d={Icon.heart} label="Сохранённое" active={screen === "saved"} onClick={() => setScreen("saved")} />
 
       <div className="hidden md:block flex-1" />
 

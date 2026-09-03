@@ -12,7 +12,7 @@ import { CITY_CENTER } from "@/lib/map/constants";
 import { expandViewport, type Viewport } from "@/lib/map/viewport";
 import { shouldFetchLayer } from "@/lib/map/layers";
 
-export type Screen = "chat" | "result" | "map" | "passport";
+export type Screen = "chat" | "result" | "map" | "passport" | "saved";
 
 export interface SearchMessage {
   id: string;

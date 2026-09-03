@@ -11,11 +11,14 @@ describe("PropertyCard", () => {
     expect(screen.getByRole("img", { name: /Neva Residence/i })).toBeInTheDocument();
     expect(screen.getByText(/18.5 млн/i)).toBeInTheDocument();
     expect(screen.getByLabelText("96% совпадение")).toBeInTheDocument();
-    fireEvent.mouseEnter(screen.getByRole("button"));
+    const open = screen.getByRole("button", { name: /^Открыть / });
+    // Наведение слушает карточка целиком, а не кнопка открытия: подсветка на
+    // карте не должна гаснуть, когда курсор идёт к «сохранить».
+    fireEvent.mouseEnter(open.parentElement!);
     expect(useSession.getState().hoveredId).toBe("jk-neva-residence");
-    fireEvent.mouseLeave(screen.getByRole("button"));
+    fireEvent.mouseLeave(open.parentElement!);
     expect(useSession.getState().hoveredId).toBe(null);
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(open);
     expect(onOpen).toHaveBeenCalledWith(0);
   });
 

@@ -11,5 +11,8 @@ test("renders one card per property with match scores", () => {
   // карточка ведёт адресом, имя — фолбэк (см. PropertyCard.test)
   expect(screen.getByText(PROPERTIES[0].address)).toBeInTheDocument();
   expect(screen.getByLabelText("96% совпадение")).toBeInTheDocument();
-  expect(screen.getAllByRole("button").length).toBe(PROPERTIES.length);
+  // Карточка больше не одна кнопка: считаем именно кнопки открытия, иначе
+  // тест ломался бы от любого нового действия на карточке.
+  expect(screen.getAllByRole("button", { name: /^Открыть / }).length)
+    .toBe(PROPERTIES.length);
 });

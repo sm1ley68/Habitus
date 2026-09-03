@@ -253,4 +253,53 @@ export interface ObjectPassport {
   rooms: number; area_sqm: number; floor: string;
   images: string[]; coordinates: [number, number];
   lifestyle_analysis: LifestyleAnalysis;
+  /** Единственное действие паспорта. Аддитивное поле верхнего уровня рядом с
+   *  lifestyle_analysis (контракт §4). Отсутствует у старых ответов шлюза —
+   *  тогда действия просто нет, и выдумывать кнопку нельзя. */
+  contact?: PassportContact;
 }
+
+/** lead — объявление ведёт продавец в кабинете, показываем форму заявки;
+ *  external — витринный объект, уходим на источник по source_url;
+ *  none — связаться нечем, и это честнее выдуманной кнопки.
+ *  Зафиксировано на двух сторонах: Go internal/service/object_service.go ↔ здесь. */
+export type ContactKind = "lead" | "external" | "none";
+
+export interface PassportContact {
+  kind: ContactKind;
+  /** Приходит ТОЛЬКО при kind === "external". */
+  source_url?: string;
+}
+
+/** Заявка покупателя продавцу. Контакт покупателя тут есть — продавец за ним и
+ *  пришёл; контакта продавца нет нигде. */
+export interface Lead {
+  id: string;
+  listing_id: string;
+  external_id: string;
+  address: string;
+  name: string;
+  contact: string;
+  message: string;
+  created_at: string;
+}
+
+/** Карточка избранного. match_score и tags здесь отсутствуют НАМЕРЕННО: они
+ *  принадлежат конкретному запросу, а не объекту, — показывать процент
+ *  совпадения, посчитанный под другой запрос, нечестно. */
+export interface FavoriteObject {
+  id: string;
+  name: string;
+  address: string;
+  cover_image: string;
+  coordinates: [number, number];
+  price_from: number | null;
+  rooms: number | null;
+  area_sqm: number | null;
+  floor: string;
+  /** Из какого подбора объект сохранён. null — сохранён с карты, вне подбора. */
+  chat_id: string | null;
+  saved_at: string;
+}
+
+export type FeedbackVerdict = "up" | "down";

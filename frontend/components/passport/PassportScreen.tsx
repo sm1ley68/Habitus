@@ -8,6 +8,8 @@ import Chapter from "./dossier/Chapter";
 import SecondaryGrid from "./dossier/SecondaryGrid";
 import HonestFooter from "./dossier/HonestFooter";
 import PassportChat from "./chat/PassportChat";
+import ContactAction from "./dossier/ContactAction";
+import SaveButton from "@/components/result/SaveButton";
 import { getObjectPassport } from "@/lib/api/passport";
 import type { ObjectPassport } from "@/lib/agent/types";
 import { useSession } from "@/lib/store/session";
@@ -74,12 +76,17 @@ export default function PassportScreen() {
       {/* Back control floats over the hero band. */}
       <div className="sticky top-0 z-20">
         <div className="mx-auto w-full max-w-5xl px-6">
-          <button
-            onClick={() => back("result")}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-sm text-white/85 backdrop-blur-md transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            ← К результатам
-          </button>
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <button
+              onClick={() => back("result")}
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-sm text-white/85 backdrop-blur-md transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              ← К результатам
+            </button>
+            {/* Сохранить можно и объект, открытый с карты: избранное живёт вне
+                подбора, chat_id у такой записи будет null. */}
+            <SaveButton objectId={property.id} label={property.address || property.name} />
+          </div>
         </div>
       </div>
 
@@ -114,6 +121,9 @@ export default function PassportScreen() {
             relaxation={analysis.relaxation}
             zone_rationale={analysis.zone_rationale}
           />
+
+          {/* Досье больше не тупик: паспорт называет, как связаться с объектом. */}
+          <ContactAction objectId={passport.id} contact={passport.contact} />
 
           {chatId && (
             <PassportChat

@@ -1,32 +1,48 @@
 "use client";
 import { motion, useReducedMotion } from "framer-motion";
 import MatchScore from "./MatchScore";
+import SaveButton from "./SaveButton";
+import ResultFeedback from "./ResultFeedback";
 import { money } from "@/lib/format";
 import { SPRING } from "@/lib/motion";
 import { useSession } from "@/lib/store/session";
 import type { Property } from "@/lib/agent/types";
 
+/**
+ * Карточка выдачи. Раньше вся карточка была одной <button>; теперь на ней живут
+ * ещё два действия — «сохранить» и оценка подбора, — а вложенные кнопки внутри
+ * кнопки невалидны. Поэтому открытие вынесено в отдельную кнопку-подложку,
+ * растянутую по карточке, а действия лежат над ней.
+ */
 export default function PropertyCard({
   property, index, onOpen,
 }: { property: Property; index: number; onOpen: (i: number) => void }) {
   const setHovered = useSession((s) => s.setHoveredProperty);
   const shouldReduceMotion = useReducedMotion();
+  const title = property.address || property.name;
 
   return (
-    <motion.button
+    <motion.div
       layoutId={`property-${property.id}`}
-      onClick={() => onOpen(index)}
       onMouseEnter={() => setHovered(property.id)}
       onMouseLeave={() => setHovered(null)}
-      onFocus={() => setHovered(property.id)}
-      onBlur={() => setHovered(null)}
       variants={{ hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }}
       whileHover={shouldReduceMotion ? undefined : { y: -4 }}
-      whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
       transition={SPRING.soft}
-      className="group relative block w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left cursor-pointer transition-shadow duration-300 ease-out hover:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="group relative block w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left transition-shadow duration-300 ease-out hover:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)] focus-within:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)]"
     >
-      <div className="relative w-full aspect-[3/2] overflow-hidden bg-zinc-100">
+      {/* Подложка-кнопка: открывает паспорт кликом в любое место карточки,
+          кроме областей с собственными действиями (они лежат выше по z). */}
+      <button
+        type="button"
+        aria-label={`Открыть ${title}`}
+        onClick={() => onOpen(index)}
+        onFocus={() => setHovered(property.id)}
+        onBlur={() => setHovered(null)}
+        className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      />
+
+      <div className="pointer-events-none relative w-full aspect-[3/2] overflow-hidden bg-zinc-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={property.cover_image}
@@ -38,27 +54,32 @@ export default function PropertyCard({
         <div className="absolute right-3 top-3">
           <MatchScore value={property.match_score} />
         </div>
-      </div>
-
-      <div className="p-5">
-        <h3 className="font-medium text-[15px] tracking-tight text-[#1c1d20]">
-          {property.address || property.name}
-        </h3>
-        <p className="mt-1.5 font-mono text-sm text-zinc-700">{money(property.price_from)}</p>
-        <p className="mt-0.5 text-xs text-zinc-400">
-          {property.rooms}-комн · {property.area_sqm} м² · {property.floor} этаж
-        </p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {property.tags.map((t) => (
-            <span
-              key={t}
-              className="rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 transition-colors duration-150 ease-out group-hover:bg-accent/10 group-hover:text-accent"
-            >
-              {t}
-            </span>
-          ))}
+        <div className="pointer-events-auto absolute left-3 top-3 z-10">
+          <SaveButton objectId={property.id} label={title} />
         </div>
       </div>
-    </motion.button>
+
+      <div className="relative z-10 p-5">
+        <div className="pointer-events-none">
+          <h3 className="font-medium text-[15px] tracking-tight text-[#1c1d20]">{title}</h3>
+          <p className="mt-1.5 font-mono text-sm text-zinc-700">{money(property.price_from)}</p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            {property.rooms}-комн · {property.area_sqm} м² · {property.floor} этаж
+          </p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {property.tags.map((t) => (
+              <span
+                key={t}
+                className="rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 transition-colors duration-150 ease-out group-hover:bg-accent/10 group-hover:text-accent"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <ResultFeedback objectId={property.id} />
+      </div>
+    </motion.div>
   );
 }
