@@ -7,7 +7,8 @@ from habitus.db.init_db import init_db
 from habitus.online.dossier import (ListingEvidence, ROUTE_PROFILE,
                                     _climate_data, _family_data,
                                     _solar_samples, build_dossier,
-                                    _evidence_observed_at, _table_updated_at)
+                                    _evidence_observed_at, _table_updated_at,
+                                    _secondary_blocks)
 from habitus.online.schema import (DossierRequest, HouseholdLegIntent,
                                    HouseholdMemberIntent, ParsedQuery)
 
@@ -352,3 +353,27 @@ def test_evidence_observed_at_is_none_when_nothing_in_radius(dossier_conn):
 def test_table_updated_at_refuses_unknown_table(dossier_conn):
     """Имя таблицы подставляется в SQL строкой, поэтому список закрытый."""
     assert _table_updated_at(dossier_conn, "listings; DROP TABLE poi") is None
+
+
+# --- Task 2: Источники вторичных блоков -----
+
+def test_secondary_logistics_declares_computation_over_poi():
+    blocks = _secondary_blocks({"walk_min_school": 8}, None, "msk")
+    source = blocks[0].sources[0]
+    assert source.kind == "computation"
+    assert source.observed_at is None  # conn=None — дату спросить негде
+
+
+def test_secondary_window_orientation_names_the_informant():
+    """Сторону света извлекли из прозы объявления: наблюдение сделал
+    продавец, и basis обязан это называть."""
+    blocks = _secondary_blocks({"window_orientation": "S"}, None, "msk")
+    source = next(s for b in blocks for s in b.sources if s.key == "window_orientation")
+    assert source.kind == "observation"
+    assert "продавц" in source.basis
+
+
+def test_secondary_noise_is_proxy_not_computation():
+    blocks = _secondary_blocks({"noise_level": "high"}, None, "msk")
+    source = next(s for b in blocks for s in b.sources if s.key == "noise")
+    assert source.kind == "proxy"

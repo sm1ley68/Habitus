@@ -492,8 +492,9 @@ def _brief(req: DossierRequest, facts: dict) -> list[BriefItem]:
     return result
 
 
-def _secondary_blocks(facts: dict) -> list[LifestyleBlock]:
+def _secondary_blocks(facts: dict, conn, city: str) -> list[LifestyleBlock]:
     blocks = []
+    poi_date = _table_updated_at(conn, "poi")
     school = _fact_num(facts, "walk_min_school")
     metro = _fact_num(facts, "walk_min_metro")
     if school is not None or metro is not None:
@@ -503,7 +504,10 @@ def _secondary_blocks(facts: dict) -> list[LifestyleBlock]:
             key="logistics", title="Логистика и школы", icon="school", score=score,
             verdict_line="Проверена пешая доступность.",
             description=f"Ближайшая подтверждённая точка — {value:g} мин пешком.",
-            metrics={"minutes": value}))
+            metrics={"minutes": value},
+            sources=[BlockSource(
+                key="poi_walk", label="Пешая доступность", kind="computation",
+                basis="расчёт по POI OpenStreetMap", observed_at=poi_date)]))
     bars = _fact_num(facts, "bar_density_500m")
     if bars is not None:
         blocks.append(LifestyleBlock(
@@ -511,12 +515,25 @@ def _secondary_blocks(facts: dict) -> list[LifestyleBlock]:
             score="A" if bars == 0 else "B" if bars <= 2 else "C",
             verdict_line="Доступен подтверждённый слой заведений.",
             description=f"{bars:g} баров/алкомаркетов в радиусе 500 м.",
-            metrics={"bars_500m": bars}))
+            metrics={"bars_500m": bars},
+            sources=[BlockSource(
+                key="bars", label="Заведения", kind="observation",
+                basis="POI OpenStreetMap в радиусе 500 м", observed_at=poi_date)]))
     if facts.get("window_orientation") or facts.get("noise_level"):
+        sources = []
+        if facts.get("window_orientation"):
+            sources.append(BlockSource(
+                key="window_orientation", label="Сторона света", kind="observation",
+                basis="указана продавцом в описании объявления"))
+        if facts.get("noise_level"):
+            sources.append(BlockSource(
+                key="noise", label="Шум", kind="proxy",
+                basis="модель по типам дорог"))
         blocks.append(LifestyleBlock(
             key="view_and_climate", title="Вид и климат", icon="sun", score="B",
             verdict_line="Часть климатических данных пока неполна.",
-            description="Доступны только подтверждённые базовые характеристики окна и окружения."))
+            description="Доступны только подтверждённые базовые характеристики окна и окружения.",
+            sources=sources))
     return blocks
 
 
@@ -525,7 +542,7 @@ def build_dossier(req: DossierRequest, conn, *,
                   geocoder=geocode_address, climate_provider=None) -> DossierPayload:
     listing = _fetch_listing(conn, req.object_id)
     brief = _brief(req, listing.facts)
-    blocks = _secondary_blocks(listing.facts)
+    blocks = _secondary_blocks(listing.facts, conn, req.city)
     sources = set()
 
     is_moscow = req.city == "msk"
