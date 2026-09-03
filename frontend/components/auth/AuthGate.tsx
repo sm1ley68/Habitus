@@ -1,35 +1,33 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
-import { me, login, register, type User } from "@/lib/api/auth";
-import { Input } from "@/components/ui";
+import { useEffect } from "react";
+import { useAuth } from "@/lib/store/auth";
+import AuthForm from "./AuthForm";
 
-// Все /api/v1 роуты, кроме auth/*, закрыты сессионной кукой (Go: middleware.Auth).
-// Без входа приложение получит 401 на каждый запрос, поэтому шелл рендерится
-// только поверх живой сессии.
-type Mode = "login" | "register";
-
+/**
+ * Сессия до приложения — но НЕ стена регистрации.
+ *
+ * Все /api/v1 роуты, кроме auth/*, закрыты сессионной кукой (Go:
+ * middleware.Auth), поэтому какая-то сессия нужна всегда. Раньше отсюда
+ * требовали аккаунт, и стена стояла ровно там, где у продукта единственный
+ * шанс показать ценность. Теперь, если живой сессии нет, заводится гостевая
+ * (POST /auth/guest), и первый поиск проходит без регистрации. Регистрация
+ * из-под гостя — апгрейд того же пользователя: id не меняется, чаты,
+ * избранное и оценки остаются при нём.
+ *
+ * Форма входа остаётся здесь только как аварийный экран: шлюз не отдал даже
+ * гостевую сессию, и больше пользователю тут делать нечего. Обычная точка
+ * регистрации живёт в AuthPanel, поверх работающего приложения.
+ */
 export default function AuthGate({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [checked, setChecked] = useState(false);
-  const [mode, setMode] = useState<Mode>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const status = useAuth((s) => s.status);
+  const ensureSession = useAuth((s) => s.ensureSession);
+  const setUser = useAuth((s) => s.setUser);
 
-  useEffect(() => {
-    let alive = true;
-    me()
-      .then((u) => { if (alive) setUser(u); })
-      .catch(() => { if (alive) setUser(null); })
-      .finally(() => { if (alive) setChecked(true); });
-    return () => { alive = false; };
-  }, []);
+  useEffect(() => { void ensureSession(); }, [ensureSession]);
 
-  if (user) return <>{children}</>;
+  if (status === "ready") return <>{children}</>;
 
-  if (!checked) {
+  if (status === "checking") {
     return (
       <div className="flex-1 grid place-items-center text-sm text-zinc-400">
         Проверяем сессию…
@@ -37,85 +35,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const u = mode === "login"
-        ? await login(email, password)
-        : await register(email, password, name || email);
-      setUser(u);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось войти");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="flex-1 grid place-items-center px-4">
-      <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-4">
-        <div>
-          <h1 className="text-xl tracking-tight text-[#1c1d20]">
-            {mode === "login" ? "Вход" : "Регистрация"}
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Habitus подбирает жильё по тому, как вы живёте.
-          </p>
-        </div>
-
-        {mode === "register" && (
-          <label className="flex flex-col gap-1 text-sm text-zinc-500">
-            Имя
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoComplete="name"
-            />
-          </label>
-        )}
-
-        <label className="flex flex-col gap-1 text-sm text-zinc-500">
-          Email
-          <Input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm text-zinc-500">
-          Пароль
-          <Input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-          />
-        </label>
-
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-lg bg-[#1c1d20] px-3 py-2.5 text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {busy ? "…" : mode === "login" ? "Войти" : "Зарегистрироваться"}
-        </button>
-
-        <button
-          type="button"
-          className="text-sm text-zinc-400 transition-colors hover:text-zinc-600"
-          onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
-        >
-          {mode === "login" ? "Нет аккаунта? Регистрация" : "Уже есть аккаунт? Войти"}
-        </button>
-      </form>
+      <AuthForm
+        hint="Не удалось начать сессию. Войдите, чтобы продолжить."
+        onDone={setUser}
+      />
     </div>
   );
 }

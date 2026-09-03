@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useSession } from "@/lib/store/session";
+import { useAuth } from "@/lib/store/auth";
 
 const Icon = {
   plus: "M12 5v14M5 12h14",
@@ -34,6 +35,11 @@ function RailBtn({
 
 export default function LeftRail() {
   const { screen, setScreen, reset, toggleHistory, historyOpen } = useSession();
+  // Гость приложением пользуется наравне со всеми — аккаунт нужен там, где он
+  // что-то даёт: кабинет продавца и сохранение подборок. Поэтому у гостя здесь
+  // приглашение зарегистрироваться, а у зарегистрированного — вход в кабинет.
+  const isGuest = useAuth((s) => s.user?.is_guest ?? false);
+  const openAuth = useAuth((s) => s.openAuth);
   return (
     <nav className="fixed bottom-0 inset-x-0 h-16 flex-row justify-around border-t border-zinc-100 md:static md:h-auto md:w-[56px] md:flex-col md:justify-start md:border-t-0 flex items-center gap-1 py-2 md:py-4 z-[30] bg-white shrink-0">
       {/* brand spark (desktop) */}
@@ -52,15 +58,28 @@ export default function LeftRail() {
       <RailBtn d={Icon.clock} label="История" active={historyOpen} onClick={toggleHistory} />
 
       {/* Вход в кабинет продавца. Раньше здесь был неинтерактивный аватар —
-          единственное место, откуда пользователь ждёт перехода «к себе». */}
-      <Link
-        href="/lk"
-        aria-label="Личный кабинет"
-        title="Личный кабинет"
-        className="hidden md:grid place-items-center h-8 w-8 mt-1 rounded-full bg-gradient-to-br from-zinc-600 to-zinc-900 text-white text-[11px] font-medium select-none transition-opacity duration-150 hover:opacity-85"
-      >
-        Я
-      </Link>
+          единственное место, откуда пользователь ждёт перехода «к себе».
+          Гостю кабинет закрыт на бэке (middleware.RequireRegistered), поэтому
+          ему тут форма регистрации, а не ссылка в 403. */}
+      {isGuest ? (
+        <button
+          onClick={openAuth}
+          aria-label="Войти или зарегистрироваться"
+          title="Войти"
+          className="hidden md:grid place-items-center h-8 w-8 mt-1 rounded-full border border-zinc-300 text-zinc-500 text-[11px] font-medium select-none cursor-pointer transition-colors duration-150 hover:border-zinc-400 hover:text-zinc-900"
+        >
+          Вход
+        </button>
+      ) : (
+        <Link
+          href="/lk"
+          aria-label="Личный кабинет"
+          title="Личный кабинет"
+          className="hidden md:grid place-items-center h-8 w-8 mt-1 rounded-full bg-gradient-to-br from-zinc-600 to-zinc-900 text-white text-[11px] font-medium select-none transition-opacity duration-150 hover:opacity-85"
+        >
+          Я
+        </Link>
+      )}
     </nav>
   );
 }

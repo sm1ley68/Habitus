@@ -7,6 +7,7 @@ import ChatScreen from "@/components/chat/ChatScreen";
 import ResultScreen from "@/components/result/ResultScreen";
 import MapScreen from "@/components/map/MapScreen";
 import PassportScreen from "@/components/passport/PassportScreen";
+import AuthPanel from "@/components/auth/AuthPanel";
 
 export default function AppShell() {
   const screen = useSession((s) => s.screen);
@@ -21,6 +22,7 @@ export default function AppShell() {
         {screen === "map" && <MapScreen />}
         {screen === "passport" && <PassportScreen />}
       </main>
+      <AuthPanel />
     </div>
   );
 }

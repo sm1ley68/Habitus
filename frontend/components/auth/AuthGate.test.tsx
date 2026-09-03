@@ -2,29 +2,49 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AuthGate from "./AuthGate";
+import { useAuth } from "@/lib/store/auth";
 
-const mocks = vi.hoisted(() => ({ me: vi.fn(), login: vi.fn(), register: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  me: vi.fn(), login: vi.fn(), register: vi.fn(), guest: vi.fn(), logout: vi.fn(),
+}));
 vi.mock("@/lib/api/auth", () => mocks);
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  useAuth.setState({ user: null, status: "checking", authOpen: false });
+});
+
+const GUEST = { id: "g1", email: "", name: "Гость", is_guest: true };
 
 describe("AuthGate", () => {
-  it("показывает форму входа, когда сессии нет", async () => {
+  it("без сессии заводит гостя и пускает внутрь — стены регистрации нет", async () => {
     mocks.me.mockResolvedValue(null);
+    mocks.guest.mockResolvedValue(GUEST);
+    render(<AuthGate><div>секрет</div></AuthGate>);
+    expect(await screen.findByText("секрет")).toBeInTheDocument();
+    expect(mocks.guest).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("Пароль")).not.toBeInTheDocument();
+  });
+
+  it("при живой сессии гостя не заводит", async () => {
+    mocks.me.mockResolvedValue({ id: "u1", email: "a@b.c", name: "Аня", is_guest: false });
+    render(<AuthGate><div>секрет</div></AuthGate>);
+    expect(await screen.findByText("секрет")).toBeInTheDocument();
+    expect(mocks.guest).not.toHaveBeenCalled();
+  });
+
+  it("показывает форму, только когда шлюз не отдал даже гостя", async () => {
+    mocks.me.mockResolvedValue(null);
+    mocks.guest.mockRejectedValue(new Error("шлюз недоступен"));
     render(<AuthGate><div>секрет</div></AuthGate>);
     expect(await screen.findByLabelText("Email")).toBeInTheDocument();
     expect(screen.queryByText("секрет")).not.toBeInTheDocument();
   });
 
-  it("пускает внутрь при живой сессии", async () => {
-    mocks.me.mockResolvedValue({ id: "u1", email: "a@b.c", name: "Аня" });
-    render(<AuthGate><div>секрет</div></AuthGate>);
-    expect(await screen.findByText("секрет")).toBeInTheDocument();
-  });
-
-  it("после успешного входа рендерит приложение", async () => {
+  it("после входа с аварийного экрана рендерит приложение", async () => {
     mocks.me.mockResolvedValue(null);
-    mocks.login.mockResolvedValue({ id: "u1", email: "a@b.c", name: "Аня" });
+    mocks.guest.mockRejectedValue(new Error("шлюз недоступен"));
+    mocks.login.mockResolvedValue({ id: "u1", email: "a@b.c", name: "Аня", is_guest: false });
     render(<AuthGate><div>секрет</div></AuthGate>);
     await userEvent.type(await screen.findByLabelText("Email"), "a@b.c");
     await userEvent.type(screen.getByLabelText("Пароль"), "pw");
@@ -34,6 +54,7 @@ describe("AuthGate", () => {
 
   it("показывает ошибку бэка и не пускает внутрь", async () => {
     mocks.me.mockResolvedValue(null);
+    mocks.guest.mockRejectedValue(new Error("шлюз недоступен"));
     mocks.login.mockRejectedValue(new Error("Неверный email или пароль"));
     render(<AuthGate><div>секрет</div></AuthGate>);
     await userEvent.type(await screen.findByLabelText("Email"), "a@b.c");
