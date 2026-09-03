@@ -377,7 +377,8 @@ Golden-set привязан к снимку данных, а сбор идёт �
 |---|---|---|
 | `DB_DSN` | `postgresql://habitus:habitus@localhost:5544/habitus` | Подключение к БД |
 | `OPENROUTER_API_KEY` | — | LLM (разбор запроса, объяснение, Q&A) |
-| `ORS_API_KEY` | — | Изохроны OpenRouteService |
+| `ORS_API_KEY` | — | Ключ публичного OpenRouteService. Свой инстанс ключа не требует — задайте `ORS_BASE_URL` |
+| `ORS_BASE_URL` | `https://api.openrouteservice.org` | Куда ходить за маршрутами и изохронами |
 | `RETRIEVAL_TOP_K` | `100` | Кандидатов из retrieval до среза пула (влияет на recall, не на скорость реранка) |
 | `RERANK_POOL_N` | `40` | Кандидатов до кросс-энкодера — главный рычаг латентности поиска |
 | `RERANK_MAX_LENGTH` | `256` | Обрезка документа для реранкера (128 → быстрее) |

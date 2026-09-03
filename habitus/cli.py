@@ -91,7 +91,7 @@ def run_offline(csv_path: Path, conn, model=None, fetch_osm=True, geocoder=None,
         # не трогая ни POI, ни сбор графа метро/МЦК/МЦД из OSM.
         stats["metro"] = build_metro(
             conn, city, fetch=fetch_system,
-            walker=None if no_ors or not settings.ors_api_key else ORSWalker())
+            walker=None if no_ors or not settings.ors_configured else ORSWalker())
     stats["doc_text"] = refresh_doc_text(conn)
     stats["embedded"] = embed_pending(conn, model=model)
     return stats
@@ -122,7 +122,7 @@ def build_metro(conn, city: str, fetch=fetch_system, walker=None) -> dict:
     — реальные пешие маршруты через внешний ORS. На 66k объявлений и k=3 это
     ~200k вызовов ORS за один прогон — далеко за пределами публичной квоты,
     поэтому CLI НЕ включает ORS сам по себе: он используется только если
-    оператор явно настроил ORS_API_KEY (settings.ors_api_key) и не передал
+    оператор явно настроил ORS (settings.ors_configured) и не передал
     --no-ors. Без ключа поведение как раньше — оценка по прямой.
     """
     stats: dict = {"failed": []}
@@ -354,7 +354,7 @@ def main():
             # на 66k объявлений и k=3 это ~200k вызовов внешнего API за один
             # прогон (см. docstring build_metro). --no-ors — явный оверрайд
             # в обратную сторону: оценка по прямой, даже если ключ настроен.
-            walker = None if args.no_ors or not settings.ors_api_key else ORSWalker()
+            walker = None if args.no_ors or not settings.ors_configured else ORSWalker()
             # fetch=fetch_system передан явно — тем же приёмом, что и вызов
             # build_metro из run_offline чуть выше (живой lookup имени в
             # глобалах модуля на момент вызова, а не захваченный один раз

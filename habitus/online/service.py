@@ -54,7 +54,7 @@ def search(req: SearchRequest) -> SearchResponse:
         from habitus.online.llm import OpenRouterLLM
         llm = OpenRouterLLM()
     provider = None
-    if settings.ors_api_key:
+    if settings.ors_configured:
         from habitus.online.geo import ORSProvider
         provider = ORSProvider()
     with pipeline_failures("/search"), get_conn() as conn:
@@ -109,7 +109,7 @@ async def explain_stream_endpoint(req: ExplainRequest) -> StreamingResponse:
 @app.post("/dossier", response_model=DossierResponse)
 def dossier(req: DossierRequest) -> DossierResponse:
     provider = None
-    if settings.ors_api_key:
+    if settings.ors_configured:
         from habitus.online.geo import ORSProvider
         provider = ORSProvider()
     # pipeline_failures СНАРУЖИ try: изнутри он перехватил бы DossierNotFound

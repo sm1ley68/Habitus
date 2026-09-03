@@ -21,8 +21,24 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_timeout_s: float = 30.0
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    #: Публичный ORS требует ключ; свой инстанс (docker-образ
+    #: openrouteservice/openrouteservice) не требует ничего. Поэтому «настроен
+    #: ли ORS» — это ors_configured ниже, а не непустой ключ: гейт по ключу
+    #: делал self-host невозможным без фиктивного ORS_API_KEY.
     ors_base_url: str = "https://api.openrouteservice.org"
     ors_api_key: str = ""
+
+    @property
+    def ors_configured(self) -> bool:
+        """Есть ли куда ходить за маршрутами и изохронами.
+
+        Ключ обязателен только для публичного api.openrouteservice.org.
+        Свой базовый URL — сам по себе признак того, что оператор поднял
+        инстанс и ключ ему не нужен.
+        """
+        if self.ors_api_key:
+            return True
+        return self.ors_base_url.rstrip("/") != "https://api.openrouteservice.org"
     rrf_k: int = 40  # сетка на golden-set: 40 стабильно ≥ 60/80 по recall/NDCG
     # 100, не 50: отфильтрованные пулы golden-сета 32–122, top_k=50 срезал
     # релевантных кандидатов ДО реранка (потолок recall 0.80 → 0.99 при 100).
