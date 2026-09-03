@@ -13,3 +13,6 @@ data/metro/*
 
 docker-compose.override.yml
 .cian-proxies
+
+# Живёт в Obsidian, в репозиторий не попадает
+Описание проекта.md
