@@ -26,9 +26,9 @@ test("блок без прокси плашку не показывает — и
 });
 
 test("источник без даты рисуется без даты, а не с пустым местом", () => {
-  render(<BlockSources sources={[computed]} />);
-  expect(screen.getByText(/расчёт по геометрии зданий/)).toBeInTheDocument();
-  expect(screen.queryByText("·", { exact: false })).not.toBeInTheDocument();
+  const { container } = render(<BlockSources sources={[computed]} />);
+  const li = container.querySelector("li");
+  expect(li?.textContent).toBe("Инсоляция — вычисление, расчёт по геометрии зданий");
 });
 
 test("пустой список источников не рисует ничего", () => {
