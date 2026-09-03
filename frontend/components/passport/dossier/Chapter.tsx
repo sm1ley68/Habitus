@@ -2,6 +2,7 @@
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import PassportIcon from "../PassportIcon";
 import GradeBadge from "../GradeBadge";
+import BlockSources, { ProxyBadge } from "./BlockSources";
 import { VIZ_REGISTRY } from "../viz";
 import { DUR, EASE, SPRING } from "@/lib/motion";
 import type { LifestyleBlock as Block } from "@/lib/agent/types";
@@ -77,7 +78,10 @@ export default function Chapter(
             <h2 className="text-2xl font-medium tracking-tight text-[#1c1d20]">
               {block.title}
             </h2>
-            <GradeBadge score={block.score} />
+            <div className="flex shrink-0 items-center gap-2">
+              <ProxyBadge sources={block.sources} />
+              <GradeBadge score={block.score} />
+            </div>
           </motion.div>
 
           {block.verdict_line && (
@@ -112,6 +116,8 @@ export default function Chapter(
               ))}
             </motion.dl>
           )}
+
+          <BlockSources sources={block.sources} />
         </motion.div>
 
         {/* Instrument column. */}

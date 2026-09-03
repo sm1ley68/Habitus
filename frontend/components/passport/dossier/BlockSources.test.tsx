@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import BlockSources, { ProxyBadge, worstKind } from "./BlockSources";
-import type { BlockSource } from "@/lib/agent/types";
+import Chapter from "./Chapter";
+import SecondaryGrid from "./SecondaryGrid";
+import type { BlockSource, LifestyleBlock } from "@/lib/agent/types";
 
 const proxy: BlockSource = {
   key: "noise", label: "Шум", kind: "proxy",
@@ -34,4 +36,23 @@ test("источник без даты рисуется без даты, а не
 test("пустой список источников не рисует ничего", () => {
   const { container } = render(<BlockSources sources={[]} />);
   expect(container).toBeEmptyDOMElement();
+});
+
+test("глава hero-блока показывает источники и плашку", () => {
+  const block: LifestyleBlock = {
+    key: "unknown_layer", title: "Вид и климат", icon: "sun", score: "B",
+    description: "Описание", sources: [proxy],
+  };
+  render(<Chapter block={block} index={0} />);
+  expect(screen.getByText("оценка по модели")).toBeInTheDocument();
+  expect(screen.getByText(/модель по типам дорог/)).toBeInTheDocument();
+});
+
+test("карточка вторичного блока тоже показывает источники", () => {
+  const block: LifestyleBlock = {
+    key: "unknown_layer", title: "Вид и климат", icon: "sun", score: "B",
+    description: "Описание", sources: [proxy],
+  };
+  render(<SecondaryGrid blocks={[block]} />);
+  expect(screen.getByText(/модель по типам дорог/)).toBeInTheDocument();
 });

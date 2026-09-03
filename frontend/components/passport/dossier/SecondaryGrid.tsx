@@ -2,6 +2,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import PassportIcon from "../PassportIcon";
 import GradeBadge from "../GradeBadge";
+import BlockSources, { ProxyBadge } from "./BlockSources";
 import { VIZ_REGISTRY } from "../viz";
 import { SPRING } from "@/lib/motion";
 import type { LifestyleBlock as Block } from "@/lib/agent/types";
@@ -42,7 +43,10 @@ export default function SecondaryGrid({ blocks }: { blocks: Block[] }) {
                     </span>
                     <h3 className="font-medium text-[#1c1d20]">{block.title}</h3>
                   </div>
-                  <GradeBadge score={block.score} />
+                  <div className="flex shrink-0 items-center gap-2">
+                    <ProxyBadge sources={block.sources} />
+                    <GradeBadge score={block.score} />
+                  </div>
                 </div>
                 {Viz && block.metrics ? (
                   <div className="mt-4">
@@ -57,6 +61,7 @@ export default function SecondaryGrid({ blocks }: { blocks: Block[] }) {
                 <p className="mt-3 text-sm leading-relaxed text-zinc-600">
                   {block.description}
                 </p>
+                <BlockSources sources={block.sources} />
               </motion.div>
             );
           })}
