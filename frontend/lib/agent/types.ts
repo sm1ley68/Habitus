@@ -205,6 +205,18 @@ export interface ViewClimateData {
 
 export type HeroBlockData = FamilyRoutingData | SocialEnvironmentData | ViewClimateData;
 
+/** Зафиксировано на трёх сторонах: habitus/online/schema.py ↔ Go ↔ здесь. */
+export type SourceKind = "observation" | "computation" | "proxy";
+
+export interface BlockSource {
+  key: string;
+  label: string;
+  kind: SourceKind;
+  basis: string;
+  /** null/отсутствует — величина считается на месте, датировать нечем. */
+  observed_at?: string | null;
+}
+
 export interface LifestyleBlock {
   key: string;
   title: string;
@@ -217,6 +229,7 @@ export interface LifestyleBlock {
   tier?: BlockTier;         // NEW — default "secondary" when absent
   verdict_line?: string;    // NEW
   data?: HeroBlockData;     // NEW
+  sources?: BlockSource[];
 }
 
 export interface HistoryItem { title: string; time: string; }
