@@ -377,3 +377,30 @@ def test_secondary_noise_is_proxy_not_computation():
     blocks = _secondary_blocks({"noise_level": "high"}, None, "msk")
     source = next(s for b in blocks for s in b.sources if s.key == "noise")
     assert source.kind == "proxy"
+
+
+def test_social_block_marks_communal_and_crime_as_proxy(dossier_conn, monkeypatch):
+    """Коммунальность и риск — модельные оценки. Пометить их вычислением
+    значит выдать модель за замер."""
+    from habitus.online import dossier as mod
+    monkeypatch.setattr(mod, "_climate_data", lambda *a, **kw: None)
+    monkeypatch.setattr(mod, "_family_data", lambda *a, **kw: None)
+    with dossier_conn.cursor() as cur:
+        cur.execute("TRUNCATE urban_evidence;")
+        for layer, sid in (("communal", "c1"), ("crime", "k1")):
+            cur.execute("""INSERT INTO urban_evidence
+                               (source_id, source, city, layer, geom, weight, observed_at)
+                           VALUES (%s,'test','msk',%s,
+                                   ST_Buffer(ST_SetSRID(ST_MakePoint(37.60,55.75),4326)::geography,
+                                             300)::geometry,
+                                   0.4, '2026-04-10');""", (sid, layer))
+    dossier_conn.commit()
+    payload = build_dossier(DossierRequest(object_id="A", city="msk"), dossier_conn)
+    block = next(b for b in payload.blocks if b.key == "social_environment")
+    kinds = {s.key: s.kind for s in block.sources}
+    assert kinds["communal"] == "proxy" and kinds["crime"] == "proxy"
+    communal = next(s for s in block.sources if s.key == "communal")
+    assert communal.observed_at == date(2026, 4, 10)
+    # Проза больше не дублирует структуру: основание живёт в basis и только там.
+    assert "по году постройки" in communal.basis
+    assert "по году постройки" not in block.verdict_line

@@ -582,8 +582,22 @@ def build_dossier(req: DossierRequest, conn, *,
             key="social_environment", tier="hero", title="Социальное окружение",
             icon="users", score="A" if max(social.scores.model_dump().values()) < .34 else
             "B" if max(social.scores.model_dump().values()) < .67 else "C",
-            verdict_line="Оценка по модельным слоям: коммунальность — по году постройки, риск — по плотности алкомаркетов.",
-            description="Оценка в радиусе 500 м без подстановки отсутствующих данных.", data=social))
+            verdict_line="Оценка окружения в радиусе 500 м.",
+            description="Оценка в радиусе 500 м без подстановки отсутствующих данных.",
+            data=social,
+            sources=[
+                BlockSource(key="communal", label="Коммунальность", kind="proxy",
+                            basis="оценка по году постройки дома",
+                            observed_at=_evidence_observed_at(
+                                conn, "communal", listing.lon, listing.lat, req.city)),
+                BlockSource(key="crime", label="Риск", kind="proxy",
+                            basis="оценка по плотности алкомаркетов",
+                            observed_at=_evidence_observed_at(
+                                conn, "crime", listing.lon, listing.lat, req.city)),
+                BlockSource(key="bars", label="Заведения", kind="observation",
+                            basis="POI OpenStreetMap в радиусе 500 м",
+                            observed_at=_table_updated_at(conn, "poi")),
+            ]))
         sources.update({"communal", "bars", "crime"})
 
     climate_provider = climate_provider or DEFAULT_CLIMATE_PROVIDER
