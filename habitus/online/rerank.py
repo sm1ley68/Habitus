@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from habitus.config import settings
 from habitus.embed.encode import RERANK_LOCK
-from habitus.online.household import total_metres
+from habitus.online.household import household_cost
 from habitus.online.retrieval import Candidate
 from habitus.online.schema import ParsedQuery
 
@@ -120,7 +120,8 @@ def _household_norm(points: list[tuple[float, float]],
                     candidates: list[Candidate]) -> list[float]:
     """Нормированная близость объекта к точкам, которые назвала семья.
 
-    1.0 — суммарно ближе всех к работе/школе/секции, 0.0 — дальше всех.
+    1.0 — расположение обходится семье дешевле всех (household_cost: среднее
+    плечо плюс худшее), 0.0 — дороже всех.
     Считается по прямой: это сигнал ранжирования, а не публикуемый факт, и
     показывать его как «время в пути» нельзя — маршрут строит досье.
 
@@ -133,7 +134,7 @@ def _household_norm(points: list[tuple[float, float]],
         return [0.0] * len(candidates)
     raws: list[float | None] = [
         None if c.lon is None or c.lat is None
-        else total_metres((c.lon, c.lat), points) for c in candidates]
+        else household_cost((c.lon, c.lat), points) for c in candidates]
     known = [r for r in raws if r is not None]
     if not known:
         return [0.0] * len(candidates)

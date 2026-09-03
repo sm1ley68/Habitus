@@ -40,7 +40,9 @@ def _avg(xs: list[float]) -> float:
 def series_of(query_id: str) -> str:
     """id запроса → буквенная серия ('a01' → 'a', 'c06' → 'c'). Серии в
     golden-set меряют разные стадии: a — структурные фильтры и proximity,
-    c — текстовые оси (адрес/метро), решаемые только dense/sparse/реранком.
+    c — текстовые оси (адрес/метро), решаемые только dense/sparse/реранком,
+    d — сценарии домохозяйства (несколько мест семьи), которые меряют вклад
+    household-сигнала в реранке.
     Смешивать их в одно число бессмысленно, поэтому run_eval считает и то,
     и другое отдельно (`by_series`), не только общий блендинг."""
     # только латиница: кириллическая «с» в id дала бы бакет, визуально
@@ -96,6 +98,11 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         pq = ParsedQuery.model_validate(
             {**expected, "semantic_text":
              expected.get("semantic_text") or item["query"]})
+        # Точки домохозяйства берутся из queries.yaml явными координатами, а не
+        # через геокодер: прогон обязан быть воспроизводимым и офлайновым.
+        # В проде их резолвит pipeline.run_search через household_points().
+        household = [(float(p[0]), float(p[1]))
+                     for p in (item.get("household_points") or [])]
         rrf_cands = None
         for name, channels in VARIANTS.items():
             cands = hybrid_search(conn, pq, model=model, channels=channels)
@@ -105,7 +112,8 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
 
         # proximity-бленд поверх RRF-скоров
         _score("rrf+prox", series,
-               proximity_rerank(pq, rrf_cands, weight=proximity_weight),
+               proximity_rerank(pq, rrf_cands, weight=proximity_weight,
+                                household=household),
                relevant, rel_map)
         # тот же срез пула, что и в pipeline.run_search (prefilter_pool) — иначе
         # метрика меряет реранк по другому множеству кандидатов, чем отгружается
@@ -116,7 +124,8 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
                relevant, rel_map)
         # proximity-бленд поверх скоров реранкера
         _score("rrf+rerank+prox", series,
-               proximity_rerank(pq, reranked_full, weight=proximity_weight),
+               proximity_rerank(pq, reranked_full, weight=proximity_weight,
+                                household=household),
                relevant, rel_map)
 
     return {

@@ -15,6 +15,7 @@ import psycopg
 import yaml
 
 from habitus.config import settings
+from habitus.online.household import household_cost
 from habitus.online.retrieval import NOISE_ORDER
 
 GOLDEN = Path(__file__).parent / "queries.yaml"
@@ -26,6 +27,14 @@ GEO_KINDS = ("school", "metro", "park")
 
 # Радиус, в котором enrich усредняет модельные дБ (habitus/geo/enrich.py).
 NOISE_RADIUS_M = 500
+
+#: Опорная величина household_cost для d-серии (сценарии домохозяйства):
+#: объект, чья цена расположения (среднее плечо плюс худшее, см.
+#: habitus/online/household.household_cost) достигает 16 км, получает 0 по
+#: этой оси; чем дешевле, тем выше. Число — не порог правдоподобия, а масштаб
+#: нормировки: это примерно «одно плечо через полгорода», то есть ровно та
+#: разница, которую семья и пытается устранить выбором квартиры.
+HOUSEHOLD_REFERENCE_M = 16000.0
 
 # Нижняя граница правдоподобия цены. Медиана по базе — 650 тыс. ₽/м², 5-й
 # перцентиль — 317 тыс.; ниже 100 тыс. лежат 11 объектов вроде «154 м² за
@@ -99,6 +108,7 @@ def eligible_rows(conn, exp: dict, match: dict | None = None) -> list[dict]:
     where, params = where_and_params(exp, match)
     sql = f"""
         SELECT external_id, price, rooms, area,
+               ST_X(geom) AS lon, ST_Y(geom) AS lat,
                walk_min_school, walk_min_metro, walk_min_park, bar_density_500m,
                (SELECT avg(e.db) FROM urban_evidence e
                  WHERE e.city = l.city AND e.layer = 'noise'
@@ -113,9 +123,18 @@ def eligible_rows(conn, exp: dict, match: dict | None = None) -> list[dict]:
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
-def score(row: dict, exp: dict) -> float:
+def score(row: dict, exp: dict, household: list | None = None) -> float:
     """Чем ближе к тому, что просили, тем выше. 0..1 по каждой составляющей."""
     parts: list[float] = []
+    # Сценарии домохозяйства (d-серия): средняя удалённость по прямой до всех
+    # мест, которые семья назвала. Координаты берутся из queries.yaml явными
+    # числами, а не через геокодер: эталон обязан быть воспроизводимым и не
+    # зависеть от того, что Nominatim ответит сегодня.
+    if household:
+        points = [(float(p[0]), float(p[1])) for p in household]
+        cost = household_cost((row["lon"], row["lat"]), points)
+        parts.append(max(0.0, min(1.0,
+                                  (HOUSEHOLD_REFERENCE_M - cost) / HOUSEHOLD_REFERENCE_M)))
     for g in exp.get("geo") or []:
         limit = float(g["walk_minutes"])
         walk = float(row[f"walk_min_{g['kind']}"])
@@ -143,8 +162,9 @@ def grade(i: int, n: int) -> int:
 
 def curate(conn, item: dict) -> tuple[list[str], dict[str, int], int]:
     exp = item.get("expected_parse") or {}
+    household = item.get("household_points") or []
     rows = eligible_rows(conn, exp, item.get("match"))
-    scores = [score(r, exp) for r in rows]
+    scores = [score(r, exp, household) for r in rows]
 
     # Ранжирующего сигнала нет (score одинаков у всех — так бывает у запросов
     # без geo и noise_max, например у всей текстовой c-серии): порядок внутри
@@ -159,7 +179,7 @@ def curate(conn, item: dict) -> tuple[list[str], dict[str, int], int]:
         return ids, {eid: 1 for eid in ids}, len(rows)
 
     # тай-брейк по external_id — прогон обязан быть воспроизводимым
-    rows.sort(key=lambda r: (-score(r, exp), r["external_id"]))
+    rows.sort(key=lambda r: (-score(r, exp, household), r["external_id"]))
     top = rows[:TOP_N]
     ids = [r["external_id"] for r in top]
     grades = {eid: grade(i, len(ids)) for i, eid in enumerate(ids)}

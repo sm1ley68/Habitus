@@ -238,3 +238,50 @@ def test_ranked_score_still_cuts_to_top_n():
     assert total == 25
     assert len(ids) == TOP_N
     assert set(grades.values()) == {3, 2, 1}
+
+
+# --- d-серия: эталон учитывает точки домохозяйства ------------------------
+# Без этого правила новые сценарные запросы нельзя было бы разметить иначе,
+# как руками, а размеченный на глаз эталон не воспроизводится.
+
+def _seed_household(conn):
+    """Три двушки на одной широте, но на разной долготе — от точек семьи
+    (37.50 и 37.70) равноудалена средняя."""
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE listings;")
+        cur.execute("DELETE FROM urban_evidence;")
+        for eid, lon in (("west", 37.50), ("between", 37.60), ("east", 37.70)):
+            cur.execute(
+                """INSERT INTO listings (external_id, source, is_active, city, price,
+                       area, rooms, geom)
+                   VALUES (%s,'t',TRUE,'msk',20000000,50.0,2,
+                           ST_SetSRID(ST_MakePoint(%s,55.75),4326));""",
+                (eid, lon))
+    conn.commit()
+
+
+HOUSEHOLD_ITEM = {
+    "expected_parse": {"rooms": [2], "price_max": 40_000_000},
+    "household_points": [[37.50, 55.75], [37.70, 55.75]],
+}
+
+
+def test_curate_prefers_object_between_family_places():
+    with psycopg.connect(settings.db_dsn) as conn:
+        _seed_household(conn)
+        ids, grades, pool = curate(conn, HOUSEHOLD_ITEM)
+        again, _, _ = curate(conn, HOUSEHOLD_ITEM)
+    assert ids[0] == "between"     # компромисс между двумя офисами — лучший ответ
+    assert ids == again            # эталон воспроизводим
+    assert pool == 3
+
+
+def test_curate_without_household_points_ignores_location():
+    """Тот же посев без household_points не имеет ранжирующего сигнала вовсе —
+    значит релевантен весь пул. Так проверяется, что новая ось включается
+    только там, где семья действительно названа."""
+    with psycopg.connect(settings.db_dsn) as conn:
+        _seed_household(conn)
+        ids, grades, pool = curate(conn, {"expected_parse": HOUSEHOLD_ITEM["expected_parse"]})
+    assert sorted(ids) == ["between", "east", "west"]
+    assert set(grades.values()) == {1}

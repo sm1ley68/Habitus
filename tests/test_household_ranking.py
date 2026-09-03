@@ -118,3 +118,35 @@ def test_duplicate_places_counted_once():
             {"to_label": "Офис", "to_kind": "work", "mode": "walk"}]},
     ]})
     assert household_points(pq, "msk", lambda _: (37.6, 55.75)) == [(37.6, 55.75)]
+
+
+def test_living_at_one_office_loses_to_living_between_two():
+    """Ключевое свойство метрики: на отрезке между двумя офисами СУММА
+    расстояний постоянна, поэтому по сумме «жить вплотную к одному офису, а
+    второму ездить через весь город» неотличимо от «жить посередине». Семья,
+    которая просит компромисс, просит ровно обратного — поэтому
+    household_cost добавляет к среднему худшее плечо.
+    """
+    at_office = candidate("at-office", 37.50, 55.75)
+    in_between = candidate("between", 37.60, 55.75)
+    points = [(37.50, 55.75), (37.70, 55.75)]
+
+    # сумма их не различает…
+    assert total_metres((37.50, 55.75), points) == pytest.approx(
+        total_metres((37.60, 55.75), points), rel=1e-3)
+    # …а цена расположения — различает
+    from habitus.online.household import household_cost
+    assert household_cost((37.60, 55.75), points) < household_cost((37.50, 55.75), points)
+
+    ranked = proximity_rerank(ParsedQuery(), [at_office, in_between],
+                              household=points, top_n=2)
+    assert [c.external_id for c in ranked] == ["between", "at-office"]
+
+
+def test_household_cost_of_no_points_is_not_zero_distance():
+    """Пустой список — отсутствие сигнала, а не «идеально близко». Проверяем,
+    что вызывающий обязан различать это сам: _household_norm на пустых точках
+    возвращает нули, а не единицы."""
+    from habitus.online.household import household_cost
+    assert household_cost((37.6, 55.75), []) == 0.0
+    assert _household_norm([], [candidate("a", 37.6, 55.75)]) == [0.0]
