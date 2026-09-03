@@ -417,6 +417,21 @@ def test_top_n_boundary_fifty_capped_by_pool_size(many_conn):
     assert len(resp.results) == 35
 
 
+def test_lowered_pool_still_caps_the_default_path(many_conn, monkeypatch):
+    """Оператор, урезавший RERANK_POOL_N ради латентности, должен продолжать
+    получать урезанную выдачу на дефолтном пути: подъём пула — привилегия
+    ЯВНОГО top_n, а не поведение всех запросов подряд. Без этого теста
+    регресс невидим — срез по result_max_n вернул бы те же 30 объектов,
+    а кросс-энкодер молча считал бы вдвое больше пар."""
+    import habitus.online.rerank as rerank_mod
+    monkeypatch.setattr(rerank_mod, "_pool_configured", lambda: True)
+    monkeypatch.setattr(settings, "rerank_pool_n", 12, raising=False)
+    llm = FakeLLM([_parse_resp(), _explain_resp()])
+    resp = run_search("тихая двушка", many_conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker())
+    assert len(resp.results) == 12
+
+
 def test_default_top_n_uses_result_max_n(many_conn):
     llm = FakeLLM([_parse_resp(), _explain_resp()])
     resp = run_search("тихая двушка", many_conn, llm=llm,

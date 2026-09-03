@@ -10,7 +10,8 @@ from habitus.online.geo import IsochroneProvider
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, merge_parsed, parse_turn
 from habitus.online.orchestrator import retrieve_with_relaxation
-from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
+from habitus.online.rerank import (effective_pool_n, prefilter_pool,
+                                   proximity_rerank, rerank)
 from habitus.online.retrieval import (Candidate, constraint_diagnostics,
                                       encode_query, orientation_coverage)
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
@@ -120,7 +121,15 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     #    (кросс-энкодер слеп к точным минутам walk_min_* — их добавляет
     #    proximity-стадия). Отказ реранкера деградирует именно суженный пул,
     #    а не весь cands — дальше по пайплайну идёт то же множество кандидатов.
-    pool = prefilter_pool(pq, cands)
+    #    Явный top_n — это ровно тот «код, который знает, чего хочет», ради
+    #    которого effective_pool_n принимает аргумент: контракт SearchRequest
+    #    допускает top_n до 50, и пул реранка не имеет права быть тихой
+    #    причиной, по которой вызывающий получил меньше, чем просил. Дефолтный
+    #    путь (top_n=None) не трогаем: там потолок пула — осознанная защита
+    #    латентности, и уменьшенный оператором пул честно ужимает выдачу.
+    pool = prefilter_pool(pq, cands,
+                          pool_n=max(effective_pool_n(), top_n)
+                          if top_n is not None else None)
     try:
         with trace.span("rerank", n=len(pool)):
             ranked = rerank(query, pool, top_n=len(pool), reranker=reranker)
