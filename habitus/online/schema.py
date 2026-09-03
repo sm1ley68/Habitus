@@ -1,4 +1,5 @@
 # habitus/online/schema.py — единственный источник правды по формам данных online-фазы
+from datetime import date
 from typing import Annotated, Any, Literal
 from pydantic import AfterValidator, BaseModel, Field, field_validator
 
@@ -317,6 +318,23 @@ class RelaxationNote(BaseModel):
     text: str
 
 
+SourceKind = Literal["observation", "computation", "proxy"]
+
+
+class BlockSource(BaseModel):
+    """Происхождение одной величины блока.
+
+    kind — способ получения величины, а не мера доверия к информанту:
+    информант называется в basis. observed_at = None означает «дата
+    неприменима»: величина считается на месте и не устаревает.
+    """
+    key: str
+    label: str
+    kind: SourceKind
+    basis: str
+    observed_at: date | None = None
+
+
 class LifestyleBlock(BaseModel):
     key: str
     tier: BlockTier = "secondary"
@@ -327,6 +345,7 @@ class LifestyleBlock(BaseModel):
     description: str
     metrics: dict[str, float | str] = {}
     data: FamilyRoutingData | SocialEnvironmentData | ViewClimateData | dict[str, Any] | None = None
+    sources: list[BlockSource] = []
 
 
 class DossierPayload(BaseModel):

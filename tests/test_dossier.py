@@ -1,11 +1,13 @@
 import psycopg
 import pytest
+from datetime import date
 
 from habitus.config import settings
 from habitus.db.init_db import init_db
 from habitus.online.dossier import (ListingEvidence, ROUTE_PROFILE,
                                     _climate_data, _family_data,
-                                    _solar_samples, build_dossier)
+                                    _solar_samples, build_dossier,
+                                    _evidence_observed_at, _table_updated_at)
 from habitus.online.schema import (DossierRequest, HouseholdLegIntent,
                                    HouseholdMemberIntent, ParsedQuery)
 
@@ -320,3 +322,33 @@ def test_metro_leg_has_no_walker_when_ors_is_absent(monkeypatch, dossier_conn):
                 to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
     build_dossier(req, dossier_conn, geocoder=lambda q: (37.62, 55.76))
     assert seen["walker"] is None
+
+
+# --- Task 1: Контракт BlockSource и честные даты -----
+
+def test_evidence_observed_at_returns_layer_date(dossier_conn):
+    with dossier_conn.cursor() as cur:
+        cur.execute("TRUNCATE urban_evidence;")
+        cur.execute("""INSERT INTO urban_evidence
+                           (source_id, source, city, layer, geom, db, observed_at)
+                       VALUES ('n1','test','msk','noise',
+                               ST_SetSRID(ST_MakePoint(37.60,55.75),4326),
+                               55, '2026-05-01');""")
+    dossier_conn.commit()
+    assert _evidence_observed_at(
+        dossier_conn, "noise", 37.60, 55.75, "msk") == date(2026, 5, 1)
+
+
+def test_evidence_observed_at_is_none_when_nothing_in_radius(dossier_conn):
+    """Пустой слой даёт None, а не сегодняшнюю дату. Подставленная дата —
+    это синтетическое значение вместо отсутствующего замера."""
+    with dossier_conn.cursor() as cur:
+        cur.execute("TRUNCATE urban_evidence;")
+    dossier_conn.commit()
+    assert _evidence_observed_at(
+        dossier_conn, "noise", 37.60, 55.75, "msk") is None
+
+
+def test_table_updated_at_refuses_unknown_table(dossier_conn):
+    """Имя таблицы подставляется в SQL строкой, поэтому список закрытый."""
+    assert _table_updated_at(dossier_conn, "listings; DROP TABLE poi") is None

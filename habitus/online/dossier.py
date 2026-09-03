@@ -8,6 +8,7 @@ published as an observed city fact.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from functools import lru_cache
 import json
 import math
@@ -21,7 +22,7 @@ from habitus.geo.metro_access import ORSWalker
 from habitus.online.geo import DirectionsProvider
 from habitus.online.metro_route import door_to_door
 from habitus.online.schema import (
-    BriefItem, CompromiseNote, DirectLight, DossierPayload, DossierRequest,
+    BlockSource, BriefItem, CompromiseNote, DirectLight, DossierPayload, DossierRequest,
     FamilyRoutingData, HouseholdMember, LifestyleBlock, LineStringGeometry,
     Obstruction, RelaxationNote, RouteLeg, SocialEnvironmentData, SocialScores,
     SunHoursBySeason, VerdictInfo, ViewClimateData,
@@ -417,6 +418,38 @@ def _climate_data(conn, req: DossierRequest, listing: ListingEvidence,
             season: round(len(values) * .25, 2) for season, values in samples.items()}),
         cloudiness_factor=cloudiness, obstructions=obstructions,
         view_type=_view_type(conn, listing, orientation), db=float(db))
+
+
+# Таблицы, у которых мы спрашиваем дату импорта. Список закрытый: имя
+# таблицы подставляется в SQL строкой, параметром его не передать.
+_DATED_TABLES = {"poi", "urban_features", "metro_station"}
+
+
+def _table_updated_at(conn, table: str) -> date | None:
+    """Дата последнего импорта таблицы. None — таблица пуста или неизвестна."""
+    if conn is None or table not in _DATED_TABLES:
+        return None
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT MAX(updated_at) FROM {table}")
+        value = cur.fetchone()[0]
+    return value.date() if value else None
+
+
+def _evidence_observed_at(conn, layer: str, lon: float, lat: float,
+                          city: str, radius_m: int = 500) -> date | None:
+    """Дата ровно тех строк слоя, что попали в радиус и вошли в оценку, —
+    а не всего слоя целиком."""
+    if conn is None:
+        return None
+    with conn.cursor() as cur:
+        cur.execute("""
+            WITH home AS (SELECT ST_SetSRID(ST_MakePoint(%s,%s),4326) AS geom)
+            SELECT MAX(e.observed_at) FROM urban_evidence e, home
+            WHERE e.city = %s AND e.layer = %s
+              AND ST_DWithin(e.geom::geography, home.geom::geography, %s)
+        """, (lon, lat, city, layer, radius_m))
+        value = cur.fetchone()[0]
+    return value.date() if value else None
 
 
 def _fact_num(facts: dict, key: str) -> float | None:
