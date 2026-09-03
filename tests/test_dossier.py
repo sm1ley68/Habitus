@@ -404,3 +404,13 @@ def test_social_block_marks_communal_and_crime_as_proxy(dossier_conn, monkeypatc
     # Проза больше не дублирует структуру: основание живёт в basis и только там.
     assert "по году постройки" in communal.basis
     assert "по году постройки" not in block.verdict_line
+
+
+def test_view_block_separates_computed_light_from_modelled_noise():
+    """Блок смешивает разное по природе: инсоляция считается по геометрии,
+    шум — модель. Одна пометка на весь блок была бы враньём."""
+    from habitus.online.dossier import _view_climate_sources
+    sources = {s.key: s.kind for s in _view_climate_sources(None, 37.6, 55.7, "msk")}
+    assert sources["solar"] == "computation"
+    assert sources["noise"] == "proxy"
+    assert sources["cloudiness"] == "observation"

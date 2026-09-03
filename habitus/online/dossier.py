@@ -452,6 +452,21 @@ def _evidence_observed_at(conn, layer: str, lon: float, lat: float,
     return value.date() if value else None
 
 
+def _view_climate_sources(conn, lon: float, lat: float, city: str) -> list[BlockSource]:
+    """Блок «Вид и климат» смешивает расчёт, модель и климатическую норму —
+    поэтому источники перечисляются, а не сворачиваются в один."""
+    return [
+        BlockSource(key="solar", label="Инсоляция", kind="computation",
+                    basis="расчёт по геометрии зданий",
+                    observed_at=_table_updated_at(conn, "urban_features")),
+        BlockSource(key="noise", label="Шум", kind="proxy",
+                    basis="модель по типам дорог",
+                    observed_at=_evidence_observed_at(conn, "noise", lon, lat, city)),
+        BlockSource(key="cloudiness", label="Облачность", kind="observation",
+                    basis="климатология NASA POWER"),
+    ]
+
+
 def _fact_num(facts: dict, key: str) -> float | None:
     value = facts.get(key)
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
@@ -608,8 +623,10 @@ def build_dossier(req: DossierRequest, conn, *,
             key="view_and_climate", tier="hero", title="Вид и климат", icon="sun",
             score="A" if climate.db < 40 and climate.sun_hours_by_season.summer >= 5 else
             "B" if climate.db < 55 else "C",
-            verdict_line="Свет рассчитан по геометрии зданий; шум — модель по типам дорог.",
-            description="Сезонная инсоляция, препятствия, тип вида и модельный шум.", data=climate))
+            verdict_line="Освещённость, вид и шумовой фон.",
+            description="Сезонная инсоляция, препятствия, тип вида и модельный шум.",
+            data=climate,
+            sources=_view_climate_sources(conn, listing.lon, listing.lat, req.city)))
         sources.update({"solar", "noise"})
 
     compromises = [CompromiseNote(block_key="criteria", text=item.label)
