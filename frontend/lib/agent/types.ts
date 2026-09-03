@@ -60,7 +60,11 @@ export interface Property {
   name: string;
   address: string;
   cover_image: string;
-  match_score: number;
+  /** Процент совпадения принадлежит КОНКРЕТНОМУ запросу, а не объекту. null —
+   *  объект открыт вне подбора (с карты, из сохранённого), и совпадать ему не
+   *  с чем. Синтетический ноль здесь запрещён: он неотличим от честного
+   *  «совсем не подходит». */
+  match_score: number | null;
   price_from: number | null;
   rooms: number | null;
   area_sqm: number | null;

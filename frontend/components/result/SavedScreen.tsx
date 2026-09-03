@@ -54,7 +54,7 @@ export default function SavedScreen() {
                 aria-label={`Открыть ${f.address || f.name}`}
                 onClick={() => openFromMap({
                   id: f.id, name: f.name, address: f.address,
-                  cover_image: f.cover_image, match_score: 0,
+                  cover_image: f.cover_image, match_score: null,
                   price_from: f.price_from, rooms: f.rooms, area_sqm: f.area_sqm,
                   floor: f.floor, tags: [], coordinates: f.coordinates,
                 })}

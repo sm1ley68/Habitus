@@ -147,6 +147,28 @@ def _channel_search(conn: psycopg.Connection, sql: str, params: Sequence) -> lis
         return [r[0] for r in conn.execute(sql, list(params)).fetchall()]
 
 
+def household_order_sql(points: Sequence[tuple[float, float]]) -> tuple[str, list]:
+    """SQL-выражение household_cost (среднее плечо + худшее) и его параметры.
+
+    Зеркало habitus/online/household.household_cost, но считаемое СУБД: канал
+    ранжирования должен упорядочить всю отфильтрованную выборку, а не те 100
+    кандидатов, которые уже нашла семантика. Метрика обязана совпадать с
+    питоновской — иначе retrieval и реранк спорили бы друг с другом о том,
+    какое расположение дешевле.
+
+    Координаты идут параметрами, а не склейкой в текст запроса.
+    """
+    dist = ("ST_Distance(geom::geography, "
+            "ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography)")
+    dists = [dist] * len(points)
+    coords = [c for p in points for c in p]
+    mean = "(" + " + ".join(dists) + f") / {len(points)}.0"
+    if len(points) == 1:
+        return f"({mean} + {dist})", coords + coords
+    worst = f"GREATEST({', '.join(dists)})"
+    return f"({mean} + {worst})", coords + coords
+
+
 def _fetch_candidates(conn: psycopg.Connection, ext_ids: list[str],
                       scores: dict[str, float]) -> list[Candidate]:
     if not ext_ids:
@@ -191,13 +213,22 @@ def orientation_coverage(conn: psycopg.Connection, city: str | None) -> tuple[in
 def filter_only_search(conn: psycopg.Connection, pq: ParsedQuery,
                        top_k: int | None = None, geo_sql: str | None = None,
                        geo_params: Sequence = (),
-                       city: str | None = None) -> list[Candidate]:
-    """Деградация «без вектора»: только SQL-фильтры, свежие сверху."""
+                       city: str | None = None,
+                       household: Sequence[tuple[float, float]] = ()) -> list[Candidate]:
+    """Деградация «без вектора»: только SQL-фильтры. Свежие сверху, а при
+    названной семье — сперва те, кому расположение обходится дешевле:
+    география семьи известна и без эмбеддингов, терять её на деградационном
+    пути незачем."""
     k = top_k or settings.retrieval_top_k
     where, params = build_where(pq, geo_sql, geo_params, city)
+    order, order_params = "updated_at DESC", []
+    if household:
+        order, order_params = household_order_sql(household)
     with conn.cursor() as cur:
         cur.execute(f"SELECT external_id FROM listings WHERE {where} "
-                    f"ORDER BY updated_at DESC LIMIT %s;", params + [k])
+                    f"{'AND geom IS NOT NULL ' if household else ''}"
+                    f"ORDER BY {order} LIMIT %s;",
+                    params + order_params + [k])
         ids = [r[0] for r in cur.fetchall()]
     return _fetch_candidates(conn, ids, {})
 
@@ -207,12 +238,27 @@ def hybrid_search(conn: psycopg.Connection, pq: ParsedQuery, *, model=None,
                   geo_params: Sequence = (),
                   query_vec: tuple[list[float], dict[int, float]] | None = None,
                   channels: tuple[str, ...] = ("dense", "sparse"),
-                  city: str | None = None) -> list[Candidate]:
-    """WHERE + dense + sparse → RRF → top-K кандидатов (порядок RRF)."""
+                  city: str | None = None,
+                  household: Sequence[tuple[float, float]] = ()) -> list[Candidate]:
+    """WHERE + dense + sparse (+ household) → RRF → top-K кандидатов.
+
+    household — точки, которые назвала семья. Это ТРЕТИЙ канал RRF, а не
+    фильтр: он приносит в пул объекты, удачно расположенные относительно
+    работы и школы, которых семантика не находит вовсе. Замер показал, зачем:
+    до появления канала из десяти эталонных объектов d-серии до реранка
+    доезжало 0–5, а у запроса «компромисс Сколково ↔ Сити» — ноль, поэтому
+    вес household в реранке ничего изменить не мог: переупорядочить можно
+    только то, что уже нашли.
+
+    Каналом, а не клаузой WHERE — сознательно: жёсткий радиус вокруг мест
+    семьи обнулял бы выдачу там, где подходящего жилья рядом просто нет,
+    вместо того чтобы честно показать компромисс.
+    """
     k = top_k or settings.retrieval_top_k
     if query_vec is None:
         if not pq.semantic_text:
-            return filter_only_search(conn, pq, k, geo_sql, geo_params, city)
+            return filter_only_search(conn, pq, k, geo_sql, geo_params, city,
+                                      household=household)
         query_vec = encode_query(pq.semantic_text, model=model)
     qdense, qsparse = query_vec
 
@@ -234,6 +280,14 @@ def hybrid_search(conn: psycopg.Connection, pq: ParsedQuery, *, model=None,
             f"AND sparse_embedding IS NOT NULL "
             f"ORDER BY sparse_embedding <=> %s::sparsevec LIMIT %s;",
             params + [to_sparsevec_literal(qsparse, SPARSE_DIM), k]))
+
+    if household:
+        order_sql, order_params = household_order_sql(household)
+        rankings.append(_channel_search(
+            conn,
+            f"SELECT external_id FROM listings WHERE {where} "
+            f"AND geom IS NOT NULL ORDER BY {order_sql} LIMIT %s;",
+            params + order_params + [k]))
 
     merged = rrf_merge(rankings, k=settings.rrf_k)[:k]
     ids = [eid for eid, _ in merged]

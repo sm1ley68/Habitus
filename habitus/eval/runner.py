@@ -105,7 +105,8 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
                      for p in (item.get("household_points") or [])]
         rrf_cands = None
         for name, channels in VARIANTS.items():
-            cands = hybrid_search(conn, pq, model=model, channels=channels)
+            cands = hybrid_search(conn, pq, model=model, channels=channels,
+                                  household=household)
             _score(name, series, cands, relevant, rel_map)
             if name == "rrf":
                 rrf_cands = cands

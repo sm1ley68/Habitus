@@ -42,3 +42,14 @@ describe("PropertyCard", () => {
     expect(img.src).toBe(url);
   });
 });
+
+// Правило проекта: синтетический ноль вместо отсутствующего замера запрещён.
+// Процент совпадения принадлежит запросу, а не объекту, поэтому у объекта,
+// открытого вне подбора (с карты, из сохранённого), его просто нет.
+it("не рисует круг совпадения, когда match_score отсутствует", () => {
+  const property = { ...PROPERTIES[0], match_score: null };
+  render(<PropertyCard property={property} index={0} onOpen={() => {}} />);
+  expect(screen.queryByLabelText(/совпадение/)).not.toBeInTheDocument();
+  // сам объект при этом на месте
+  expect(screen.getByText(PROPERTIES[0].address)).toBeInTheDocument();
+});

@@ -40,7 +40,7 @@ export function collectZonePositions(
 }
 
 export function createPinElement(
-  property: { id: string; match_score: number },
+  property: { id: string; match_score: number | null },
   isTop: boolean,
   index = 0,
 ): HTMLDivElement {
@@ -51,7 +51,11 @@ export function createPinElement(
   element.style.setProperty("--pin-index", String(index));
   element.setAttribute("role", "button");
   element.setAttribute("tabindex", "0");
-  element.setAttribute("aria-label", `Объект, совпадение ${property.match_score}%`);
+  // Без процента совпадения подпись не врёт нулём, а просто его не называет.
+  element.setAttribute("aria-label",
+    typeof property.match_score === "number"
+      ? `Объект, совпадение ${property.match_score}%`
+      : "Объект");
   const dot = document.createElement("span");
   dot.className = "pin__dot";
   element.appendChild(dot);
@@ -229,7 +233,7 @@ export default function MapCanvas() {
     centeredZone.current = zone;
     const resultPositions = [...useSession.getState().properties]
       .filter((property) => isValidLngLat(property.coordinates))
-      .sort((a, b) => b.match_score - a.match_score)
+      .sort((a, b) => (b.match_score ?? -1) - (a.match_score ?? -1))
       .slice(0, 10)
       .map((property) => property.coordinates);
     const positions = resultPositions.length

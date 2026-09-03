@@ -150,3 +150,27 @@ def test_household_cost_of_no_points_is_not_zero_distance():
     from habitus.online.household import household_cost
     assert household_cost((37.6, 55.75), []) == 0.0
     assert _household_norm([], [candidate("a", 37.6, 55.75)]) == [0.0]
+
+
+# --- household как КАНАЛ retrieval, а не только вес в реранке -------------
+# Замер d-серии показал: до появления канала из десяти эталонных объектов до
+# реранка доезжало 0–5, а у запроса «компромисс Сколково ↔ Сити» — ноль.
+# Вес в реранке при этом ничего изменить не мог: переупорядочить можно только
+# то, что уже нашли.
+
+def test_household_order_sql_is_parameterized_and_balanced():
+    from habitus.online.retrieval import household_order_sql
+    sql, params = household_order_sql([(37.5, 55.7), (37.7, 55.8)])
+    # координаты идут параметрами, а не склейкой в текст запроса
+    assert "37.5" not in sql and "55.8" not in sql
+    assert sql.count("%s") == len(params)
+    # среднее плечо + худшее — то же, что считает household_cost в Python
+    assert "GREATEST" in sql
+    assert params == [37.5, 55.7, 37.7, 55.8] * 2
+
+
+def test_household_order_sql_single_point_has_no_greatest():
+    from habitus.online.retrieval import household_order_sql
+    sql, params = household_order_sql([(37.5, 55.7)])
+    assert "GREATEST" not in sql          # максимум из одного — он сам
+    assert sql.count("%s") == len(params)

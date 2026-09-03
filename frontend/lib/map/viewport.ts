@@ -108,12 +108,16 @@ export function rankVisibleProperties(
     .filter(({ property }) => isValidLngLat(property.coordinates))
     .filter(({ property }) => !viewport || isInViewport(property.coordinates, viewport));
 
+  // Объект без match_score (открыт вне подбора) уходит в конец: это решение о
+  // порядке показа, а не подставленный ноль — сравнивать его проценты не с чем.
+  const band = (p: Property) =>
+    typeof p.match_score === "number" ? Math.floor(p.match_score / 5) : -1;
+  const score = (p: Property) =>
+    typeof p.match_score === "number" ? p.match_score : -1;
   return ranked.sort((a, b) => {
-    const aBand = Math.floor(a.property.match_score / 5);
-    const bBand = Math.floor(b.property.match_score / 5);
-    return bBand - aBand
+    return band(b.property) - band(a.property)
       || a.distanceToCenter - b.distanceToCenter
-      || b.property.match_score - a.property.match_score
+      || score(b.property) - score(a.property)
       || a.sourceIndex - b.sourceIndex;
   });
 }

@@ -17,7 +17,7 @@ export default function HeroVerdict({
 }: {
   property: Property;
   verdict: VerdictInfo;
-  matchScore: number;
+  matchScore: number | null;
   titleLayoutId?: string;
 }) {
   const reduce = useReducedMotion();
@@ -132,6 +132,7 @@ export default function HeroVerdict({
             </motion.div>
           </div>
 
+          {typeof matchScore === "number" && (
           <motion.div
             initial={reduce ? false : { opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -143,6 +144,7 @@ export default function HeroVerdict({
               совпадение
             </span>
           </motion.div>
+          )}
         </div>
 
         {/* Scroll cue — invites the reader down into the investigation. */}

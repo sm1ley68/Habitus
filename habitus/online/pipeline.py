@@ -141,7 +141,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
         cands, relaxed, _ = retrieve_with_relaxation(
             conn, search_pq, point=point, provider=provider,
             model=model, query_vec=query_vec, area_match=area_match,
-            min_results=min_results, city=city)
+            min_results=min_results, city=city, household=household)
 
     # 4. пул сужен до rerank_pool_n ДО кросс-энкодера (реранк линеен по числу
     #    пар и составляет львиную долю латентности — settings.rerank_pool_n),

@@ -51,9 +51,11 @@ export default function PropertyCard({
           className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.06]"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-black/10" />
-        <div className="absolute right-3 top-3">
-          <MatchScore value={property.match_score} />
-        </div>
+        {typeof property.match_score === "number" && (
+          <div className="absolute right-3 top-3">
+            <MatchScore value={property.match_score} />
+          </div>
+        )}
         <div className="pointer-events-auto absolute left-3 top-3 z-10">
           <SaveButton objectId={property.id} label={title} />
         </div>
