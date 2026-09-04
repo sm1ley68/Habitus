@@ -153,7 +153,11 @@ export default function FamilyDayGraph({ data }: VizProps) {
   const estimated = members.some((m) => m.legs.some((l) => l.estimated));
 
   const container = useRef<HTMLDivElement>(null);
-  const { map, ready, unavailable } = useGoogleMap(container, { interactive: false, zoom: 13 });
+  // cityAware: false — камера этой карты принадлежит объекту, а не городу.
+  // С дефолтным cityAware хук по «idle» уводит её в CITY_CENTER и сбрасывает
+  // зум, затирая fitBounds ниже: маршруты и пин «Дом» оставались за кадром,
+  // а карта показывала центр Москвы.
+  const { map, ready, unavailable } = useGoogleMap(container, { interactive: false, zoom: 13, cityAware: false });
 
   // Settled frame: everyone has already arrived (dots at journey end).
   const [hour, setHour] = useState(DAY_END);

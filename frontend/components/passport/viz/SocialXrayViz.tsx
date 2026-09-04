@@ -60,7 +60,9 @@ export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
 
   const rootRef = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
-  const { map, ready, unavailable } = useGoogleMap(container, { interactive: false, zoom: 14 });
+  // cityAware: false — см. FamilyDayGraph: карта кадрируется по объекту
+  // (fitBounds по дому и слоям), и возврат камеры в центр города её ломает.
+  const { map, ready, unavailable } = useGoogleMap(container, { interactive: false, zoom: 14, cityAware: false });
   const heatLayers = useRef<Partial<Record<SocialLayerId, google.maps.Data>>>({});
 
   // Revealed once the panel scrolls into view — drives both the sweep and the
