@@ -157,7 +157,8 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     #    латентности, и уменьшенный оператором пул честно ужимает выдачу.
     pool = prefilter_pool(pq, cands,
                           pool_n=max(effective_pool_n(), top_n)
-                          if top_n is not None else None)
+                          if top_n is not None else None,
+                          household=household)
     try:
         with trace.span("rerank", n=len(pool)):
             ranked = rerank(query, pool, top_n=len(pool), reranker=reranker)

@@ -72,13 +72,26 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
     # таблицы, и для разбивки по сериям (_aggregate фильтрует его дважды).
     rows: list[dict] = []
 
-    def _score(variant: str, series: str, cands: list, relevant: set, rel_map: dict) -> None:
+    # Поэкранная выдача гейт-варианта: без неё вопрос «какой объект ушёл из
+    # топ-10» закрывается рассуждением, а не diff'ом двух прогонов — ровно на
+    # этом сломался разбор просадки d-серии (docs/notes/eval-baseline-2026-09-04.md).
+    per_query: list[dict] = []
+
+    def _score(variant: str, series: str, cands: list, relevant: set, rel_map: dict,
+               query_id: str | None = None) -> None:
         ids = [c.external_id for c in cands]
         rows.append({"variant": variant, "series": series,
                     "recall": recall_at_k(relevant, ids),
                     "precision": precision_at_k(relevant, ids),
                     "ndcg": ndcg_at_k(rel_map, ids),
                     "mrr": reciprocal_rank(relevant, ids)})
+        if variant == GATE_VARIANT and query_id is not None:
+            top = ids[:10]
+            per_query.append({
+                "id": query_id, "series": series, "top10": top,
+                "hits": [i for i in top if i in relevant],
+                "relevant": sorted(relevant),
+            })
 
     for item in golden:
         expected = item.get("expected_parse") or {}
@@ -118,7 +131,7 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
                relevant, rel_map)
         # тот же срез пула, что и в pipeline.run_search (prefilter_pool) — иначе
         # метрика меряет реранк по другому множеству кандидатов, чем отгружается
-        pool = prefilter_pool(pq, rrf_cands)
+        pool = prefilter_pool(pq, rrf_cands, household=household)
         reranked_full = rerank(item["query"], pool, top_n=len(pool),
                                reranker=reranker)
         _score("rrf+rerank", series, reranked_full[: settings.rerank_top_n],
@@ -127,7 +140,7 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         _score("rrf+rerank+prox", series,
                proximity_rerank(pq, reranked_full, weight=proximity_weight,
                                 household=household),
-               relevant, rel_map)
+               relevant, rel_map, query_id=item["id"])
 
     return {
         "n_queries": len(golden),
@@ -135,6 +148,7 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         "retrieval": _aggregate(rows),
         "by_series": {s: _aggregate([r for r in rows if r["series"] == s])
                      for s in sorted({r["series"] for r in rows})},
+        "per_query": per_query,
     }
 
 

@@ -1,6 +1,7 @@
 # habitus/online/rerank.py — bge-reranker-v2-m3, ленивая загрузка (как get_model в embed)
 import math
 from dataclasses import replace
+from typing import Callable
 
 from habitus.config import settings
 from habitus.embed.encode import RERANK_LOCK
@@ -145,42 +146,64 @@ def _household_norm(points: list[tuple[float, float]],
 
 
 def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
-                   pool_n: int | None = None) -> list[Candidate]:
+                   pool_n: int | None = None,
+                   household: list[tuple[float, float]] | None = None,
+                   ) -> list[Candidate]:
     """Сузить кандидатов до пула, который увидит кросс-энкодер (settings.rerank_pool_n).
 
-    Без гео-оси в запросе близость мерить нечем — берём голову RRF-порядка как есть.
-    С гео-осью пул — объединение двух голов по ceil(pool_n/2): голова RRF (не
-    прогадать с семантикой/лексикой) + голова по возрастанию composite-близости
-    walk_min_* (не прогадать со структурно близкими, которые RRF мог утопить в
-    хвосте). Кандидаты без данных по хотя бы одной запрошенной оси в
-    proximity-голову не попадают — вставлять их туда через фиктивный «худший»
-    скор значит гадать, а не мерить. Если объединение голов не дотягивает до
-    pool_n (головы сильно пересекаются — например, proximity-порядок совпал с
-    RRF-порядком, что и есть частый случай: гео-ось уже отфильтровала retrieval
-    по walk_min, и близость коррелирует с RRF), пул добирается хвостом из
-    остатка candidates в исходном RRF-порядке — иначе кросс-энкодер получает
-    меньше пар, чем обещает settings.rerank_pool_n, ровно на тех запросах, ради
-    которых вторая голова и вводилась.
+    Без ранжирующей оси в запросе мерить близость нечем — берём голову
+    RRF-порядка как есть. С осью пул — объединение головы RRF (не прогадать с
+    семантикой/лексикой) и головы по каждой оси, которую запрос назвал:
+
+      * гео-ось — возрастание composite-близости walk_min_* (не прогадать со
+        структурно близкими, которые RRF мог утопить в хвосте);
+      * точки домохозяйства — возрастание household_cost, той же метрики, что
+        у канала retrieval и у proximity-бленда.
+
+    Household-голова заведена потому, что канал retrieval честно доставал
+    эталон d-серии в top-100, а срез пула его выбрасывал: на запросах вида
+    «я в Сити, жена у Курского» гео-оси в смысле walk_min нет, пул сводился к
+    первым pool_n RRF, и до кросс-энкодера доезжали 2 объекта из 10 (замер —
+    docs/notes/eval-baseline-2026-09-04.md). Это та же ошибка «сигнал стоит не
+    на том слое», что чинилась в retrieval, только слоем ниже: переупорядочить
+    proximity_rerank может лишь то, что доехало.
+
+    Кандидаты без данных по оси в её голову не попадают — вставлять их туда
+    через фиктивный «худший» скор значит гадать, а не мерить. Если объединение
+    голов не дотягивает до pool_n (головы сильно пересекаются — например,
+    proximity-порядок совпал с RRF-порядком, что и есть частый случай: гео-ось
+    уже отфильтровала retrieval по walk_min, и близость коррелирует с RRF), пул
+    добирается хвостом из остатка candidates в исходном RRF-порядке — иначе
+    кросс-энкодер получает меньше пар, чем обещает settings.rerank_pool_n,
+    ровно на тех запросах, ради которых вторая голова и вводилась.
     """
     n = effective_pool_n(pool_n)
     if len(candidates) <= n:
         return candidates
-    if not pq.geo:
+
+    # Голова на каждую названную ось; ни одной — пул это просто голова RRF.
+    ranked_heads: list[list[Candidate]] = []
+    if pq.geo:
+        ranked_heads.append(_ordered_by(
+            candidates, lambda c: _proximity_raw(pq, c)))
+    if household:
+        ranked_heads.append(_ordered_by(
+            candidates,
+            lambda c: None if c.lon is None or c.lat is None
+            else household_cost((c.lon, c.lat), household)))
+    if not ranked_heads:
         return candidates[:n]
 
-    head_n = math.ceil(n / 2)
-    rrf_head = candidates[:head_n]
-    prox_ranked = sorted(
-        ((c, r) for c in candidates if (r := _proximity_raw(pq, c)) is not None),
-        key=lambda cr: (cr[1], cr[0].external_id))
-    prox_head = [c for c, _ in prox_ranked[:head_n]]
-
-    seen = {c.external_id for c in rrf_head}
-    pool = list(rrf_head)
-    for c in prox_head:
-        if c.external_id not in seen:
-            seen.add(c.external_id)
-            pool.append(c)
+    # Делим пул поровну между головой RRF и головами осей: с одной осью это
+    # прежние ceil(n/2), с двумя — трети, и ни одна ось не вытесняет RRF.
+    head_n = math.ceil(n / (1 + len(ranked_heads)))
+    pool = list(candidates[:head_n])
+    seen = {c.external_id for c in pool}
+    for head in ranked_heads:
+        for c in head[:head_n]:
+            if c.external_id not in seen:
+                seen.add(c.external_id)
+                pool.append(c)
     if len(pool) < n:
         for c in candidates:
             if len(pool) >= n:
@@ -189,6 +212,14 @@ def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
                 seen.add(c.external_id)
                 pool.append(c)
     return pool[:n]
+
+
+def _ordered_by(candidates: list[Candidate],
+                raw: Callable[[Candidate], float | None]) -> list[Candidate]:
+    """Кандидаты по возрастанию стоимости оси; без данных по оси — выбывают."""
+    scored = sorted(((c, r) for c in candidates if (r := raw(c)) is not None),
+                    key=lambda cr: (cr[1], cr[0].external_id))
+    return [c for c, _ in scored]
 
 
 def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,

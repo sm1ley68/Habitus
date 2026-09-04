@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -271,6 +272,10 @@ def main():
     # docs/notes/eval-baseline-2026-08-18.md. Обновлять вместе с этой заметкой.
     ev.add_argument("--min-precision", type=float, default=_DEFAULT_MIN_PRECISION)
     ev.add_argument("--min-ndcg", type=float, default=_DEFAULT_MIN_NDCG)
+    # Артефакт поэкранной выдачи: два прогона сравниваются diff'ом, а не
+    # рассуждением о том, какой объект выпал из топ-10.
+    ev.add_argument("--dump", type=Path, default=None,
+                    help="записать топ-10 гейт-варианта по каждому запросу в JSON")
     evidence = sub.add_parser("import-evidence")
     evidence.add_argument("--geojson", type=Path, required=True)
     zones = sub.add_parser("import-zones")
@@ -317,6 +322,11 @@ def main():
             llm = OpenRouterLLM() if settings.openrouter_api_key else None
             golden = load_golden(args.golden or DEFAULT_GOLDEN)
             res = run_eval(conn, llm, golden)
+            if args.dump:
+                args.dump.write_text(
+                    json.dumps(res["per_query"], ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+                print(f"поэкранная выдача: {args.dump}")
             print(format_report(res))
             if args.check:
                 failures = check_thresholds(res, args.min_precision, args.min_ndcg)

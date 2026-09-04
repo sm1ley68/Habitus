@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timezone
 import pytest
 from habitus.config import settings
@@ -75,6 +76,64 @@ def test_prefilter_pool_missing_geo_data_does_not_crash_or_crowd_out():
     ids = [c.external_id for c in out]
     assert ids[:3] == ["0", "1", "2"]             # RRF-голова (ceil(6/2)=3) сохранена
     assert "15" in ids                            # единственный с данными — попал в пул
+
+
+# --- household-голова в пуле ------------------------------------------------
+#
+# Канал retrieval честно доставал эталон d-серии в top-100, а срез пула его
+# выбрасывал: у запросов «я в Сити, жена у Курского» гео-оси в смысле walk_min
+# нет, и пул сводился к первым pool_n RRF. До кросс-энкодера доезжали 2 объекта
+# из 10 (docs/notes/eval-baseline-2026-09-04.md).
+
+def _at(eid: str, lon: float, lat: float) -> Candidate:
+    c = _cand(eid, f"doc{eid}")
+    return replace(c, lon=lon, lat=lat)
+
+
+def test_prefilter_pool_household_pulls_close_tail_candidate():
+    # 50 кандидатов в RRF-порядке, все далеко от точек семьи, кроме "49" —
+    # он в хвосте, за pool_n=10, и по RRF в пул не попал бы.
+    cands = [_at(str(i), 37.90, 55.90) for i in range(50)]
+    cands[49] = _at("49", 37.60, 55.75)
+    out = prefilter_pool(ParsedQuery(semantic_text="q"), cands, pool_n=10,
+                         household=[(37.60, 55.75), (37.62, 55.76)])
+    ids = [c.external_id for c in out]
+    assert ids[:5] == ["0", "1", "2", "3", "4"]   # голова RRF (ceil(10/2)=5) на месте
+    assert "49" in ids
+
+
+def test_prefilter_pool_household_ignores_candidates_without_coordinates():
+    # Объект без geom в household-сигнале не участвует: подставлять ему
+    # фиктивный «худший» скор значит гадать, а не мерить.
+    cands = [_at(str(i), 37.90, 55.90) for i in range(20)]
+    cands[15] = _cand("15", "doc15")               # lon/lat = None
+    out = prefilter_pool(ParsedQuery(semantic_text="q"), cands, pool_n=6,
+                         household=[(37.60, 55.75)])
+    ids = [c.external_id for c in out]
+    assert ids[:3] == ["0", "1", "2"]              # голова RRF (ceil(6/2)=3)
+    # "15" остался за пулом: в household-голову он не попал (координат нет), а
+    # добор хвостом до него не дошёл — фиктивной «худшей» близости ему никто
+    # не приписал.
+    assert "15" not in ids
+
+
+def test_prefilter_pool_two_axes_split_pool_in_thirds():
+    # Названы обе оси — ни одна не вытесняет голову RRF: 1/3 пула каждой.
+    cands = [_at(str(i), 37.90, 55.90) for i in range(60)]
+    cands[58] = replace(_at("58", 37.90, 55.90), facts={"walk_min_metro": 1})
+    cands[59] = _at("59", 37.60, 55.75)
+    out = prefilter_pool(_geo_pq(), cands, pool_n=9,
+                         household=[(37.60, 55.75)])
+    ids = [c.external_id for c in out]
+    assert ids[:3] == ["0", "1", "2"]              # ceil(9/3)=3
+    assert "58" in ids and "59" in ids
+
+
+def test_prefilter_pool_without_household_keeps_previous_behaviour():
+    # Регресс-страховка: без точек семьи срез обязан остаться прежним.
+    cands = [_at(str(i), 37.90, 55.90) for i in range(50)]
+    out = prefilter_pool(ParsedQuery(semantic_text="q"), cands, pool_n=10)
+    assert [c.external_id for c in out] == [str(i) for i in range(10)]
 
 
 def test_prefilter_pool_short_input_returned_as_is():
