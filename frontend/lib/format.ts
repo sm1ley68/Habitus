@@ -16,3 +16,13 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
 }
+
+/**
+ * Площадь в БД — `real` (float32), и 44.4 м² доезжает до фронта как
+ * 44.400001525878906. Печатать это сырьём нельзя: округляем до десятых,
+ * целые значения остаются без дробной части (33 м², а не 33.0 м²).
+ */
+export function area(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "площадь не указана";
+  return Math.round(n * 10) / 10 + " м²";
+}

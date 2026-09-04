@@ -3,7 +3,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import MatchScore from "./MatchScore";
 import SaveButton from "./SaveButton";
 import ResultFeedback from "./ResultFeedback";
-import { money } from "@/lib/format";
+import { area, money } from "@/lib/format";
 import { SPRING } from "@/lib/motion";
 import { useSession } from "@/lib/store/session";
 import type { Property } from "@/lib/agent/types";
@@ -29,7 +29,7 @@ export default function PropertyCard({
       variants={{ hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }}
       whileHover={shouldReduceMotion ? undefined : { y: -4 }}
       transition={SPRING.soft}
-      className="group relative block w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left transition-shadow duration-300 ease-out hover:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)] focus-within:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)]"
+      className="group relative block w-full shrink-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left transition-shadow duration-300 ease-out hover:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)] focus-within:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)]"
     >
       {/* Подложка-кнопка: открывает паспорт кликом в любое место карточки,
           кроме областей с собственными действиями (они лежат выше по z). */}
@@ -66,7 +66,7 @@ export default function PropertyCard({
           <h3 className="font-medium text-[15px] tracking-tight text-[#1c1d20]">{title}</h3>
           <p className="mt-1.5 font-mono text-sm text-zinc-700">{money(property.price_from)}</p>
           <p className="mt-0.5 text-xs text-zinc-400">
-            {property.rooms}-комн · {property.area_sqm} м² · {property.floor} этаж
+            {property.rooms}-комн · {area(property.area_sqm)} · {property.floor} этаж
           </p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {property.tags.map((t) => (

@@ -34,6 +34,12 @@ describe("PropertyCard", () => {
     expect(screen.getByText("ЖК Neva Residence")).toBeInTheDocument();
   });
 
+  it("округляет площадь: real из БД приезжает с float32-хвостом", () => {
+    const property = { ...PROPERTIES[0], area_sqm: 44.400001525878906 };
+    render(<PropertyCard property={property} index={0} onOpen={() => {}} />);
+    expect(screen.getByText(/44\.4 м²/)).toBeInTheDocument();
+  });
+
   it("рисует обложку, пришедшую с бэка (ссылка на CDN источника)", () => {
     const url = "https://cdn.cian.site/1-full.jpg";
     const property = { ...PROPERTIES[0], cover_image: url };

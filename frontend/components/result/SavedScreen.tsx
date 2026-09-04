@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from "react";
-import { money } from "@/lib/format";
+import { area, money } from "@/lib/format";
 import { useEngagement } from "@/lib/store/engagement";
 import { useSession } from "@/lib/store/session";
 import SaveButton from "./SaveButton";
@@ -74,7 +74,7 @@ export default function SavedScreen() {
                 </h2>
                 <p className="mt-1 font-mono text-sm text-zinc-700">{money(f.price_from)}</p>
                 <p className="mt-0.5 text-xs text-zinc-400">
-                  {f.rooms}-комн · {f.area_sqm} м² · {f.floor} этаж
+                  {f.rooms}-комн · {area(f.area_sqm)} · {f.floor} этаж
                 </p>
               </div>
             </div>

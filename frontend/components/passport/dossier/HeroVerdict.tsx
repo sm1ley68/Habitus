@@ -1,7 +1,7 @@
 "use client";
 import { motion, useReducedMotion } from "framer-motion";
 import MatchScore from "@/components/result/MatchScore";
-import { money } from "@/lib/format";
+import { area, money } from "@/lib/format";
 import { DUR, EASE, SPRING } from "@/lib/motion";
 import type { Property, VerdictInfo } from "@/lib/agent/types";
 
@@ -103,7 +103,7 @@ export default function HeroVerdict({
               </div>
               <div className="flex items-baseline gap-1.5">
                 <dt className="sr-only">Площадь</dt>
-                <dd className="font-mono">{property.area_sqm} м²</dd>
+                <dd className="font-mono">{area(property.area_sqm)}</dd>
               </div>
               <div className="flex items-baseline gap-1.5">
                 <dt className="sr-only">Этаж</dt>

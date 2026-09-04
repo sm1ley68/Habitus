@@ -1,4 +1,4 @@
-import { money, pluralRu } from "./format";
+import { area, money, pluralRu } from "./format";
 
 test("formats millions of rubles", () => {
   expect(money(18500000)).toBe("18.5 млн ₽");
@@ -32,5 +32,22 @@ describe("pluralRu", () => {
     expect(pluralRu(5, "станция", "станции", "станций")).toBe("станций");
     expect(pluralRu(6, "станция", "станции", "станций")).toBe("станций");
     expect(pluralRu(20, "станция", "станции", "станций")).toBe("станций");
+  });
+});
+
+describe("area", () => {
+  it("округляет float32-хвост из БД до десятых", () => {
+    // real в Postgres: 44.4 приезжает как 44.400001525878906
+    expect(area(44.400001525878906)).toBe("44.4 м²");
+    expect(area(51.199999809265137)).toBe("51.2 м²");
+  });
+
+  it("не рисует дробную часть у целых значений", () => {
+    expect(area(33)).toBe("33 м²");
+  });
+
+  it("не выдумывает замер, которого нет", () => {
+    expect(area(null)).toBe("площадь не указана");
+    expect(area(undefined)).toBe("площадь не указана");
   });
 });
