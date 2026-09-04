@@ -118,7 +118,8 @@ def _orientation_bonus(pq: ParsedQuery, candidates: list[Candidate]) -> list[flo
 
 
 def _household_norm(points: list[tuple[float, float]],
-                    candidates: list[Candidate]) -> list[float]:
+                    candidates: list[Candidate],
+                    costs: dict[str, float] | None = None) -> list[float]:
     """Нормированная близость объекта к точкам, которые назвала семья.
 
     1.0 — расположение обходится семье дешевле всех (household_cost: среднее
@@ -133,9 +134,14 @@ def _household_norm(points: list[tuple[float, float]],
     """
     if not points or not candidates:
         return [0.0] * len(candidates)
-    raws: list[float | None] = [
-        None if c.lon is None or c.lat is None
-        else household_cost((c.lon, c.lat), points) for c in candidates]
+    # costs — время по графу метро, если вызывающий его посчитал; иначе
+    # расстояние по прямой. Метрика обязана совпадать с той, которой канал
+    # retrieval упорядочил выборку, иначе слои спорят о том, что дешевле.
+    raws: list[float | None] = ([costs.get(c.external_id) for c in candidates]
+                                if costs else
+                                [None if c.lon is None or c.lat is None
+                                 else household_cost((c.lon, c.lat), points)
+                                 for c in candidates])
     known = [r for r in raws if r is not None]
     if not known:
         return [0.0] * len(candidates)
@@ -148,6 +154,7 @@ def _household_norm(points: list[tuple[float, float]],
 def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
                    pool_n: int | None = None,
                    household: list[tuple[float, float]] | None = None,
+                   household_costs: dict[str, float] | None = None,
                    ) -> list[Candidate]:
     """Сузить кандидатов до пула, который увидит кросс-энкодер (settings.rerank_pool_n).
 
@@ -187,10 +194,15 @@ def prefilter_pool(pq: ParsedQuery, candidates: list[Candidate],
         ranked_heads.append(_ordered_by(
             candidates, lambda c: _proximity_raw(pq, c)))
     if household:
+        # household_costs — время от двери до двери по графу метро; словарь
+        # приходит от того, у кого есть соединение с БД. Без него голова
+        # считает расстояние по прямой: хуже, но это честная деградация, а не
+        # молчаливая подмена метрики (habitus/online/household_time.py).
         ranked_heads.append(_ordered_by(
             candidates,
-            lambda c: None if c.lon is None or c.lat is None
-            else household_cost((c.lon, c.lat), household)))
+            (lambda c: household_costs.get(c.external_id)) if household_costs
+            else (lambda c: None if c.lon is None or c.lat is None
+                  else household_cost((c.lon, c.lat), household))))
     if not ranked_heads:
         return candidates[:n]
 
@@ -225,7 +237,9 @@ def _ordered_by(candidates: list[Candidate],
 def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,
                      weight: float | None = None,
                      top_n: int | None = None,
-                     household: list[tuple[float, float]] | None = None) -> list[Candidate]:
+                     household: list[tuple[float, float]] | None = None,
+                     household_costs: dict[str, float] | None = None,
+                     ) -> list[Candidate]:
     """Блендинг структурного сигнала точной близости с семантическим score.
 
     Cross-encoder-реранкер слеп к точным минутам (в doc_text они — крошечный хвост
@@ -250,7 +264,7 @@ def proximity_rerank(pq: ParsedQuery, candidates: list[Candidate], *,
     # ориентация окон: они двигают порядок, но не подменяют семантику запроса
     # и ничего не отфильтровывают. Пустой список (семьи нет в запросе или ни
     # одну цель не удалось геокодировать) даёт нули и не влияет на порядок.
-    house = _household_norm(household or [], candidates)
+    house = _household_norm(household or [], candidates, household_costs)
     hw = settings.household_weight
     house_bonus = [hw * h for h in house]
 

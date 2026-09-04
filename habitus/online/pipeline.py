@@ -8,6 +8,8 @@ from habitus.online.explain import cache_key as explain_cache_key
 from habitus.online.explain import explain as build_explanation
 from habitus.online.geo import IsochroneProvider
 from habitus.online.household import household_points
+from habitus.online.household_time import (all_point_times,
+                                           costs as household_time_costs)
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, merge_parsed, parse_turn
 from habitus.online.orchestrator import retrieve_with_relaxation
@@ -155,10 +157,15 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     #    причиной, по которой вызывающий получил меньше, чем просил. Дефолтный
     #    путь (top_n=None) не трогаем: там потолок пула — осознанная защита
     #    латентности, и уменьшенный оператором пул честно ужимает выдачу.
+    # Одна метрика на все слои: канал retrieval уже упорядочил выборку
+    # временем по графу метро, и срез пула с блендом обязаны считать то же.
+    hh_costs = (household_time_costs(conn, [c.external_id for c in cands],
+                                     all_point_times(conn, city, household))
+                if household else {})
     pool = prefilter_pool(pq, cands,
                           pool_n=max(effective_pool_n(), top_n)
                           if top_n is not None else None,
-                          household=household)
+                          household=household, household_costs=hh_costs)
     try:
         with trace.span("rerank", n=len(pool)):
             ranked = rerank(query, pool, top_n=len(pool), reranker=reranker)
@@ -170,7 +177,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
     # rerank_top_n, а top_n запроса или settings.result_max_n (settings.rerank_top_n
     # остаётся размером страницы для explain, но перестаёт быть потолком выдачи).
     top = proximity_rerank(
-        pq, ranked, household=household,
+        pq, ranked, household=household, household_costs=hh_costs,
         top_n=top_n if top_n is not None else settings.result_max_n)
 
     results = [to_result_item(c) for c in top]

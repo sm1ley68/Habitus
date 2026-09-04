@@ -8,6 +8,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 from habitus.config import settings
+from habitus.online.household_time import (all_point_times,
+                                             channel_sql as household_time_channel)
 from habitus.embed.encode import SPARSE_DIM, encode_texts, to_sparsevec_literal
 from habitus.online.schema import ParsedQuery
 
@@ -221,6 +223,17 @@ def filter_only_search(conn: psycopg.Connection, pq: ParsedQuery,
     пути незачем."""
     k = top_k or settings.retrieval_top_k
     where, params = build_where(pq, geo_sql, geo_params, city)
+    if household:
+        # Та же метрика времени, что и в основном пути: деградация «без
+        # вектора» не повод мерить семье расстояние по воздуху, когда время
+        # посчитать есть чем.
+        times = all_point_times(conn, city or "msk", household)
+        channel, channel_params = (household_time_channel(times, where, params)
+                                   if times else ("", []))
+        if channel:
+            with conn.cursor() as cur:
+                cur.execute(channel, channel_params + [k])
+                return _fetch_candidates(conn, [r[0] for r in cur.fetchall()], {})
     order, order_params = "updated_at DESC", []
     if household:
         order, order_params = household_order_sql(household)
@@ -282,12 +295,24 @@ def hybrid_search(conn: psycopg.Connection, pq: ParsedQuery, *, model=None,
             params + [to_sparsevec_literal(qsparse, SPARSE_DIM), k]))
 
     if household:
-        order_sql, order_params = household_order_sql(household)
-        rankings.append(_channel_search(
-            conn,
-            f"SELECT external_id FROM listings WHERE {where} "
-            f"AND geom IS NOT NULL ORDER BY {order_sql} LIMIT %s;",
-            params + order_params + [k]))
+        # Канал меряет время от двери до двери по графу метро; расстояние по
+        # прямой — фолбэк на случай, когда времени взять негде (графа нет, у
+        # точки нет платформ рядом, пешие плечи по городу не рассчитаны).
+        # Разница не косметическая: против эталона по времени воздушный
+        # порядок находил 1-3 эталонных объекта из 10 там, где по прямой
+        # находил 10 (docs/notes/eval-baseline-2026-09-04.md).
+        times = all_point_times(conn, city or "msk", household)
+        channel, channel_params = (household_time_channel(times, where, params)
+                                   if times else ("", []))
+        if channel:
+            rankings.append(_channel_search(conn, channel, channel_params + [k]))
+        else:
+            order_sql, order_params = household_order_sql(household)
+            rankings.append(_channel_search(
+                conn,
+                f"SELECT external_id FROM listings WHERE {where} "
+                f"AND geom IS NOT NULL ORDER BY {order_sql} LIMIT %s;",
+                params + order_params + [k]))
 
     merged = rrf_merge(rankings, k=settings.rrf_k)[:k]
     ids = [eid for eid, _ in merged]
