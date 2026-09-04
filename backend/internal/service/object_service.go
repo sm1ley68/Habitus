@@ -29,6 +29,13 @@ type Grade string
 type DestinationKind string
 type TravelMode string
 type LegSafety string
+
+// EstimateKind — почему минуты плеча не замер: "straight_line" (сети не
+// было, расстояние взято по прямой) или "model" (маршрут построен по
+// графу, но времена перегонов и интервалы внутри — модель). Одним bool
+// эти причины путались, и досье писало «оценено по прямой» там, где по
+// прямой не считалось ничего.
+type EstimateKind string
 type SocialLayer string
 type ViewType string
 
@@ -259,8 +266,9 @@ type FamilyRouteLeg struct {
 	// nil — безопасность маршрута не измеряли. Слоя безопасности у продукта
 	// нет; раньше ML проставлял константу по режиму, и это был выдуманный факт.
 	Safety *LegSafety `json:"safety"`
-	// true — минуты и геометрия выведены из расстояния по прямой, а не
-	// построены по сети. Тот же признак честности, что MetroRide.Estimated.
+	// nil — плечо построено по сети целиком. Иначе причина оценки.
+	EstimateKind *EstimateKind `json:"estimate_kind"`
+	// true — в плече есть оценочная величина; производное от EstimateKind.
 	Estimated bool               `json:"estimated"`
 	Geometry  LineStringGeometry `json:"geometry"`
 	// Разбивка поездки на рельсовом транспорте; nil у ног любого другого

@@ -4,7 +4,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useGoogleMap } from "@/lib/map/useGoogleMap";
 import { removeAdvancedMarker, toLatLng } from "@/lib/map/google";
 import { DUR, EASE } from "@/lib/motion";
-import type { FamilyRoutingData, TravelMode } from "@/lib/agent/types";
+import type { EstimateKind, FamilyRoutingData, RouteLeg, TravelMode } from "@/lib/agent/types";
 import type { VizProps } from "./index";
 import MetroRouteStrip from "./MetroRouteStrip";
 
@@ -139,6 +139,29 @@ const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+// Оценка бывает двух видов, и называть их одинаково нельзя: плечо по прямой —
+// это «сеть построить было нечем», а модель — «маршрут по графу, но времена
+// перегонов внутри не замерены». Раньше на оба случая писалось «оценка —
+// плечо посчитано по прямой», и на метро-маршруте это была прямая ложь.
+const ESTIMATE: Record<EstimateKind, { chip: string; legend: string }> = {
+  straight_line: {
+    chip: "по прямой",
+    legend: "по прямой — плечо посчитано по расстоянию, а не по сети",
+  },
+  model: {
+    chip: "модель",
+    legend: "модель — маршрут по графу, но времена перегонов не замерены",
+  },
+};
+// Плечо из старого ответа: признак оценки есть, причина неизвестна. Врать про
+// причину нельзя, поэтому говорим ровно то, что знаем.
+const ESTIMATE_UNKNOWN = { chip: "оценка", legend: "оценка — величина не замер" };
+
+function estimateOf(leg: RouteLeg) {
+  if (leg.estimate_kind) return ESTIMATE[leg.estimate_kind];
+  return leg.estimated ? ESTIMATE_UNKNOWN : null;
+}
+
 export default function FamilyDayGraph({ data }: VizProps) {
   const reduce = useReducedMotion();
   const routing = data as FamilyRoutingData | undefined;
@@ -150,7 +173,8 @@ export default function FamilyDayGraph({ data }: VizProps) {
   const timed = members.length > 0 &&
     members.every((m) => m.legs.length > 0 &&
       m.legs.every((l) => Boolean(l.depart && l.arrive)));
-  const estimated = members.some((m) => m.legs.some((l) => l.estimated));
+  const legends = [...new Set(members.flatMap((m) =>
+    m.legs.map((l) => estimateOf(l)?.legend).filter(Boolean) as string[]))];
 
   const container = useRef<HTMLDivElement>(null);
   // cityAware: false — камера этой карты принадлежит объекту, а не городу.
@@ -430,8 +454,10 @@ export default function FamilyDayGraph({ data }: VizProps) {
                           <span className="font-mono tabular-nums text-zinc-500">
                             {leg.minutes} мин
                           </span>
-                          {leg.estimated && (
-                            <span className="text-[9px] text-zinc-400">оценка</span>
+                          {estimateOf(leg) && (
+                            <span className="text-[9px] text-zinc-400">
+                              {estimateOf(leg)!.chip}
+                            </span>
                           )}
                         </span>
                       );
@@ -444,7 +470,7 @@ export default function FamilyDayGraph({ data }: VizProps) {
                         type="button"
                         onFocus={() => setActive(m.id)}
                         onBlur={() => setActive(null)}
-                        aria-label={`${m.label}: ${leg.to_label}, ${mode.label}, ${leg.depart}–${leg.arrive}${leg.estimated ? ", оценка по прямой" : ""}${caution ? ", осторожный участок" : ""}`}
+                        aria-label={`${m.label}: ${leg.to_label}, ${mode.label}, ${leg.depart}–${leg.arrive}${estimateOf(leg) ? `, ${estimateOf(leg)!.chip}` : ""}${caution ? ", осторожный участок" : ""}`}
                         className="group absolute top-1 flex h-7 items-center overflow-hidden rounded px-1.5 text-left transition-[box-shadow,transform] duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent active:scale-[0.99]"
                         style={{
                           left: `${x0}%`,
@@ -546,9 +572,9 @@ export default function FamilyDayGraph({ data }: VizProps) {
               <span style={{ color: "#b45309" }}>осторожный участок</span>
             </span>
           )}
-          {estimated && (
-            <span>оценка — плечо посчитано по прямой, а не по сети</span>
-          )}
+          {legends.map((legend) => (
+            <span key={legend}>{legend}</span>
+          ))}
         </div>
       </div>
     </div>

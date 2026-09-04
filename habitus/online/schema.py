@@ -1,7 +1,7 @@
 # habitus/online/schema.py — единственный источник правды по формам данных online-фазы
 from datetime import date
 from typing import Annotated, Any, Literal
-from pydantic import AfterValidator, BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
 
 
 BriefStatus = Literal["met", "compromise", "relaxed", "unknown"]
@@ -13,6 +13,12 @@ Grade = Literal["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D"]
 DestinationKind = Literal["school", "metro", "work", "park", "poi"]
 TravelMode = Literal["walk", "scooter", "bus", "car", "metro"]
 LegSafety = Literal["safe", "caution"]
+#: Почему минуты плеча — не замер. "straight_line" — сети не было и
+#: расстояние взято по прямой; "model" — маршрут построен по сети/графу,
+#: но часть величин внутри модельная (времена перегонов метро, интервалы,
+#: пересадки). Раньше обе причины схлопывались в один bool, и блок
+#: сообщал «оценено по прямой» там, где по прямой не считалось ничего.
+EstimateKind = Literal["straight_line", "model"]
 SocialLayer = Literal["communal", "bars", "crime"]
 ViewType = Literal["courtyard_park", "street", "water", "wall", "well"]
 
@@ -248,13 +254,20 @@ class RouteLeg(BaseModel):
     # то есть выдуманным фактом: слоя безопасности маршрута у продукта нет.
     safety: LegSafety | None = None
     geometry: LineStringGeometry
-    # true — минуты и геометрия выведены из расстояния по прямой, а не
-    # построены по сети (ORS не настроен). Признак едет до фронта тем же
-    # способом, что MetroRide.estimated: оценка показывается как оценка.
+    # Почему плечо — оценка; None у плеча, построенного по сети целиком.
+    estimate_kind: EstimateKind | None = None
+    # true — в плече есть хоть одна оценочная величина. Поле производное
+    # от estimate_kind и синхронизируется валидатором: два независимых
+    # признака честности разошлись бы, а расходиться им нельзя.
     estimated: bool = False
     # Разбивка поездки на рельсовом транспорте. None у ног любого другого
     # режима — существующие потребители RouteLeg не ломаются.
     metro: MetroRide | None = None
+
+    @model_validator(mode="after")
+    def _estimated_follows_kind(self) -> "RouteLeg":
+        self.estimated = self.estimate_kind is not None
+        return self
 
 
 class HouseholdMember(BaseModel):

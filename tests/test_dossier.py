@@ -8,7 +8,8 @@ from habitus.online.dossier import (ListingEvidence, ROUTE_PROFILE,
                                     _climate_data, _family_data,
                                     _solar_samples, build_dossier,
                                     _evidence_observed_at, _table_updated_at,
-                                    _secondary_blocks, _family_sources)
+                                    _secondary_blocks, _family_sources,
+                                    _routing_description, _routing_verdict)
 from habitus.online.schema import (DossierRequest, HouseholdLegIntent,
                                    HouseholdMemberIntent, ParsedQuery)
 
@@ -475,3 +476,88 @@ def test_family_block_declares_graph_computation_without_date():
 def test_family_block_adds_metro_source_only_when_metro_used():
     keys = {s.key for s in _family_sources(None, has_metro=True)}
     assert keys == {"road_graph", "metro_graph"}
+
+
+# --- Две причины оценки — две разные формулировки -------------------------
+#
+# Раньше estimated был одним bool на обе причины, и досье объявляло «часть
+# плеч оценена по прямой» на маршруте, где по прямой не считалось ни одно
+# плечо: флаг поднимало метро, у которого модельные времена перегонов внутри
+# графа (в metro_edge estimated стоит почти у всех рёбер). Формулировка про
+# прямую в блоке, весь смысл которого — честность источников, была ложью.
+
+def test_straight_line_leg_is_marked_as_straight_line():
+    req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
+        "household": [{"id": "son", "label": "Сын", "legs": [{
+            "to_label": "Школа", "to_kind": "school", "mode": "walk",
+        }]}],
+    }))
+    data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
+                        None, lambda _: (37.61, 55.71))
+    leg = data.members[0].legs[0]
+    assert leg.estimate_kind == "straight_line"
+    assert leg.estimated is True
+
+
+def test_metro_leg_with_modelled_times_is_not_called_straight_line(monkeypatch):
+    """Метро с модельными перегонами — оценка, но НЕ «по прямой»."""
+    from habitus.online import dossier as mod
+    from habitus.online.schema import MetroRide
+
+    ride = MetroRide(walk_from_home_min=6, walk_to_dest_min=3, segments=[],
+                     transfers=[], total_minutes=41, wait_min=6, estimated=True)
+    monkeypatch.setattr(mod, "door_to_door",
+                        lambda *a, **kw: (ride, [(37.6, 55.7), (37.7, 55.8)]))
+
+    req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
+        "household": [{"id": "me", "label": "Я", "legs": [{
+            "to_label": "Сити", "to_kind": "work", "mode": "metro",
+        }]}],
+    }))
+    data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
+                        None, lambda _: (37.7, 55.8))
+    leg = data.members[0].legs[0]
+    assert leg.estimate_kind == "model"
+    assert leg.estimated is True
+
+
+def test_network_leg_carries_no_estimate_kind():
+    req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
+        "household": [{"id": "son", "label": "Сын", "legs": [{
+            "to_label": "Школа", "to_kind": "school", "mode": "walk",
+        }]}],
+    }))
+    data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
+                        RouteProvider(), lambda _: (37.61, 55.71))
+    leg = data.members[0].legs[0]
+    assert leg.estimate_kind is None
+    assert leg.estimated is False
+
+
+def test_verdict_and_sources_do_not_blame_the_straight_line_for_metro_model():
+    model_only = {"model"}
+    assert "по прямой" not in _routing_verdict(model_only)
+    assert "перегон" in _routing_description(
+        [_leg_stub(41)], model_only)
+    # дорожный граф остаётся графом: по прямой не посчитано ни одного плеча
+    road = _family_sources(None, has_metro=False, kinds=model_only)[0]
+    assert road.label == "Дорожный граф"
+    assert road.kind == "computation"
+
+
+def test_straight_line_still_wins_the_verdict_when_both_kinds_present():
+    both = {"model", "straight_line"}
+    assert "по прямой" in _routing_verdict(both)
+    assert _family_sources(None, has_metro=False, kinds=both)[0].kind == "proxy"
+
+
+def test_verdict_without_any_estimate_says_so():
+    assert _routing_verdict(set()) == "Маршруты построены по сети, а не по прямой."
+    assert "оценка" not in _routing_description([_leg_stub(12)], set())
+
+
+def _leg_stub(minutes: int):
+    from habitus.online.schema import LineStringGeometry, RouteLeg
+    return RouteLeg(to_label="Школа", to_kind="school", mode="walk",
+                    minutes=minutes,
+                    geometry=LineStringGeometry(coordinates=[(37.6, 55.7), (37.61, 55.71)]))

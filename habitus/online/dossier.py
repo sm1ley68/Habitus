@@ -158,7 +158,8 @@ def _straight_line_leg(intent, start: tuple[float, float],
     depart, arrive = _leg_clock(intent, minutes)
     return RouteLeg(
         to_label=intent.to_label, to_kind=intent.to_kind, mode=intent.mode,
-        depart=depart, arrive=arrive, minutes=minutes, estimated=True,
+        depart=depart, arrive=arrive, minutes=minutes,
+        estimate_kind="straight_line",
         geometry=LineStringGeometry(coordinates=[start, target]))
 
 
@@ -226,7 +227,8 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
                 legs.append(RouteLeg(
                     to_label=intent.to_label, to_kind=intent.to_kind,
                     mode="metro", depart=depart, arrive=arrive,
-                    minutes=minutes, metro=ride, estimated=ride.estimated,
+                    minutes=minutes, metro=ride,
+                    estimate_kind="model" if ride.estimated else None,
                     geometry=LineStringGeometry(coordinates=[tuple(p) for p in geometry])))
                 start = target
                 continue
@@ -541,28 +543,61 @@ def _routing_grade(legs: list[RouteLeg]) -> str:
     return "C"
 
 
-def _routing_description(legs: list[RouteLeg], estimated: bool) -> str:
+#: Формулировки вердикта по худшей причине оценки. Порядок важен: плечо,
+#: посчитанное по прямой, — более грубая оценка, чем маршрут по сети с
+#: модельными временами внутри, и в вердикте побеждает именно оно.
+_VERDICT = {
+    "straight_line": "Часть плеч оценена по прямой — сеть построить нечем.",
+    "model": "Маршруты построены по сети; часть величин внутри — модель.",
+}
+_DESCRIPTION_TAIL = {
+    "straight_line": " Часть плеч посчитана по прямой — это оценка, а не замер.",
+    "model": (" Маршруты построены по сети, но времена перегонов и интервалы"
+              " в графе метро — модель, а не замер."),
+}
+
+
+def _worst_kind(kinds: set[str]) -> str | None:
+    """Худшая из причин оценки — по ней говорит весь блок."""
+    for kind in ("straight_line", "model"):
+        if kind in kinds:
+            return kind
+    return None
+
+
+def _routing_verdict(kinds: set[str]) -> str:
+    worst = _worst_kind(kinds)
+    return _VERDICT[worst] if worst else "Маршруты построены по сети, а не по прямой."
+
+
+def _routing_description(legs: list[RouteLeg], kinds: set[str]) -> str:
+    worst_kind = _worst_kind(kinds)
     worst = max(leg.minutes for leg in legs)
-    tail = (" Часть плеч посчитана по прямой — это оценка, а не замер."
-            if estimated else "")
+    tail = _DESCRIPTION_TAIL[worst_kind] if worst_kind else ""
     return (f"Самая долгая поездка дня — {worst} мин от двери до двери. "
             f"Показаны только явно названные поездки.{tail}")
 
 
 def _family_sources(conn, *, has_metro: bool,
-                    estimated: bool = False) -> list[BlockSource]:
-    # kind="proxy", когда сеть построить было нечем: величина получена из
-    # расстояния по прямой, а не из графа. Тот же словарь происхождения, что у
-    # остальных блоков — фронт красит блок по худшему источнику.
+                    kinds: set[str] | None = None) -> list[BlockSource]:
+    # kind="proxy" только когда сеть построить было нечем: величина получена
+    # из расстояния по прямой, а не из графа. Модельные времена ВНУТРИ графа
+    # метро сюда не относятся — они оговариваются в источнике метро ниже, и
+    # раньше из-за общего флага дорожный граф объявлялся «оценкой по прямой»
+    # даже там, где по прямой не считалось ни одно плечо. Тот же словарь
+    # происхождения, что у остальных блоков — фронт красит блок по худшему.
+    kinds = kinds or set()
+    straight = "straight_line" in kinds
     sources = [BlockSource(
-        key="road_graph", label=("Оценка по прямой" if estimated else "Дорожный граф"),
-        kind=("proxy" if estimated else "computation"),
+        key="road_graph", label=("Оценка по прямой" if straight else "Дорожный граф"),
+        kind=("proxy" if straight else "computation"),
         basis=("расстояние по прямой с коэффициентом извилистости"
-               if estimated else "маршрут по дорожному графу"))]
+               if straight else "маршрут по дорожному графу"))]
     if has_metro:
         sources.append(BlockSource(
             key="metro_graph", label="Граф метро/МЦК/МЦД", kind="computation",
-            basis="перегоны, пересадки и интервалы",
+            basis=("перегоны, пересадки и интервалы; времена перегонов — модель"
+                   if "model" in kinds else "перегоны, пересадки и интервалы"),
             observed_at=_table_updated_at(conn, "metro_station")))
     return sources
 
@@ -669,19 +704,17 @@ def build_dossier(req: DossierRequest, conn, *,
         blocks = [b for b in blocks if b.key != "logistics"]
         legs_all = [leg for m in family.members for leg in m.legs]
         has_metro = any(leg.mode == "metro" for leg in legs_all)
-        estimated = any(leg.estimated for leg in legs_all)
+        kinds = {leg.estimate_kind for leg in legs_all if leg.estimate_kind}
         blocks.insert(0, LifestyleBlock(
             key="family_routing", tier="hero", title="Суточный ритм семьи",
             icon="route",
             score=_routing_grade(legs_all),
-            verdict_line=("Часть плеч оценена по прямой — сеть построить нечем."
-                          if estimated else
-                          "Маршруты построены по сети, а не по прямой."),
-            description=_routing_description(legs_all, estimated),
+            verdict_line=_routing_verdict(kinds),
+            description=_routing_description(legs_all, kinds),
             metrics={"longest_leg_minutes": max(leg.minutes for leg in legs_all)},
             data=family,
             sources=_family_sources(conn, has_metro=has_metro,
-                                    estimated=estimated)))
+                                    kinds=kinds)))
         sources.add("route")
         routed = {(m.label, leg.to_label) for m in family.members for leg in m.legs}
         for item in brief:

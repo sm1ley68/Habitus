@@ -65,7 +65,7 @@ it("[R84b] не рисует ленту, когда ключ metro вовсе о
 // и пользователь их обычно не называет. Раньше нога без depart/arrive
 // выбрасывалась в ML вместе со всем блоком; теперь она доезжает без времени, и
 // виз обязан показать маршруты, а не рисовать их в начале суток.
-function untimed() {
+function untimed(estimate_kind: "straight_line" | "model" | null = "straight_line") {
   const data = block.data as {
     home: unknown;
     members: { id: string; label: string; legs: Record<string, unknown>[] }[];
@@ -75,7 +75,8 @@ function untimed() {
     members: data.members.map((m) => ({
       ...m,
       legs: m.legs.map((leg) => ({
-        ...leg, depart: null, arrive: null, safety: null, estimated: true,
+        ...leg, depart: null, arrive: null, safety: null,
+        estimate_kind, estimated: estimate_kind !== null,
       })),
     })),
   };
@@ -98,9 +99,28 @@ it("без часов показывает маршруты и длительн�
 });
 
 it("оценка по прямой помечена как оценка, а не выдана за маршрут", () => {
-  render(<FamilyDayGraph metrics={{}} data={untimed()} />);
-  expect(screen.getAllByText("оценка").length).toBeGreaterThan(0);
-  expect(screen.getByText(/посчитано по прямой, а не по сети/)).toBeInTheDocument();
+  render(<FamilyDayGraph metrics={{}} data={untimed("straight_line")} />);
+  expect(screen.getAllByText("по прямой").length).toBeGreaterThan(0);
+  expect(screen.getByText(/посчитано по расстоянию, а не по сети/)).toBeInTheDocument();
+});
+
+// Метро помечено оценкой из-за модельных времён перегонов в графе, а не из-за
+// прямой: почти все рёбра metro_edge приходят с estimated. Пока причина была
+// одним bool, блок писал «посчитано по прямой» на маршруте, где по прямой не
+// посчитано ни одного плеча.
+it("модельные времена не выдаются за оценку по прямой", () => {
+  render(<FamilyDayGraph metrics={{}} data={untimed("model")} />);
+  expect(screen.getAllByText("модель").length).toBeGreaterThan(0);
+  expect(screen.queryByText(/по прямой/)).not.toBeInTheDocument();
+  expect(screen.getByText(/времена перегонов не замерены/)).toBeInTheDocument();
+});
+
+it("плечо по сети не помечается оценкой вовсе", () => {
+  render(<FamilyDayGraph metrics={{}} data={untimed(null)} />);
+  // Проверяем именно легенду плеча: пометки сегментов внутри MetroRouteStrip
+  // живут от seg.estimated и к причине оценки плеча отношения не имеют.
+  expect(screen.queryByText(/— плечо посчитано|— маршрут по графу|— величина не замер/))
+    .not.toBeInTheDocument();
 });
 
 it("с полным временем суточная лента остаётся на месте", () => {

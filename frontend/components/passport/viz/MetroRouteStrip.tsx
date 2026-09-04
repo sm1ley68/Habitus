@@ -175,7 +175,7 @@ export default function MetroRouteStrip({ ride }: { ride: MetroRide }) {
         {ride.total_minutes} мин от двери до двери
         {ride.estimated ? (
           <span className="ml-2 font-normal text-zinc-500">
-            часть маршрута оценена по расстоянию
+            часть величин маршрута — оценка, а не замер
           </span>
         ) : null}
       </p>
