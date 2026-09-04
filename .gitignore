@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 .env
 data/*
+# Экстракт OSM для своего ORS — гигабайт, качается руками
+!data/osm/
+data/osm/*
 !data/named_zones.seed.json
 !data/metro/
 data/metro/*

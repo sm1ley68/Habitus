@@ -133,6 +133,46 @@ services:
       backend:
         condition: service_healthy
 
+  # Свой OpenRouteService. Профиль, а не обычный сервис: сборка графа —
+  # десятки минут и гигабайты RAM, и обычному `docker compose up` это не нужно.
+  # Поднимается явно:  docker compose --profile ors up -d ors
+  #
+  # Экстракт OSM в ./data/osm/ кладётся руками (в .gitignore, гигабайт):
+  #   curl -O https://download.geofabrik.de/russia/central-fed-district-latest.osm.pbf
+  # Первый старт строит граф и минут 30-60 отвечает 503 — это нормально, ждать
+  # по healthcheck. Граф лежит в томе habitus_ors и переживает перезапуск.
+  #
+  # Зачем: публичный api.openrouteservice.org требует ключ и имеет суточный
+  # потолок запросов, а изохроны нужны КАЖДОМУ поиску (point_predicate) —
+  # на потоке квота кончится. Свой инстанс ключа не требует вовсе:
+  # settings.ors_configured считает признаком настройки сам факт своего
+  # ORS_BASE_URL (habitus/config.py).
+  ors:
+    image: openrouteservice/openrouteservice:v8.0.0
+    profiles: ["ors"]
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./data/osm:/home/ors/files:ro
+      - habitus_ors:/home/ors/graphs
+    environment:
+      # Файл экстракта: имя должно совпадать с тем, что лежит в ./data/osm.
+      ors.engine.source_file: /home/ors/files/central-fed-district-latest.osm.pbf
+      # Профили под то, что реально запрашивает продукт: пеший, авто,
+      # велосипед (им считается scooter-режим досье). Лишние профили — это
+      # лишние часы сборки графа и лишние гигабайты.
+      ors.engine.profiles.car.enabled: "true"
+      ors.engine.profiles.foot.enabled: "true"
+      ors.engine.profiles.bike.enabled: "true"
+      JAVA_OPTS: "-Xms1g -Xmx8g"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/ors/v2/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 60
+      start_period: 60m
+
 volumes:
   habitus_pg:
   habitus_hf:
+  habitus_ors:
