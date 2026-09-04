@@ -1,33 +1,172 @@
 {
   "lines": [
-    {"ref": "1",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "2",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "3",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "4",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "4А",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "5",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "6",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "7",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "8",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "8А",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "9",   "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "10",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "11",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "12",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "15",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "16",  "system": "subway", "headway_s": 120, "fallback_speed_kmh": 40},
-    {"ref": "14",  "system": "mck",    "headway_s": 300, "fallback_speed_kmh": 45},
-    {"ref": "D1",  "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55},
-    {"ref": "D2",  "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55},
-    {"ref": "D3",  "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55},
-    {"ref": "D4",  "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55},
-    {"ref": "D4А", "system": "mcd",    "headway_s": 600, "fallback_speed_kmh": 55}
+    {
+      "ref": "1",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 47.5,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "2",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 47.7,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "3",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 44.5,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "4",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 39.4,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "4А",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 30.6,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "5",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 48.4,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "6",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 47.9,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "7",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 49.8,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "8",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 50.8,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "8А",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 49.1,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "9",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 47.5,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "10",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 46.0,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "11",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 43.4,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "12",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 40.9,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "15",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 47.5,
+      "speed_source": "OSM route duration"
+    },
+    {
+      "ref": "16",
+      "system": "subway",
+      "headway_s": 120,
+      "fallback_speed_kmh": 40
+    },
+    {
+      "ref": "14",
+      "system": "mck",
+      "headway_s": 300,
+      "fallback_speed_kmh": 45
+    },
+    {
+      "ref": "D1",
+      "system": "mcd",
+      "headway_s": 600,
+      "fallback_speed_kmh": 55
+    },
+    {
+      "ref": "D2",
+      "system": "mcd",
+      "headway_s": 600,
+      "fallback_speed_kmh": 55
+    },
+    {
+      "ref": "D3",
+      "system": "mcd",
+      "headway_s": 600,
+      "fallback_speed_kmh": 55
+    },
+    {
+      "ref": "D4",
+      "system": "mcd",
+      "headway_s": 600,
+      "fallback_speed_kmh": 55
+    },
+    {
+      "ref": "D4А",
+      "system": "mcd",
+      "headway_s": 600,
+      "fallback_speed_kmh": 55
+    }
   ],
   "edges": [
-    {"line": "1", "from": "Сокольники", "to": "Красносельская", "seconds": 150}
+    {
+      "line": "1",
+      "from": "Сокольники",
+      "to": "Красносельская",
+      "seconds": 150
+    }
   ],
   "transfers": [
-    {"from": "Охотный Ряд", "to": "Театральная", "seconds": 180},
-    {"from": "Площадь Гагарина", "to": "Ленинский проспект", "seconds": 420, "outdoor": true}
+    {
+      "from": "Охотный Ряд",
+      "to": "Театральная",
+      "seconds": 180
+    },
+    {
+      "from": "Площадь Гагарина",
+      "to": "Ленинский проспект",
+      "seconds": 420,
+      "outdoor": true
+    }
   ]
 }
