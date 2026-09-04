@@ -187,9 +187,17 @@ def curate(conn, item: dict) -> tuple[list[str], dict[str, int], int]:
 
 
 def main() -> int:
+    # Импорт здесь, а не наверху: curate_routed берёт из этого модуля
+    # eligible_rows и grade, и модульный импорт замкнул бы цикл.
+    from habitus.eval.curate_routed import SHORTLIST_N, routed_reference
+    from habitus.geo.metro_access import ORSWalker
+    from habitus.online.geo import ORSProvider
+
     with open(GOLDEN, encoding="utf-8") as f:
         golden = yaml.safe_load(f)
 
+    # Пешие плечи эталона домохозяйства — по дорожной сети, если ORS настроен.
+    walker = ORSWalker(provider=ORSProvider()) if settings.ors_configured else None
     with psycopg.connect(settings.db_dsn) as conn:
         for item in golden:
             # Курируем то, что выражается правилами по колонкам: либо эталон уже
@@ -201,7 +209,17 @@ def main() -> int:
             if not (item.get("relevant_ids") or item.get("curate")):
                 continue
             old = set(item["relevant_ids"])
-            ids, grades, pool = curate(conn, item)
+            # Сценарии домохозяйства курируются ВРЕМЕНЕМ в пути, а не
+            # расстоянием по прямой. Причина в docs/notes/eval-baseline-2026-09-04.md:
+            # воздушный эталон строился той же метрикой, которой канал
+            # retrieval упорядочивал выборку, и мерил согласие канала с самим
+            # собой, а не качество. Пользователь по прямой не ходит.
+            routed = routed_reference(conn, item, walker)
+            if routed is not None:
+                ids, grades = routed
+                pool = SHORTLIST_N
+            else:
+                ids, grades, pool = curate(conn, item)
             item["relevant_ids"] = ids
             item["relevance"] = grades
             kept = len(old & set(ids))

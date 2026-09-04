@@ -10,6 +10,8 @@ from habitus.eval.metrics import (ndcg_at_k, parse_accuracy, precision_at_k,
                                   recall_at_k, reciprocal_rank)
 from habitus.online.llm import LLMClient, LLMUnavailable
 from habitus.online.nlu import ParseError, parse_query
+from habitus.online.household_time import (all_point_times,
+                                           costs as household_time_costs)
 from habitus.online.rerank import prefilter_pool, proximity_rerank, rerank
 from habitus.online.retrieval import hybrid_search
 from habitus.online.schema import ParsedQuery
@@ -65,6 +67,24 @@ def _aggregate(rows: list[dict]) -> dict[str, dict[str, float]]:
     return out
 
 
+def dataset_state(conn) -> dict:
+    """Снимок состояния данных на момент прогона.
+
+    Без него метрики двух прогонов несравнимы молча: launchd-агент
+    scripts/refresh.sh переливает listings каждые 6 часов, и серия может
+    сдвинуться на переливке, а не на правке кода. Один такой разбор уже стоил
+    часа поисков несуществующей регрессии (docs/notes/eval-baseline-2026-09-04.md),
+    поэтому состояние печатается в шапке отчёта всегда.
+    """
+    if conn is None:
+        return {}
+    row = conn.execute("""
+        SELECT count(*) FILTER (WHERE is_active AND embedding IS NOT NULL),
+               max(updated_at)
+        FROM listings;""").fetchone()
+    return {"listings": row[0], "updated_at": row[1]}
+
+
 def run_eval(conn, llm: LLMClient | None, golden: list[dict],
              model=None, reranker=None, proximity_weight: float | None = None) -> dict:
     parse_scores: list[float] = []
@@ -116,6 +136,9 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         # В проде их резолвит pipeline.run_search через household_points().
         household = [(float(p[0]), float(p[1]))
                      for p in (item.get("household_points") or [])]
+        # Стоимость расположения считается один раз на запрос и уходит во все
+        # слои: канал retrieval, срез пула и бленд обязаны мерить одинаково.
+        hh_times = all_point_times(conn, "msk", household) if household else None
         rrf_cands = None
         for name, channels in VARIANTS.items():
             cands = hybrid_search(conn, pq, model=model, channels=channels,
@@ -125,13 +148,16 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
                 rrf_cands = cands
 
         # proximity-бленд поверх RRF-скоров
+        hh_costs = (household_time_costs(conn, [c.external_id for c in rrf_cands],
+                                         hh_times) if hh_times else {})
         _score("rrf+prox", series,
                proximity_rerank(pq, rrf_cands, weight=proximity_weight,
-                                household=household),
+                                household=household, household_costs=hh_costs),
                relevant, rel_map)
         # тот же срез пула, что и в pipeline.run_search (prefilter_pool) — иначе
         # метрика меряет реранк по другому множеству кандидатов, чем отгружается
-        pool = prefilter_pool(pq, rrf_cands, household=household)
+        pool = prefilter_pool(pq, rrf_cands, household=household,
+                              household_costs=hh_costs)
         reranked_full = rerank(item["query"], pool, top_n=len(pool),
                                reranker=reranker)
         _score("rrf+rerank", series, reranked_full[: settings.rerank_top_n],
@@ -139,7 +165,7 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         # proximity-бленд поверх скоров реранкера
         _score("rrf+rerank+prox", series,
                proximity_rerank(pq, reranked_full, weight=proximity_weight,
-                                household=household),
+                                household=household, household_costs=hh_costs),
                relevant, rel_map, query_id=item["id"])
 
     return {
@@ -149,6 +175,7 @@ def run_eval(conn, llm: LLMClient | None, golden: list[dict],
         "by_series": {s: _aggregate([r for r in rows if r["series"] == s])
                      for s in sorted({r["series"] for r in rows})},
         "per_query": per_query,
+        "dataset": dataset_state(conn),
     }
 
 
@@ -180,9 +207,17 @@ def check_thresholds(res: dict, min_precision: float, min_ndcg: float,
 
 
 def format_report(res: dict) -> str:
+    data = res.get("dataset") or {}
     lines = ["# Habitus eval", "",
              f"Запросов в golden-set: {res['n_queries']}",
-             f"parse-accuracy: {res['parse_accuracy']:.2f}", "",
+             f"parse-accuracy: {res['parse_accuracy']:.2f}"]
+    if data:
+        # Сравнивать метрики двух прогонов можно только при совпадении этой
+        # строки: база переливается по расписанию, и серия сдвигается от
+        # данных так же легко, как от кода.
+        lines.append(f"данные: {data['listings']} объявлений, "
+                     f"последняя запись {data['updated_at']:%Y-%m-%d %H:%M}")
+    lines += ["",
              "| вариант | recall@10 | precision@10 | NDCG@10 | MRR | n |",
              "|---|---|---|---|---|---|"]
     for name, m in res["retrieval"].items():

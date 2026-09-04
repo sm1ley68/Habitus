@@ -23,28 +23,25 @@ docs/notes/eval-baseline-2026-09-04.md.
     далёкий по прямой, но быстрый по метро, в шортлист не попадёт.
   * Времена перегонов в графе метро сами модельные (в metro_edge estimated
     почти у всех рёбер), так что независима здесь ТОПОЛОГИЯ, а не абсолютные
-    минуты. Пешие плечи до станции и от неё считаются по прямой (walker=None,
-    см. ниже) — на квоту публичного ORS пересборка эталона не влезает.
+    минуты. Пешие плечи до станции и от неё считаются по дорожной сети, когда
+    настроен ORS (на публичном ключе это не влезало в квоту — см. ниже).
   * Кандидат, до которого граф не доехал, из эталона выбывает — приписывать
     ему штрафное время значит выдумывать замер.
 
-Запуск:  uv run python -m habitus.eval.curate_routed
-Результат: habitus/eval/queries-routed.yaml — только d-серия, тот же формат.
+Модуль-библиотека: канонический эталон строит `habitus.eval.curate`, который
+зовёт отсюда `routed_reference` для запросов с точками семьи. Отдельного файла
+эталона нет намеренно — два источника правды разошлись бы, и следующий прогон
+curate молча вернул бы воздушную метрику.
 """
-import sys
-from pathlib import Path
 
 import psycopg
-import yaml
 
 from habitus.config import settings
-from habitus.eval.curate import GOLDEN, TOP_N, eligible_rows, grade, score
+from habitus.eval.curate import TOP_N, eligible_rows, grade
 from habitus.online.geo import ORSProvider
 from habitus.online.household import household_cost
 from habitus.geo.metro_access import ORSWalker
 from habitus.online.metro_route import door_to_door
-
-OUT = Path(__file__).parent / "queries-routed.yaml"
 
 #: Сколько лучших по прямой уезжает в маршрутизацию. Широкая сеть здесь важнее
 #: экономии: эталон — это ПЕРЕУПОРЯДОЧИВАНИЕ шортлиста, и чем он уже, тем
@@ -71,55 +68,33 @@ def routed_cost(conn, city: str, home: tuple[float, float],
     return sum(legs) / len(legs) + max(legs)
 
 
-def main() -> int:
-    with open(GOLDEN, encoding="utf-8") as f:
-        items = yaml.safe_load(f)
+def routed_reference(conn, item: dict, walker, *, verbose: bool = False
+                     ) -> tuple[list[str], dict[str, int]] | None:
+    """Эталон одного запроса по времени в пути. None — точек семьи в нём нет.
 
-    # Пешие плечи считаются по прямой намеренно, walker=None. Через ORS каждая
-    # поездка стоит несколько запросов на подбор ближайших станций у обоих
-    # концов, и пересборка эталона (40 кандидатов x 5 запросов x 2 конца)
-    # вылезает за суточную квоту публичного ключа в тысячи вызовов — причём
-    # плечо «дом -> станция» это 5-10 минут, а решает порядок рельсовая часть.
-    # На своём инстансе ORS (README, «Свой OpenRouteService») ограничение
-    # снимается: тогда сюда стоит передать ORSWalker и пересобрать эталон.
-    walker = None
-
-    out = []
-    with psycopg.connect(settings.db_dsn) as conn:
-        for item in items:
-            points = [(float(p[0]), float(p[1]))
-                      for p in (item.get("household_points") or [])]
-            if not points:
-                continue
-            exp = item.get("expected_parse") or {}
-            rows = eligible_rows(conn, exp, item.get("match"))
-            # Шортлист по прямой — вход маршрутизации, не эталон.
-            rows.sort(key=lambda r: (household_cost((r["lon"], r["lat"]), points),
-                                     r["external_id"]))
-            shortlist = rows[:SHORTLIST_N]
-
-            costed = []
-            for r in shortlist:
-                cost = routed_cost(conn, "msk",
-                                   (r["lon"], r["lat"]), points, walker)
-                if cost is not None:
-                    costed.append((cost, r["external_id"]))
-            costed.sort()
-            ids = [eid for _, eid in costed[:TOP_N]]
-            straight = [r["external_id"] for r in shortlist[:TOP_N]]
-            overlap = len(set(ids) & set(straight))
-            print(f"{item['id']}: маршрутизировано {len(costed)}/{len(shortlist)}, "
-                  f"пересечение с эталоном по прямой {overlap}/10")
-            out.append({**item,
-                        "relevant_ids": ids,
-                        "relevance": {eid: grade(i, len(ids))
-                                      for i, eid in enumerate(ids)}})
-
-    with open(OUT, "w", encoding="utf-8") as f:
-        yaml.safe_dump(out, f, allow_unicode=True, sort_keys=False)
-    print(f"записано: {OUT} ({len(out)} запросов)")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    Зовётся и из curate: канонический эталон для сценариев домохозяйства
+    строится ЗДЕСЬ, иначе следующий прогон curate вернул бы воздушную метрику
+    обратно и молча отменил бы решение о смене основания.
+    """
+    points = [(float(p[0]), float(p[1]))
+              for p in (item.get("household_points") or [])]
+    if not points:
+        return None
+    exp = item.get("expected_parse") or {}
+    rows = eligible_rows(conn, exp, item.get("match"))
+    # Шортлист по прямой — вход маршрутизации, не эталон.
+    rows.sort(key=lambda r: (household_cost((r["lon"], r["lat"]), points),
+                             r["external_id"]))
+    shortlist = rows[:SHORTLIST_N]
+    costed = []
+    for r in shortlist:
+        cost = routed_cost(conn, "msk", (r["lon"], r["lat"]), points, walker)
+        if cost is not None:
+            costed.append((cost, r["external_id"]))
+    costed.sort()
+    ids = [eid for _, eid in costed[:TOP_N]]
+    if verbose:
+        straight = {r["external_id"] for r in shortlist[:TOP_N]}
+        print(f"{item['id']}: маршрутизировано {len(costed)}/{len(shortlist)}, "
+              f"пересечение с эталоном по прямой {len(set(ids) & straight)}/10")
+    return ids, {eid: grade(i, len(ids)) for i, eid in enumerate(ids)}

@@ -242,3 +242,31 @@ def test_without_check_flag_low_metrics_do_not_fail(monkeypatch, capsys):
     code = _run_gate(monkeypatch, _gate_report(0.01, 0.01), ["eval"])
     assert code is None
     assert "ГЕЙТ НЕ ПРОЙДЕН" not in capsys.readouterr().out
+
+
+# --- состояние данных в шапке отчёта ---------------------------------------
+#
+# База переливается launchd-агентом (scripts/refresh.sh) каждые 6 часов, и
+# серия сдвигается от данных так же легко, как от правки кода. Пока состояние
+# не печаталось, два прогона выглядели сравнимыми, не будучи ими: разбор
+# просадки d-серии 4 сентября ушёл в поиск несуществующей регрессии.
+
+def test_report_prints_dataset_state():
+    from datetime import datetime
+    from habitus.eval.runner import format_report
+    res = {"n_queries": 5, "parse_accuracy": 0.9, "retrieval": {}, "by_series": {},
+           "dataset": {"listings": 6945,
+                       "updated_at": datetime(2026, 9, 4, 18, 8)}}
+    out = format_report(res)
+    assert "6945 объявлений" in out
+    assert "2026-09-04 18:08" in out
+
+
+def test_report_without_dataset_state_stays_valid():
+    # conn=None (прогон без БД: только parse-accuracy) — строки о данных
+    # просто нет, отчёт не падает и ничего не выдумывает.
+    from habitus.eval.runner import format_report
+    out = format_report({"n_queries": 5, "parse_accuracy": 0.9,
+                         "retrieval": {}, "by_series": {}, "dataset": {}})
+    assert "объявлений" not in out
+    assert "# Habitus eval" in out
