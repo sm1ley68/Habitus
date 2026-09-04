@@ -1,0 +1,26 @@
+# Конфигурация своего OpenRouteService (docker compose --profile ors).
+#
+# Файлом, а не переменными окружения: v8 читает профили из ors.engine.profiles,
+# и через env-переменные вида ors.engine.profiles.car.enabled контейнер падает
+# на старте с "Cannot invoke String.split(String) because this.profiles is null".
+#
+# Экстракт — только Москва (105 МБ), а не Центральный федеральный округ
+# (930 МБ): продукт работает по московской базе, а граф ЦФО не влезает в
+# память, выделенную Docker на машине разработчика (2.8 ГБ на всё), и падает
+# по OOM на сборке.
+#
+# Включены ровно те профили, которые запрашивает продукт: car — режим "car"
+# досье, walking — пешие плечи и изохроны, bike-regular — режим "scooter"
+# (ROUTE_PROFILE в habitus/online/dossier.py маппит его в cycling-regular).
+# Каждый лишний профиль — это лишние часы сборки графа и лишние гигабайты.
+ors:
+  engine:
+    source_file: /home/ors/files/moscow-latest.osm.pbf
+    graphs_root_path: /home/ors/graphs
+    profiles:
+      car:
+        enabled: true
+      walking:
+        enabled: true
+      bike-regular:
+        enabled: true

@@ -55,7 +55,8 @@ def test_search_endpoint_injects_ors_provider_when_key_set(monkeypatch):
     assert isinstance(seen["provider"], ORSProvider)
 
 
-def test_search_endpoint_no_provider_when_key_empty(monkeypatch):
+def _provider_seen(monkeypatch) -> dict:
+    """Гоняет /search с подменённым run_search и возвращает увиденный provider."""
     fake_resp = SearchResponse(results=[], explanation="пусто",
                                parsed=ParsedQuery(), data_freshness="нет данных")
     seen = {}
@@ -64,13 +65,32 @@ def test_search_endpoint_no_provider_when_key_empty(monkeypatch):
         seen["provider"] = kw.get("provider")
         return fake_resp
 
-    monkeypatch.setattr(service.settings, "ors_api_key", "")
     monkeypatch.setattr(service, "run_search", fake_run_search)
     monkeypatch.setattr(service, "get_conn",
                         lambda: contextlib.nullcontext(None))
     r = TestClient(service.app).post("/search", json={"query": "тихо"})
     assert r.status_code == 200
-    assert seen["provider"] is None
+    return seen
+
+
+def test_search_endpoint_no_provider_when_key_empty(monkeypatch):
+    # ors_base_url подменяется ЯВНО: без этого тест читал бы .env разработчика
+    # и падал у того, кто поднял свой инстанс — «настроен ли ORS» определяется
+    # парой (ключ, базовый URL), а не одним ключом (см. settings.ors_configured).
+    monkeypatch.setattr(service.settings, "ors_api_key", "")
+    monkeypatch.setattr(service.settings, "ors_base_url",
+                        "https://api.openrouteservice.org")
+    assert _provider_seen(monkeypatch)["provider"] is None
+
+
+def test_search_endpoint_uses_own_instance_without_key(monkeypatch):
+    # Свой инстанс ключа не требует вовсе — это и есть смысл ors_configured:
+    # гейт по непустому ключу делал бы self-host невозможным без фиктивного
+    # ORS_API_KEY (habitus/config.py, README «Свой OpenRouteService»).
+    monkeypatch.setattr(service.settings, "ors_api_key", "")
+    monkeypatch.setattr(service.settings, "ors_base_url", "http://ors:8082/ors")
+    from habitus.online.geo import ORSProvider
+    assert isinstance(_provider_seen(monkeypatch)["provider"], ORSProvider)
 
 
 def test_dossier_endpoint_returns_versioned_payload(monkeypatch):

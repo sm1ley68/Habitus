@@ -323,20 +323,22 @@ docker compose up -d --no-deps frontend
 что `ORS_BASE_URL` отличается от публичного (`habitus/config.py`).
 
 ```bash
-# 1. Экстракт OSM (~1 ГБ, в .gitignore, качается один раз)
-curl -o data/osm/central-fed-district-latest.osm.pbf \
-  https://download.geofabrik.de/russia/central-fed-district-latest.osm.pbf
+# 1. Экстракт OSM — только Москва, 105 МБ, в .gitignore, качается один раз.
+#    Не ЦФО: граф округа не влезает в память, выделенную Docker, и падает по
+#    OOM на сборке, а база продукта всё равно московская.
+curl -o data/osm/moscow-latest.osm.pbf \
+  https://download.openstreetmap.fr/extracts/russia/central_federal_district/moscow-latest.osm.pbf
 
 # 2. Поднять — сервис под профилем, обычный `docker compose up` его не тянет
 docker compose --profile ors up -d ors
 
-# 3. Первый старт строит граф: 30-60 минут и до 8 ГБ RAM. Пока строит —
+# 3. Первый старт строит граф. Пока строит —
 #    отвечает 503, это нормально. Готовность:
 docker compose ps ors           # healthy
 curl http://localhost:8082/ors/v2/health
 
 # 4. В .env
-ORS_BASE_URL=http://ors:8080/ors    # из контейнеров compose
+ORS_BASE_URL=http://ors:8082/ors    # из контейнеров compose
 # ORS_BASE_URL=http://localhost:8082/ors   # для нативного ML на хосте
 ```
 

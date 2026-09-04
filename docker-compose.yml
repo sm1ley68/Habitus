@@ -137,10 +137,14 @@ services:
   # десятки минут и гигабайты RAM, и обычному `docker compose up` это не нужно.
   # Поднимается явно:  docker compose --profile ors up -d ors
   #
-  # Экстракт OSM в ./data/osm/ кладётся руками (в .gitignore, гигабайт):
-  #   curl -O https://download.geofabrik.de/russia/central-fed-district-latest.osm.pbf
-  # Первый старт строит граф и минут 30-60 отвечает 503 — это нормально, ждать
-  # по healthcheck. Граф лежит в томе habitus_ors и переживает перезапуск.
+  # Экстракт OSM в ./data/osm/ кладётся руками (в .gitignore, 105 МБ):
+  #   curl -o data/osm/moscow-latest.osm.pbf \
+  #     https://download.openstreetmap.fr/extracts/russia/central_federal_district/moscow-latest.osm.pbf
+  # Именно Москва, а не ЦФО: граф округа не влезает в память, выделенную
+  # Docker (проверено — OOM на сборке), а база продукта всё равно московская.
+  # Geofabrik с некоторых сетей недоступен, отсюда зеркало OSM France.
+  # Первый старт строит граф и отвечает 503 — это нормально, ждать по
+  # healthcheck. Граф лежит в томе habitus_ors и переживает перезапуск.
   #
   # Зачем: публичный api.openrouteservice.org требует ключ и имеет суточный
   # потолок запросов, а изохроны нужны КАЖДОМУ поиску (point_predicate) —
@@ -154,16 +158,13 @@ services:
       - "8082:8082"
     volumes:
       - ./data/osm:/home/ors/files:ro
+      - ./ors-config.yml:/home/ors/ors-config.yml:ro
       - habitus_ors:/home/ors/graphs
     environment:
-      # Файл экстракта: имя должно совпадать с тем, что лежит в ./data/osm.
-      ors.engine.source_file: /home/ors/files/central-fed-district-latest.osm.pbf
-      # Профили под то, что реально запрашивает продукт: пеший, авто,
-      # велосипед (им считается scooter-режим досье). Лишние профили — это
-      # лишние часы сборки графа и лишние гигабайты.
-      ors.engine.profiles.car.enabled: "true"
-      ors.engine.profiles.foot.enabled: "true"
-      ors.engine.profiles.bike.enabled: "true"
+      # Конфигурация файлом: через env-переменные вида
+      # ors.engine.profiles.car.enabled контейнер v8 падает на старте с
+      # "Cannot invoke String.split(String) because this.profiles is null".
+      ORS_CONFIG_LOCATION: /home/ors/ors-config.yml
       JAVA_OPTS: "-Xms1g -Xmx8g"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8082/ors/v2/health"]
