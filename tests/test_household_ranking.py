@@ -88,34 +88,34 @@ def test_city_suffix_added_unless_city_already_named():
         seen.append(q)
         return (37.6, 55.75)
 
-    geocode_leg(leg("офис"), "msk", geocoder)
-    geocode_leg(leg("Москва Сити"), "msk", geocoder)
-    assert seen == ["офис, Москва", "Москва Сити"]
+    geocode_leg(leg("Балчуг 1"), "msk", geocoder)
+    geocode_leg(leg("Тверская, Москва"), "msk", geocoder)
+    assert seen == ["Балчуг 1, Москва", "Тверская, Москва"]
 
 
 def test_geocode_outside_moscow_is_dropped_for_non_metro_legs():
-    assert geocode_leg(leg("офис"), "msk", lambda _: (30.3, 59.9)) is None
+    assert geocode_leg(leg("Балчуг 1"), "msk", lambda _: (30.3, 59.9)) is None
     # у метро границей служит сам граф: МЦД уходят в область
-    assert geocode_leg(leg("офис", "metro"), "msk", lambda _: (30.3, 59.9)) == (30.3, 59.9)
+    assert geocode_leg(leg("Балчуг 1", "metro"), "msk", lambda _: (30.3, 59.9)) == (30.3, 59.9)
 
 
 def test_unresolved_place_does_not_enter_the_signal():
     pq = ParsedQuery.model_validate({"household": [{
         "id": "parent", "label": "Родитель", "legs": [
-            {"to_label": "Работа", "to_kind": "work", "mode": "walk"},
+            {"to_label": "Балчуг 1", "to_kind": "work", "mode": "walk"},
             {"to_label": "Небывалое место", "to_kind": "work", "mode": "walk"},
         ]}]})
     resolved = household_points(
-        pq, "msk", lambda q: (37.6, 55.75) if q.startswith("Работа") else None)
+        pq, "msk", lambda q: (37.6, 55.75) if q.startswith("Балчуг 1") else None)
     assert resolved == [(37.6, 55.75)]
 
 
 def test_duplicate_places_counted_once():
     pq = ParsedQuery.model_validate({"household": [
         {"id": "mom", "label": "Мама", "legs": [
-            {"to_label": "Офис", "to_kind": "work", "mode": "walk"}]},
+            {"to_label": "Балчуг 1", "to_kind": "work", "mode": "walk"}]},
         {"id": "dad", "label": "Папа", "legs": [
-            {"to_label": "Офис", "to_kind": "work", "mode": "walk"}]},
+            {"to_label": "Балчуг 1", "to_kind": "work", "mode": "walk"}]},
     ]})
     assert household_points(pq, "msk", lambda _: (37.6, 55.75)) == [(37.6, 55.75)]
 

@@ -76,14 +76,14 @@ def test_family_data_keeps_untimed_leg_but_invents_no_clock(monkeypatch):
 
     req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
         "household": [{"id": "parent", "label": "Родитель", "legs": [
-            {"to_label": "Работа", "to_kind": "work", "mode": "car"},
-            {"to_label": "Метро", "to_kind": "metro", "mode": "metro", "depart": "09:00"},
+            {"to_label": "Балчуг 1", "to_kind": "work", "mode": "car"},
+            {"to_label": "Охотный Ряд", "to_kind": "metro", "mode": "metro", "depart": "09:00"},
         ]}],
     }))
     data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
                         RouteProvider(), lambda _: (37.7, 55.8))
     legs = data.members[0].legs
-    assert [leg.to_label for leg in legs] == ["Работа"]
+    assert [leg.to_label for leg in legs] == ["Балчуг 1"]
     assert legs[0].depart is None and legs[0].arrive is None
     assert legs[0].minutes == 11
 
@@ -96,7 +96,7 @@ def test_family_data_estimates_leg_when_ors_is_not_configured():
     """
     req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
         "household": [{"id": "son", "label": "Сын", "legs": [{
-            "to_label": "Школа", "to_kind": "school", "mode": "walk",
+            "to_label": "Лицей 1535", "to_kind": "school", "mode": "walk",
         }]}],
     }))
     data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
@@ -111,7 +111,7 @@ def test_family_data_estimates_leg_when_ors_is_not_configured():
 def test_family_data_rejects_geocode_outside_moscow():
     req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
         "household": [{"id": "son", "label": "Сын", "legs": [{
-            "to_label": "Школа", "to_kind": "school", "mode": "walk",
+            "to_label": "Лицей 1535", "to_kind": "school", "mode": "walk",
             "depart": "08:00",
         }]}],
     }))
@@ -219,7 +219,7 @@ def test_metro_leg_carries_the_ride_breakdown(monkeypatch, dossier_conn):
         object_id="A", city="msk",
         parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
             id="me", label="я", legs=[HouseholdLegIntent(
-                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+                to_label="Балчуг 1", to_kind="work", mode="metro", depart="08:00")])]))
     payload = build_dossier(req, dossier_conn, geocoder=lambda q: (37.62, 55.76))
     block = next(b for b in payload.blocks if b.key == "family_routing")
     leg = block.data.members[0].legs[0]
@@ -239,7 +239,7 @@ def test_no_graph_for_city_drops_the_block_instead_of_showing_zeros(
         object_id="A", city="spb",
         parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
             id="me", label="я", legs=[HouseholdLegIntent(
-                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+                to_label="Балчуг 1", to_kind="work", mode="metro", depart="08:00")])]))
     payload = build_dossier(req, dossier_conn, geocoder=lambda q: (30.3, 59.93))
     # синтетический ноль вместо отсутствующего замера запрещён
     assert not any(b.key == "family_routing" for b in payload.blocks)
@@ -261,13 +261,13 @@ def test_family_data_geocodes_against_the_requests_own_city_r62():
     req = DossierRequest(object_id="E1", city="spb",
                          parsed_query=ParsedQuery.model_validate({
         "household": [{"id": "son", "label": "Сын", "legs": [{
-            "to_label": "Работа", "to_kind": "work", "mode": "walk",
+            "to_label": "Балчуг 1", "to_kind": "work", "mode": "walk",
             "depart": "08:00",
         }]}],
     }))
     _family_data(None, req, ListingEvidence(30.3, 59.93, None, None, {}),
                  RouteProvider(), spy_geocoder)
-    assert captured == ["Работа, Санкт-Петербург"]
+    assert captured == ["Балчуг 1, Санкт-Петербург"]
 
 
 def test_family_routing_verdict_line_is_accurate_for_metro_legs(monkeypatch, dossier_conn):
@@ -286,7 +286,7 @@ def test_family_routing_verdict_line_is_accurate_for_metro_legs(monkeypatch, dos
         object_id="A", city="msk",
         parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
             id="me", label="я", legs=[HouseholdLegIntent(
-                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+                to_label="Балчуг 1", to_kind="work", mode="metro", depart="08:00")])]))
     payload = build_dossier(req, dossier_conn, geocoder=lambda q: (37.62, 55.76))
     block = next(b for b in payload.blocks if b.key == "family_routing")
     source_keys = {s.key for s in block.sources}
@@ -322,7 +322,7 @@ def test_metro_leg_gets_the_walker_when_ors_is_configured(monkeypatch, dossier_c
         object_id="A", city="msk",
         parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
             id="me", label="я", legs=[HouseholdLegIntent(
-                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+                to_label="Балчуг 1", to_kind="work", mode="metro", depart="08:00")])]))
     build_dossier(req, dossier_conn, route_provider=_Provider(),
                   geocoder=lambda q: (37.62, 55.76))
 
@@ -353,7 +353,7 @@ def test_metro_leg_has_no_walker_when_ors_is_absent(monkeypatch, dossier_conn):
         object_id="A", city="msk",
         parsed_query=ParsedQuery(household=[HouseholdMemberIntent(
             id="me", label="я", legs=[HouseholdLegIntent(
-                to_label="офис", to_kind="work", mode="metro", depart="08:00")])]))
+                to_label="Балчуг 1", to_kind="work", mode="metro", depart="08:00")])]))
     build_dossier(req, dossier_conn, geocoder=lambda q: (37.62, 55.76))
     assert seen["walker"] is None
 
@@ -489,7 +489,7 @@ def test_family_block_adds_metro_source_only_when_metro_used():
 def test_straight_line_leg_is_marked_as_straight_line():
     req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
         "household": [{"id": "son", "label": "Сын", "legs": [{
-            "to_label": "Школа", "to_kind": "school", "mode": "walk",
+            "to_label": "Лицей 1535", "to_kind": "school", "mode": "walk",
         }]}],
     }))
     data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
@@ -511,7 +511,7 @@ def test_metro_leg_with_modelled_times_is_not_called_straight_line(monkeypatch):
 
     req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
         "household": [{"id": "me", "label": "Я", "legs": [{
-            "to_label": "Сити", "to_kind": "work", "mode": "metro",
+            "to_label": "Москва-Сити", "to_kind": "work", "mode": "metro",
         }]}],
     }))
     data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
@@ -524,7 +524,7 @@ def test_metro_leg_with_modelled_times_is_not_called_straight_line(monkeypatch):
 def test_network_leg_carries_no_estimate_kind():
     req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
         "household": [{"id": "son", "label": "Сын", "legs": [{
-            "to_label": "Школа", "to_kind": "school", "mode": "walk",
+            "to_label": "Лицей 1535", "to_kind": "school", "mode": "walk",
         }]}],
     }))
     data = _family_data(None, req, ListingEvidence(37.6, 55.7, None, None, {}),
@@ -558,6 +558,6 @@ def test_verdict_without_any_estimate_says_so():
 
 def _leg_stub(minutes: int):
     from habitus.online.schema import LineStringGeometry, RouteLeg
-    return RouteLeg(to_label="Школа", to_kind="school", mode="walk",
+    return RouteLeg(to_label="Лицей 1535", to_kind="school", mode="walk",
                     minutes=minutes,
                     geometry=LineStringGeometry(coordinates=[(37.6, 55.7), (37.61, 55.71)]))
