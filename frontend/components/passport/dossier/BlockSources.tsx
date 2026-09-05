@@ -43,15 +43,18 @@ export function ProxyBadge({ sources }: { sources?: BlockSource[] }) {
 export default function BlockSources({ sources }: { sources?: BlockSource[] }) {
   if (!sources?.length) return null;
   return (
-    <ul className="mt-4 flex flex-col gap-1.5 border-t border-zinc-100 pt-3">
+    <ul className="mt-4 flex flex-col gap-1.5 border-t border-black/[0.06] pt-3">
       {sources.map((s) => {
         const date = when(s.observed_at);
         return (
-          <li key={s.key} className="text-xs leading-relaxed text-zinc-400">
+          <li key={s.key} className="text-xs leading-relaxed text-ink-faint">
             {/* Название источника и его происхождение (замер/модель/...) —
                 тот же словарь, что красит плечи маршрута и другие факты
-                продукта: один язык происхождения на весь фронт. */}
-            <span className="flex items-center gap-2 text-zinc-600">
+                продукта: один язык происхождения на весь фронт.
+                inline-flex, а не flex: это строчный элемент внутри <li>,
+                blockовый flex порвал бы поток и увёл «— вид, основание» на
+                отдельную строку. */}
+            <span className="inline-flex items-center gap-2 text-ink-muted">
               {s.label}{" "}
               <Provenance kind={provenanceOfSource(s.kind)} />
             </span>{" "}
