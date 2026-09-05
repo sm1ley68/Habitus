@@ -14,7 +14,7 @@ export default function StageCaption() {
           key={stage}
           initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
           transition={{ duration: DUR.base }}
-          className="text-sm text-zinc-500 text-center"
+          className="text-sm text-ink-muted text-center"
         >
           {caption}
         </motion.p>
