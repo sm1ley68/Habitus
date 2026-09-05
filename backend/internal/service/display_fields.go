@@ -83,15 +83,18 @@ func pluralRu(n int, one, few, many string) string {
 func BuildTags(facts map[string]any) []string {
 	var tags []string
 	if v, ok := numFact(facts, "walk_min_school"); ok {
-		n := int(v)
+		// math.Round вместо обрезки: маршрутизация возвращает дробные минуты,
+		// и обрезка систематически занижала бы время в удобную для объявления сторону.
+		// Для продукта, честность фактов — конкурентное преимущество.
+		n := int(math.Round(v))
 		tags = append(tags, fmt.Sprintf("%d %s до школы", n, pluralRu(n, "минута", "минуты", "минут")))
 	}
 	if v, ok := numFact(facts, "walk_min_metro"); ok {
-		n := int(v)
+		n := int(math.Round(v))
 		tags = append(tags, fmt.Sprintf("%d %s до метро", n, pluralRu(n, "минута", "минуты", "минут")))
 	}
 	if v, ok := numFact(facts, "walk_min_park"); ok {
-		n := int(v)
+		n := int(math.Round(v))
 		tags = append(tags, fmt.Sprintf("%d %s до парка", n, pluralRu(n, "минута", "минуты", "минут")))
 	}
 	// noise_level — модельная величина (слой дорог + барный прокси), поэтому
