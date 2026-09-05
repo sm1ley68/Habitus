@@ -71,7 +71,12 @@
   height: 14px;
   border-radius: 9999px;
   background: var(--glow-color);
-  box-shadow: 0 0 0 4px rgba(124, 140, 255, 0.18), 0 2px 6px rgba(20, 20, 34, 0.28);
+  /* Ореол вокруг пина — тон в тон с заливкой (--glow-color = --evidence по
+     умолчанию), а не отдельный «фирменный» цвет: раньше здесь был индиго
+     дефолтного комплекта, никак не связанный с --glow-color. rgba —
+     буквальная копия #14493C (PALETTE.evidence), CSS не умеет добавить
+     прозрачность переменной без color-mix(). */
+  box-shadow: 0 0 0 4px rgba(20, 73, 60, 0.18), 0 2px 6px rgba(20, 20, 34, 0.28);
   transform-origin: center;
   transition: transform var(--dur-fast) var(--ease-standard),
               box-shadow var(--dur-base) var(--ease-standard);
@@ -84,7 +89,9 @@
 }
 .pin--active .pin__dot {
   transform: scale(1.45);
-  box-shadow: 0 0 0 6px rgba(124, 140, 255, 0.26), 0 6px 16px rgba(124, 140, 255, 0.4);
+  /* Тот же evidence-тон, что и в состоянии покоя выше — активный пин ярче,
+     а не другого цвета. */
+  box-shadow: 0 0 0 6px rgba(20, 73, 60, 0.26), 0 6px 16px rgba(20, 73, 60, 0.4);
 }
 .pin:focus-visible { outline: none; }
 .pin:focus-visible .pin__dot {
@@ -142,16 +149,21 @@
   width: 20px;
   height: 20px;
   border-radius: 9999px;
-  color: var(--tint, #6f7cc8);
+  /* Фолбэк — не хардкод, а тот же --accent (=evidence), которым помечены
+     свои объекты: JS всегда ставит --tint явно, но если однажды забудет,
+     дефолт не должен тянуть за собой индиго дефолтного комплекта. */
+  color: var(--tint, var(--accent));
   background: #fff;
-  box-shadow: 0 0 0 1.5px var(--tint, #6f7cc8), 0 2px 6px rgba(20, 20, 34, 0.22);
+  box-shadow: 0 0 0 1.5px var(--tint, var(--accent)), 0 2px 6px rgba(20, 20, 34, 0.22);
   animation: lmapDrop var(--dur-base) var(--ease-decelerate) backwards;
   animation-delay: calc(var(--i, 0) * 90ms + 140ms);
 }
 .lmap-pin--home .lmap-pin__dot {
   color: #fff;
   background: var(--tint);
-  box-shadow: 0 0 0 1.5px var(--tint), 0 2px 8px rgba(124, 140, 255, 0.5);
+  /* Внешнее свечение — тон в тон с --tint (в рантайме это --accent/evidence,
+     см. фолбэк выше), а не отдельный литерал. */
+  box-shadow: 0 0 0 1.5px var(--tint), 0 2px 8px rgba(20, 73, 60, 0.5);
 }
 .lmap-pin__dot svg { width: 12px; height: 12px; display: block; }
 .lmap-pin__label {
@@ -176,7 +188,10 @@
   height: 10px;
   border-radius: 9999px;
   background: var(--accent);
-  box-shadow: 0 0 0 4px rgba(124, 140, 255, 0.22), 0 1px 4px rgba(20, 20, 34, 0.3);
+  /* Базовый фолбэк на случай отсутствия инлайн-стиля от компонента (там
+     кольцо красится в тон конкретного члена семьи) — держим его в цвете
+     --accent/evidence, а не в индиго. */
+  box-shadow: 0 0 0 4px rgba(20, 73, 60, 0.22), 0 1px 4px rgba(20, 20, 34, 0.3);
 }
 @keyframes lmapDrop {
   from { opacity: 0; transform: translateY(-8px) scale(0.4); }

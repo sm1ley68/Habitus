@@ -26,8 +26,11 @@ import { useSession } from "@/lib/store/session";
 import { RENDERED_LAYER_IDS, type GeoZone, type LayerId } from "@/lib/agent/types";
 import MapPreviewCard, { type PreviewData } from "./MapPreviewCard";
 import MapUpdateIndicator from "./MapUpdateIndicator";
+import { PALETTE } from "@/lib/tokens";
 
-const ACCENT = "#7C8CFF";
+// Контур зоны поиска — это «наша» область, тот же смысл, что и --accent у
+// пинов и досье, поэтому evidence, а не индиго дефолтного комплекта.
+const ACCENT = PALETTE.evidence;
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&

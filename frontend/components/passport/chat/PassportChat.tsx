@@ -177,18 +177,22 @@ export default function PassportChat({
               }}
               transition={SPRING.soft}
             >
+              {/* Подсказка-чип — акцент интерфейса (предложенный вопрос), без
+                  привязки к происхождению факта, поэтому цвет — accent
+                  (=evidence), а не хардкод индиго. Tailwind понимает
+                  прозрачность у accent, потому что --accent — валидный CSS-цвет. */}
               <button
                 type="button"
                 onClick={() => ask(chip)}
                 disabled={streaming}
-                className="inline-flex items-center gap-2 rounded-full border border-[#7C8CFF]/30 bg-[#7C8CFF]/[0.06] px-3.5 py-1.5 text-sm text-[#1c1d20] transition-transform hover:-translate-y-px hover:bg-[#7C8CFF]/[0.1] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/[0.06] px-3.5 py-1.5 text-sm text-[#1c1d20] transition-transform hover:-translate-y-px hover:bg-accent/[0.1] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 <svg
                   width="14"
                   height="14"
                   viewBox="0 0 16 16"
                   fill="none"
-                  stroke="#5b6bd6"
+                  stroke="var(--accent)"
                   strokeWidth="1.6"
                   strokeLinecap="round"
                   strokeLinejoin="round"

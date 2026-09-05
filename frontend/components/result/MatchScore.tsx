@@ -16,8 +16,11 @@ export default function MatchScore({ value }: { value: number }) {
       aria-label={`${value}% совпадение`}
       className="relative inline-grid place-items-center w-11 h-11 shrink-0 rounded-full bg-black/25 backdrop-blur-[6px] ring-1 ring-white/15"
       style={
+        // Ободок для топ-совпадений — это акцент интерфейса (подсветка лучшего
+        // результата), а не сигнал происхождения факта, поэтому берём
+        // PALETTE.evidence буквально (rgba нужен для прозрачности, hex её не даёт).
         isTop
-          ? { boxShadow: "0 0 0 1px rgba(124,140,255,0.25), 0 4px 14px -4px rgba(124,140,255,0.55)" }
+          ? { boxShadow: "0 0 0 1px rgba(20,73,60,0.25), 0 4px 14px -4px rgba(20,73,60,0.55)" }
           : undefined
       }
     >

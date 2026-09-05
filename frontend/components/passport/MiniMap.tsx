@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useGoogleMap } from "@/lib/map/useGoogleMap";
 import { removeAdvancedMarker, toLatLng } from "@/lib/map/google";
 import type { Property } from "@/lib/agent/types";
+import { PALETTE } from "@/lib/tokens";
 
 export default function MiniMap({ property }: { property: Property }) {
   const container = useRef<HTMLDivElement>(null);
@@ -20,7 +21,9 @@ export default function MiniMap({ property }: { property: Property }) {
 
     const element = document.createElement("div");
     element.className = "lmap-pin lmap-pin--home";
-    element.style.setProperty("--tint", "#7C8CFF");
+    // Пин самого объекта на его мини-карте — это «наш» объект, тот же смысл,
+    // что и --accent на карте выдачи, поэтому берём PALETTE.evidence.
+    element.style.setProperty("--tint", PALETTE.evidence);
     element.innerHTML =
       '<span class="lmap-pin__dot"><svg viewBox="0 0 12 12" aria-hidden="true">' +
       '<path d="M2 6 L6 2.5 L10 6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>' +

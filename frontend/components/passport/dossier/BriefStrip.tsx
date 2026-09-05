@@ -2,6 +2,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { SPRING } from "@/lib/motion";
 import type { BriefItem, BriefStatus } from "@/lib/agent/types";
+import { PALETTE } from "@/lib/tokens";
 
 // Screen ② — the investigation brief. Every criterion from the request as a chip;
 // its status is carried by BOTH a glyph and a tint (never colour alone), and the
@@ -16,8 +17,10 @@ type StatusStyle = {
 
 const STATUS: Record<BriefStatus, StatusStyle> = {
   met: {
-    ring: "border-[#7C8CFF]/35 bg-[#7C8CFF]/8",
-    tint: "#5b6bd6",
+    // «Выполнено» — акцент интерфейса, не про происхождение факта, поэтому
+    // держится на accent (=PALETTE.evidence), а не на хардкоде индиго.
+    ring: "border-accent/35 bg-accent/[0.08]",
+    tint: PALETTE.evidence,
     srLabel: "выполнено",
     glyph: <path d="M3.5 8.2 6.4 11l6.1-6.4" />,
   },

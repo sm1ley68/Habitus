@@ -6,8 +6,11 @@ import { removeAdvancedMarker, toLatLng } from "@/lib/map/google";
 import { DUR, EASE } from "@/lib/motion";
 import type { SocialEnvironmentData, SocialLayerId } from "@/lib/agent/types";
 import type { VizProps } from "./index";
+import { PALETTE } from "@/lib/tokens";
 
-const ACCENT = "#7C8CFF";
+// «Дом» на этой карте — тот же смысл, что и в MiniMap/FamilyDayGraph: наш
+// объект, а не оценка чего-либо, поэтому берём accent (=evidence).
+const ACCENT = PALETTE.evidence;
 
 // Each social layer gets its own desaturated tint so heat stays legible on the
 // neutral canvas — never neon, never the loud accent (that's reserved for the
@@ -178,7 +181,9 @@ export default function SocialXrayViz({ data, home: objectHome }: VizProps) {
               <motion.div
                 aria-hidden
                 className="pointer-events-none absolute inset-y-0 left-0 w-1/3"
-                style={{ background: "linear-gradient(90deg, transparent, rgba(124,140,255,0.34), transparent)" }}
+                // Тот же accent/evidence, что и кольцо дома выше — единая
+                // подсветка «наше», без индиго дефолтного комплекта.
+                style={{ background: "linear-gradient(90deg, transparent, rgba(20,73,60,0.34), transparent)" }}
                 initial={{ x: "-110%", opacity: 0 }}
                 whileInView={{ x: "310%", opacity: [0, 1, 1, 0] }}
                 viewport={{ once: true, margin: "-60px" }}

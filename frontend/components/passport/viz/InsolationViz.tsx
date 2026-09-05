@@ -363,10 +363,12 @@ export default function InsolationViz({ metrics, data }: VizProps) {
         <line x1={ROOM_X0} y1={CY} x2={ROOM_X0} y2={FLOOR} stroke="#efe9dd" strokeWidth="1.2" />
         <line x1={ROOM_X1} y1={CY} x2={ROOM_X1} y2={FLOOR} stroke="#efe9dd" strokeWidth="1.2" />
 
-        {/* Cool wash over the room when there's no direct sun. */}
+        {/* Cool wash over the room when there's no direct sun. Same slate as
+            sunCore's shadowed-sun state below — one cool colour for "no light"
+            across the whole viz, not the brand accent and not a provenance tone. */}
         <rect
           x={ROOM_X0} y={CY} width={ROOM_X1 - ROOM_X0} height={FLOOR - CY}
-          fill="#6f7cc8" style={{ opacity: (1 - intensity) * 0.12, transition: fillT }}
+          fill="#94a3b8" style={{ opacity: (1 - intensity) * 0.12, transition: fillT }}
         />
 
         {/* Incoming ray: sun -> window aperture. */}

@@ -13,7 +13,12 @@ const TONE: Record<OwnerListingStatus, BadgeTone> = {
 export const STATUS_RAIL: Record<OwnerListingStatus, string> = {
   published: "#2f8f5f",
   failed: "#b25e4a",
-  publishing: "#6f7cc8",
+  // publishing — процесс идёт прямо сейчас, ни хорошо, ни плохо: остальным
+  // статусам тут не быть (зелёный/терракотовый/золото уже заняты смыслом
+  // готово/ошибка/предупреждение). Раньше был индиго дефолтного комплекта;
+  // берём приглушённый стальной синий — он не спорит ни с одним из
+  // существующих статусов и не пересекается с палитрой происхождения факта.
+  publishing: "#4F7A9E",
   draft: "#d4d4d8",
   unpublished: "#b3822f",
 };

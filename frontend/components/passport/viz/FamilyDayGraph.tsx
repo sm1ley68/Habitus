@@ -7,12 +7,19 @@ import { DUR, EASE } from "@/lib/motion";
 import type { EstimateKind, FamilyRoutingData, RouteLeg, TravelMode } from "@/lib/agent/types";
 import type { VizProps } from "./index";
 import MetroRouteStrip from "./MetroRouteStrip";
+import { PALETTE } from "@/lib/tokens";
 
-// The one saturated brand color — the home anchor only.
-const ACCENT = "#7C8CFF";
+// The one saturated brand color — the home anchor only. Same accent as every
+// other "this is our object" marker on the map (MiniMap, SocialXrayViz).
+const ACCENT = PALETTE.evidence;
 // One desaturated tint per household member (max 3), so the three journeys stay
-// legible against each other without any of them screaming.
-const MEMBER_TINTS = ["#7C8CFF", "#6f9e79", "#8b93bb"] as const;
+// legible against each other without any of them screaming. Deliberately NOT
+// PALETTE.evidence/estimate/compromise: those colours mean fact provenance
+// elsewhere in the dossier, and reusing them here to tell people apart would
+// make a viewer misread "which family member" as "how confident is this
+// number". Первый — приглушённый пыльно-розовый (тёплый, в тон бумажной
+// палитре), второй и третий — уже устоявшиеся в проекте шалфей и серо-синий.
+const MEMBER_TINTS = ["#8F6B7A", "#6f9e79", "#8b93bb"] as const;
 
 // The Gantt fill encodes the travel MODE (member identity comes from the lane).
 // Muted mid-tones — the tint hints at the mode, the text label states it.

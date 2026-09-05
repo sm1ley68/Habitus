@@ -46,9 +46,12 @@ export default function HeroVerdict({
         aria-hidden
         className="absolute inset-0 bg-gradient-to-t from-[#1c1d20] via-[#1c1d20]/85 to-[#1c1d20]/40"
       />
+      {/* Фоновая подсветка — акцент интерфейса, а не сигнал происхождения
+          факта, поэтому буквальный rgb PALETTE.evidence (#14493C), а не
+          индиго дефолтного комплекта. */}
       <div
         aria-hidden
-        className="absolute inset-0 bg-[radial-gradient(120%_90%_at_15%_100%,rgba(124,140,255,0.16),transparent_60%)]"
+        className="absolute inset-0 bg-[radial-gradient(120%_90%_at_15%_100%,rgba(20,73,60,0.16),transparent_60%)]"
       />
       {/* A slow raking light sweep — the accent catching the dossier. */}
       {!reduce && (
@@ -57,7 +60,7 @@ export default function HeroVerdict({
           className="pointer-events-none absolute inset-y-0 w-1/2 mix-blend-screen"
           style={{
             background:
-              "linear-gradient(105deg, transparent 0%, rgba(124,140,255,0.10) 45%, rgba(255,255,255,0.06) 50%, rgba(124,140,255,0.10) 55%, transparent 100%)",
+              "linear-gradient(105deg, transparent 0%, rgba(20,73,60,0.10) 45%, rgba(255,255,255,0.06) 50%, rgba(20,73,60,0.10) 55%, transparent 100%)",
           }}
           initial={{ x: "-120%" }}
           animate={{ x: "260%" }}
@@ -113,12 +116,14 @@ export default function HeroVerdict({
 
             <motion.div {...rise(0.18)} className="mt-6">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur-sm">
+                {/* Щит «проверено» — акцент доверия, тот же смысл, что и
+                    у --accent (=evidence) везде на карте и в чипах. */}
                 <svg
                   width="13"
                   height="13"
                   viewBox="0 0 16 16"
                   fill="none"
-                  stroke="#7C8CFF"
+                  stroke="var(--accent)"
                   strokeWidth="1.6"
                   strokeLinecap="round"
                   strokeLinejoin="round"
