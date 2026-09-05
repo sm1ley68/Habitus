@@ -9,6 +9,8 @@ export type { DialogProps } from "./Dialog";
 export { default as Field } from "./Field";
 export type { FieldProps } from "./Field";
 export { default as Input, fieldClass } from "./Input";
+export { default as Provenance, provenanceOfSource, provenanceOfLeg } from "./Provenance";
+export type { ProvenanceKind } from "./Provenance";
 export { default as Select } from "./Select";
 export { ToastProvider, useToast } from "./Toast";
 export type { ToastTone } from "./Toast";
