@@ -20,7 +20,8 @@ from psycopg.rows import dict_row
 from habitus.clean.geocode import geocode_address
 from habitus.geo.metro_access import ORSWalker, straight_walk_seconds
 from habitus.online.geo import DirectionsProvider
-from habitus.online.household import geocode_leg
+from habitus.online.household import (POI_KINDS, geocode_leg, is_generic_label,
+                                      nearest_poi)
 from habitus.online.metro_route import door_to_door
 from habitus.online.schema import (
     BlockSource, BriefItem, CompromiseNote, DirectLight, DossierPayload, DossierRequest,
@@ -144,7 +145,8 @@ _ESTIMATE_SPEEDUP = {"walk": 1.0, "scooter": 3.0, "bus": 4.0, "car": 5.0}
 
 
 def _straight_line_leg(intent, start: tuple[float, float],
-                       target: tuple[float, float]) -> RouteLeg | None:
+                       target: tuple[float, float],
+                       label: str | None = None) -> RouteLeg | None:
     """Оценка ноги по прямой, когда сети нет. Расстояние настоящее, коэффициент
     извилистости тот же, что у пеших плеч метро (WALK_DETOUR в
     habitus/geo/metro_access.py). Возвращает None, если точки совпали: нулевая
@@ -157,7 +159,7 @@ def _straight_line_leg(intent, start: tuple[float, float],
     minutes = max(1, int(math.ceil(walk_seconds / speedup / 60)))
     depart, arrive = _leg_clock(intent, minutes)
     return RouteLeg(
-        to_label=intent.to_label, to_kind=intent.to_kind, mode=intent.mode,
+        to_label=label or intent.to_label, to_kind=intent.to_kind, mode=intent.mode,
         depart=depart, arrive=arrive, minutes=minutes,
         estimate_kind="straight_line",
         geometry=LineStringGeometry(coordinates=[start, target]))
@@ -213,6 +215,18 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
             # habitus/online/household.py: им же ранжируется выдача, и два
             # разных ответа об одном адресе здесь недопустимы.
             target = geocode_leg(intent, req.city, geocoder)
+            label = intent.to_label
+            if target is None and is_generic_label(intent.to_label) \
+                    and intent.to_kind in POI_KINDS:
+                # Человек назвал класс мест («в школу»), а не место. Точку
+                # «его» школы выдумывать нельзя, но ближайшая школа — тот же
+                # измеренный факт, из которого посчитана колонка
+                # walk_min_school. Показываем маршрут до неё и подписываем
+                # именно ближайшей: иначе выйдет, что мы выбрали за человека.
+                got_poi = nearest_poi(conn, req.city, intent.to_kind, home)
+                if got_poi is not None:
+                    target, name = got_poi
+                    label = f"ближайшая {POI_KINDS[intent.to_kind]}: {name}"
             if target is None:
                 continue
             if intent.mode == "metro":
@@ -225,7 +239,7 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
                 minutes = ride.total_minutes
                 depart, arrive = _leg_clock(intent, minutes)
                 legs.append(RouteLeg(
-                    to_label=intent.to_label, to_kind=intent.to_kind,
+                    to_label=label, to_kind=intent.to_kind,
                     mode="metro", depart=depart, arrive=arrive,
                     minutes=minutes, metro=ride,
                     estimate_kind="model" if ride.estimated else None,
@@ -238,7 +252,7 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
                 # метро-поездками. Оценка по прямой хуже маршрута, но она
                 # ЧЕСТНО помечена estimated и несёт настоящее расстояние —
                 # это не выдуманный факт, а измерение другого рода.
-                leg = _straight_line_leg(intent, start, target)
+                leg = _straight_line_leg(intent, start, target, label)
                 if leg is not None:
                     legs.append(leg)
                     start = target
@@ -248,7 +262,7 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
                 minutes = max(1, int(math.ceil(seconds / 60)))
                 depart, arrive = _leg_clock(intent, minutes)
                 legs.append(RouteLeg(
-                    to_label=intent.to_label, to_kind=intent.to_kind,
+                    to_label=label, to_kind=intent.to_kind,
                     mode=intent.mode, depart=depart, arrive=arrive,
                     minutes=minutes,
                     geometry=LineStringGeometry.model_validate(geometry)))
@@ -256,7 +270,7 @@ def _family_data(conn, req: DossierRequest, listing: ListingEvidence,
             except (requests.RequestException, KeyError, TypeError, ValueError):
                 # Отказ ORS на конкретной ноге — тоже повод показать оценку,
                 # а не потерять поездку целиком.
-                leg = _straight_line_leg(intent, start, target)
+                leg = _straight_line_leg(intent, start, target, label)
                 if leg is not None:
                     legs.append(leg)
                     start = target

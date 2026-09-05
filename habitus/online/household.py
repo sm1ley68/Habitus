@@ -87,6 +87,34 @@ DEFAULT_WALK_MINUTES = 15
 DISTRICT_KINDS = ("school", "park", "metro")
 
 
+#: Категории, у которых в базе есть слой POI с координатами и названиями.
+#: Из этих же точек посчитаны колонки walk_min_* — то есть ближайший объект
+#: не выдумка, а ровно та величина, которой продукт уже меряет доступность.
+POI_KINDS = {"school": "школа", "park": "парк", "metro": "метро"}
+
+
+def nearest_poi(conn, city: str, kind: str, home: tuple[float, float]
+                ) -> tuple[tuple[float, float], str] | None:
+    """Ближайший объект категории к дому: (координата, название).
+
+    Нужен там, где человек назвал КЛАСС мест, а не место: «ребёнку в школу
+    пешком». Точку конкретной школы выдумывать нельзя, но ближайшая школа —
+    измеренный факт о доме, и показать маршрут до неё честно, если подписать
+    её именно ближайшей, а не «той, которую вы имели в виду».
+
+    None — слоя нет или в нём пусто; тогда нога остаётся непоказанной.
+    """
+    row = conn.execute(
+        "SELECT ST_X(geom), ST_Y(geom), name FROM poi "
+        "WHERE city = %s AND kind = %s AND geom IS NOT NULL "
+        "ORDER BY geom <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326) LIMIT 1;",
+        (city, kind, home[0], home[1])).fetchone()
+    if row is None:
+        return None
+    lon, lat, name = row
+    return (float(lon), float(lat)), (name or POI_KINDS.get(kind, kind))
+
+
 def district_requirements(pq: ParsedQuery) -> list[GeoConstraint]:
     """Обобщённые метки поездок → требования к району.
 

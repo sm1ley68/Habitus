@@ -105,3 +105,47 @@ def test_metro_trip_is_not_a_walking_requirement():
     # Поездка НА метро — это не «метро в пешей доступности».
     assert district_requirements(_pq([
         {"to_label": "Работа", "to_kind": "work", "mode": "metro"}])) == []
+
+
+# --- ближайший объект вместо потерянной ноги --------------------------------
+
+def test_generic_leg_falls_back_to_nearest_poi(monkeypatch):
+    """Класс мест не выдумываем, но ближайший объект показать честно можно.
+
+    Человек сказал «ребёнку в школу пешком». Точку «его» школы взять неоткуда,
+    зато ближайшая школа — тот же измеренный факт, из которого посчитана
+    колонка walk_min_school. Досье обязано показать маршрут до неё и подписать
+    её ИМЕННО ближайшей, иначе выйдет, что выбор сделали за человека.
+    """
+    from habitus.online import dossier as mod
+    from habitus.online.schema import DossierRequest, ParsedQuery
+
+    monkeypatch.setattr(mod, "nearest_poi",
+                        lambda conn, city, kind, home: ((37.74, 55.79), "Школа №1362"))
+    req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
+        "household": [{"id": "kid", "label": "Ребёнок", "legs": [
+            {"to_label": "Школа, Москва", "to_kind": "school", "mode": "walk"}]}],
+    }))
+    data = mod._family_data(None, req, mod.ListingEvidence(37.745, 55.789, None, None, {}),
+                            None, lambda _: (37.9, 55.9))
+    leg = data.members[0].legs[0]
+    assert leg.to_label == "ближайшая школа: Школа №1362"
+    assert leg.minutes > 0
+
+
+def test_named_place_does_not_get_replaced_by_nearest(monkeypatch):
+    """Названное место остаётся собой: подменять его ближайшим нельзя."""
+    from habitus.online import dossier as mod
+    from habitus.online.schema import DossierRequest, ParsedQuery
+
+    called = []
+    monkeypatch.setattr(mod, "nearest_poi",
+                        lambda *a, **kw: called.append(a) or ((0.0, 0.0), "не должно"))
+    req = DossierRequest(object_id="E1", parsed_query=ParsedQuery.model_validate({
+        "household": [{"id": "kid", "label": "Ребёнок", "legs": [
+            {"to_label": "Лицей 239", "to_kind": "school", "mode": "walk"}]}],
+    }))
+    data = mod._family_data(None, req, mod.ListingEvidence(37.6, 55.7, None, None, {}),
+                            None, lambda _: (37.61, 55.71))
+    assert data.members[0].legs[0].to_label == "Лицей 239"
+    assert called == []
