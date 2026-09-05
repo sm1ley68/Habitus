@@ -19,7 +19,7 @@ test("худший уровень блока — прокси, даже если
 
 test("плашка появляется только у блока с прокси", () => {
   render(<ProxyBadge sources={[computed, proxy]} />);
-  expect(screen.getByText("оценка по модели")).toBeInTheDocument();
+  expect(screen.getByTestId("proxy-badge")).toBeInTheDocument();
 });
 
 test("блок без прокси плашку не показывает — иначе помечено всё и не помечено ничто", () => {
@@ -30,7 +30,7 @@ test("блок без прокси плашку не показывает — и
 test("источник без даты рисуется без даты, а не с пустым местом", () => {
   const { container } = render(<BlockSources sources={[computed]} />);
   const li = container.querySelector("li");
-  expect(li?.textContent).toBe("Инсоляция замер — вычисление, расчёт по геометрии зданий");
+  expect(li?.textContent).toBe("Инсоляция — замер · расчёт по геометрии зданий");
 });
 
 test("рядом с источником видно происхождение факта (Provenance)", () => {
@@ -38,6 +38,8 @@ test("рядом с источником видно происхождение �
   // computation → measured («замер»), proxy → model («модель») — маппинг
   // provenanceOfSource, тот же язык, что у плеч маршрута и других фактов.
   expect(screen.getByText("замер")).toBeInTheDocument();
+  // здесь рендерится ТОЛЬКО список источников, без плашки главы, поэтому
+  // «модель» ищется текстом — двусмысленности нет
   expect(screen.getByText("модель")).toBeInTheDocument();
 });
 
@@ -52,7 +54,7 @@ test("глава hero-блока показывает источники и пл
     description: "Описание", sources: [proxy],
   };
   render(<Chapter block={block} index={0} />);
-  expect(screen.getByText("оценка по модели")).toBeInTheDocument();
+  expect(screen.getByTestId("proxy-badge")).toBeInTheDocument();
   expect(screen.getByText(/модель по типам дорог/)).toBeInTheDocument();
 });
 
@@ -62,6 +64,6 @@ test("карточка вторичного блока показывает ис
     description: "Описание", sources: [proxy],
   };
   render(<SecondaryGrid blocks={[block]} />);
-  expect(screen.getByText("оценка по модели")).toBeInTheDocument();
+  expect(screen.getByTestId("proxy-badge")).toBeInTheDocument();
   expect(screen.getByText(/модель по типам дорог/)).toBeInTheDocument();
 });
