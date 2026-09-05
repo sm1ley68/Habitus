@@ -5,6 +5,7 @@ import GradeBadge from "../GradeBadge";
 import BlockSources, { ProxyBadge } from "./BlockSources";
 import { VIZ_REGISTRY } from "../viz";
 import { DUR, EASE, SPRING } from "@/lib/motion";
+import { metricLabel } from "@/lib/metricLabels";
 import type { LifestyleBlock as Block } from "@/lib/agent/types";
 
 // Screen ③ — an investigation chapter. Asymmetric split: a sticky left "clue"
@@ -28,7 +29,11 @@ export default function Chapter(
 ) {
   const reduce = useReducedMotion();
   const Viz = VIZ_REGISTRY[block.key];
-  const metrics = block.metrics ? Object.entries(block.metrics) : [];
+  // metrics — свободный словарь от ML; ключ без подписи в metricLabels не
+  // попадает на экран вовсе, чтобы имя переменной не утекло пользователю.
+  const metrics = Object.entries(block.metrics ?? {})
+    .map(([k, v]) => [metricLabel(k), v] as const)
+    .filter((pair): pair is readonly [string, string | number] => pair[0] !== null);
   const num = String(index + 1).padStart(2, "0");
 
   return (
@@ -75,7 +80,7 @@ export default function Chapter(
           </motion.div>
 
           <motion.div variants={clueItem} className="mt-3 flex items-start justify-between gap-3">
-            <h2 className="text-2xl font-medium tracking-tight text-[#1c1d20]">
+            <h2 className="font-display text-2xl font-medium tracking-tight text-[#1c1d20]">
               {block.title}
             </h2>
             <div className="flex shrink-0 items-center gap-2">
@@ -98,14 +103,14 @@ export default function Chapter(
               variants={reduce ? undefined : clueGroup}
               className="mt-5 flex flex-col gap-2 border-t border-zinc-100 pt-4"
             >
-              {metrics.map(([k, v]) => (
+              {metrics.map(([label, v]) => (
                 <motion.div
-                  key={k}
+                  key={label}
                   variants={clueItem}
                   className="group flex items-baseline justify-between gap-4"
                 >
                   <dt className="text-xs text-zinc-400 transition-colors duration-200 group-hover:text-zinc-600">
-                    {k}
+                    {label}
                   </dt>
                   <dd className="font-mono text-sm text-[#1c1d20]">
                     <span className="inline-block transition-transform duration-300 ease-out group-hover:-translate-y-px">
@@ -139,7 +144,7 @@ export default function Chapter(
               home={home}
             />
           ) : (
-            <p className="text-sm leading-relaxed text-zinc-600">{block.description}</p>
+            <p className="max-w-[62ch] text-sm leading-relaxed text-zinc-600">{block.description}</p>
           )}
           {Viz && (
             <motion.p
@@ -147,7 +152,7 @@ export default function Chapter(
               whileInView={reduce ? undefined : { opacity: 1 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ duration: DUR.slow, delay: 0.25 }}
-              className="mt-4 max-w-[60ch] text-sm leading-relaxed text-zinc-600"
+              className="mt-4 max-w-[62ch] text-sm leading-relaxed text-zinc-600"
             >
               {block.description}
             </motion.p>

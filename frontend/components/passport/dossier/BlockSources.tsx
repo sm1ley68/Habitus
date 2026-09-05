@@ -1,4 +1,5 @@
 "use client";
+import Provenance, { provenanceOfSource } from "@/components/ui/Provenance";
 import type { BlockSource, SourceKind } from "@/lib/agent/types";
 
 const KIND_LABEL: Record<SourceKind, string> = {
@@ -47,7 +48,14 @@ export default function BlockSources({ sources }: { sources?: BlockSource[] }) {
         const date = when(s.observed_at);
         return (
           <li key={s.key} className="text-xs leading-relaxed text-zinc-400">
-            <span className="text-zinc-600">{s.label}</span> — {KIND_LABEL[s.kind]},{" "}
+            {/* Название источника и его происхождение (замер/модель/...) —
+                тот же словарь, что красит плечи маршрута и другие факты
+                продукта: один язык происхождения на весь фронт. */}
+            <span className="flex items-center gap-2 text-zinc-600">
+              {s.label}{" "}
+              <Provenance kind={provenanceOfSource(s.kind)} />
+            </span>{" "}
+            — {KIND_LABEL[s.kind]},{" "}
             {s.basis}
             {date && <span> · {date}</span>}
           </li>

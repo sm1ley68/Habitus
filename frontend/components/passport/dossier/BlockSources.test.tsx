@@ -30,7 +30,15 @@ test("блок без прокси плашку не показывает — и
 test("источник без даты рисуется без даты, а не с пустым местом", () => {
   const { container } = render(<BlockSources sources={[computed]} />);
   const li = container.querySelector("li");
-  expect(li?.textContent).toBe("Инсоляция — вычисление, расчёт по геометрии зданий");
+  expect(li?.textContent).toBe("Инсоляция замер — вычисление, расчёт по геометрии зданий");
+});
+
+test("рядом с источником видно происхождение факта (Provenance)", () => {
+  render(<BlockSources sources={[computed, proxy]} />);
+  // computation → measured («замер»), proxy → model («модель») — маппинг
+  // provenanceOfSource, тот же язык, что у плеч маршрута и других фактов.
+  expect(screen.getByText("замер")).toBeInTheDocument();
+  expect(screen.getByText("модель")).toBeInTheDocument();
 });
 
 test("пустой список источников не рисует ничего", () => {
