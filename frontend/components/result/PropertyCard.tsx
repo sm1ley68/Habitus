@@ -4,8 +4,10 @@ import MatchScore from "./MatchScore";
 import SaveButton from "./SaveButton";
 import ResultFeedback from "./ResultFeedback";
 import { area, money } from "@/lib/format";
+import { factProvenance } from "@/lib/factProvenance";
 import { SPRING } from "@/lib/motion";
 import { useSession } from "@/lib/store/session";
+import Provenance from "@/components/ui/Provenance";
 import type { Property } from "@/lib/agent/types";
 
 /**
@@ -63,21 +65,31 @@ export default function PropertyCard({
 
       <div className="relative z-10 p-5">
         <div className="pointer-events-none">
-          <h3 className="font-medium text-[15px] tracking-tight text-[#1c1d20]">{title}</h3>
-          <p className="mt-1.5 font-mono text-sm text-zinc-700">{money(property.price_from)}</p>
-          <p className="mt-0.5 text-xs text-zinc-400">
+          <h3 className="font-display text-[17px] leading-snug tracking-tight text-ink">{title}</h3>
+          <p className="mt-1.5 font-mono text-lg text-ink">{money(property.price_from)}</p>
+          <p className="mt-0.5 text-xs text-ink-faint">
             {property.rooms}-комн · {area(property.area_sqm)} · {property.floor} этаж
           </p>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {property.tags.map((t) => (
-              <span
-                key={t}
-                className="rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 transition-colors duration-150 ease-out group-hover:bg-accent/10 group-hover:text-accent"
-              >
-                {t}
-              </span>
-            ))}
-          </div>
+          {/* Документ, а не лента тегов: не больше трёх фактов (порядок задаёт
+              бэкенд — он ближе к разобранному запросу), каждый — строка с
+              волосяной линейкой сверху и меткой происхождения там, где оно
+              известно. Строку «почему» фронт не рисует — это домысел без
+              разобранного запроса, который живёт на бэкенде. */}
+          <ul className="mt-3.5 divide-y divide-black/[0.06] border-t border-black/[0.06]">
+            {property.tags.slice(0, 3).map((t) => {
+              const kind = factProvenance(t);
+              return (
+                <li
+                  key={t}
+                  data-testid="card-fact"
+                  className="flex items-baseline justify-between gap-3 py-1.5 text-[13px] text-ink-muted"
+                >
+                  <span>{t}</span>
+                  {kind && <Provenance kind={kind} className="shrink-0" />}
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
         <ResultFeedback objectId={property.id} />

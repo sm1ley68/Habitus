@@ -49,6 +49,20 @@ describe("PropertyCard", () => {
   });
 });
 
+it("показывает не больше трёх фактов: карточка не свалка", () => {
+  const property = { ...PROPERTIES[0],
+    tags: ["2 минуты до школы", "1 минута до метро", "3 минуты до парка", "баров рядом: 7"] };
+  render(<PropertyCard property={property} index={0} onOpen={() => {}} />);
+  expect(screen.getAllByTestId("card-fact").length).toBeLessThanOrEqual(3);
+});
+
+it("метит происхождение факта там, где оно известно, и не выдумывает для остальных", () => {
+  const property = { ...PROPERTIES[0], tags: ["2 минуты до школы", "евроремонт"] };
+  render(<PropertyCard property={property} index={0} onOpen={() => {}} />);
+  expect(screen.getByText("замер")).toBeInTheDocument();
+  expect(screen.queryByText("евроремонт")).toBeInTheDocument();
+});
+
 // Правило проекта: синтетический ноль вместо отсутствующего замера запрещён.
 // Процент совпадения принадлежит запросу, а не объекту, поэтому у объекта,
 // открытого вне подбора (с карты, из сохранённого), его просто нет.
