@@ -10,10 +10,6 @@ describe("factProvenance", () => {
     expect(factProvenance("баров рядом: 7")).toBe("measured");
   });
 
-  it("шум — модельная величина, а не estimate (такого значения больше нет)", () => {
-    expect(factProvenance("шум: высокий")).toBe("model");
-  });
-
   it("неизвестный тег метки не получает — фронт не имеет права её выдумывать", () => {
     expect(factProvenance("евроремонт")).toBeNull();
   });

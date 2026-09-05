@@ -31,7 +31,7 @@ export default function PropertyCard({
       variants={{ hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }}
       whileHover={shouldReduceMotion ? undefined : { y: -4 }}
       transition={SPRING.soft}
-      className="group relative block w-full shrink-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left transition-shadow duration-300 ease-out hover:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)] focus-within:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)]"
+      className="group relative block w-full shrink-0 overflow-hidden rounded-lg border border-black/[0.08] bg-white text-left transition-shadow duration-300 ease-out hover:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)] focus-within:shadow-[0_20px_44px_-24px_rgba(28,29,32,0.35)]"
     >
       {/* Подложка-кнопка: открывает паспорт кликом в любое место карточки,
           кроме областей с собственными действиями (они лежат выше по z). */}
@@ -41,10 +41,10 @@ export default function PropertyCard({
         onClick={() => onOpen(index)}
         onFocus={() => setHovered(property.id)}
         onBlur={() => setHovered(null)}
-        className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="absolute inset-0 z-0 cursor-pointer rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       />
 
-      <div className="pointer-events-none relative w-full aspect-[3/2] overflow-hidden bg-zinc-100">
+      <div className="pointer-events-none relative w-full aspect-[3/2] overflow-hidden bg-paper">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={property.cover_image}
