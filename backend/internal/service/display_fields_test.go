@@ -71,3 +71,17 @@ func TestBuildFinalResultObjectFallsBackToPlaceholderWithoutPhotos(t *testing.T)
 		}
 	}
 }
+
+func TestBuildTagsAgreesNumeral(t *testing.T) {
+	got := BuildTags(map[string]any{"walk_min_school": 2.0, "walk_min_metro": 1.0,
+		"walk_min_park": 5.0})
+	want := []string{"2 минуты до школы", "1 минута до метро", "5 минут до парка"}
+	if len(got) != len(want) {
+		t.Fatalf("BuildTags() вернул %d тегов, ждали %d", len(got), len(want))
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("BuildTags()[%d] = %q, ждали %q", i, got[i], want[i])
+		}
+	}
+}

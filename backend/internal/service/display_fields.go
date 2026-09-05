@@ -63,18 +63,36 @@ func RescaleScore(score float64, rank int, degraded []string) int {
 	return v
 }
 
+// pluralRu согласует числительное с существительным по правилам русского языка.
+// Зеркало pluralRu из frontend/lib/format.ts — две копии обязаны оставаться в синхронизации.
+func pluralRu(n int, one, few, many string) string {
+	mod10, mod100 := n%10, n%100
+	switch {
+	case mod100 >= 11 && mod100 <= 14:
+		return many
+	case mod10 == 1:
+		return one
+	case mod10 >= 2 && mod10 <= 4:
+		return few
+	}
+	return many
+}
+
 // BuildTags renders only facts actually present in address_facts — never
 // fabricates a claim like "0% коммуналок" that isn't backed by real data.
 func BuildTags(facts map[string]any) []string {
 	var tags []string
 	if v, ok := numFact(facts, "walk_min_school"); ok {
-		tags = append(tags, fmt.Sprintf("%.0f минут до школы", v))
+		n := int(v)
+		tags = append(tags, fmt.Sprintf("%d %s до школы", n, pluralRu(n, "минута", "минуты", "минут")))
 	}
 	if v, ok := numFact(facts, "walk_min_metro"); ok {
-		tags = append(tags, fmt.Sprintf("%.0f минут до метро", v))
+		n := int(v)
+		tags = append(tags, fmt.Sprintf("%d %s до метро", n, pluralRu(n, "минута", "минуты", "минут")))
 	}
 	if v, ok := numFact(facts, "walk_min_park"); ok {
-		tags = append(tags, fmt.Sprintf("%.0f минут до парка", v))
+		n := int(v)
+		tags = append(tags, fmt.Sprintf("%d %s до парка", n, pluralRu(n, "минута", "минуты", "минут")))
 	}
 	// noise_level — модельная величина (слой дорог + барный прокси), поэтому
 	// наружу идёт то, что реально посчитано: плотность баров.
