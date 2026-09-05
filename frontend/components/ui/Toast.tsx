@@ -21,9 +21,11 @@ const ToastContext = createContext<ToastApi | null>(null);
 
 const DISMISS_MS = 4000;
 
+// Тон соответствует происхождению факта в остальном интерфейсе: подтверждено —
+// evidence, отклонено/ошибка — compromise. Те же цвета, что в Badge и Provenance.
 const TONE: Record<ToastTone, string> = {
-  ok: "border-[#cfe7da] bg-[#e9f5ee] text-[#2f8f5f]",
-  error: "border-[#e4c9c2] bg-[#f6ece9] text-[#b25e4a]",
+  ok: "border-evidence/20 bg-evidence/10 text-evidence",
+  error: "border-compromise/20 bg-compromise/10 text-compromise",
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {

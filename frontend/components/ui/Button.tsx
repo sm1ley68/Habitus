@@ -6,10 +6,10 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 // Иерархия та же, что во входе (AuthGate): чернильная заливка — главное
 // действие экрана, всё остальное визуально подчинено ей.
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-[#1c1d20] text-white hover:opacity-90",
-  secondary: "border border-zinc-200 bg-white text-[#1c1d20] hover:border-zinc-300 hover:bg-zinc-50",
-  ghost: "text-zinc-500 hover:bg-zinc-100 hover:text-[#1c1d20]",
-  danger: "border border-[#e4c9c2] bg-white text-[#b25e4a] hover:bg-[#f6ece9]",
+  primary: "bg-ink text-paper hover:opacity-90",
+  secondary: "border border-black/[0.08] bg-white text-ink hover:border-black/[0.16] hover:bg-paper",
+  ghost: "text-ink-faint hover:bg-black/[0.05] hover:text-ink",
+  danger: "border border-compromise/25 bg-white text-compromise hover:bg-compromise/10",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

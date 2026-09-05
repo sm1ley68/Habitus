@@ -48,13 +48,13 @@ export default function Dialog({ open, title, onClose, children, footer }: Dialo
         // Клик пришёл ровно в подложку — значит, мимо содержимого окна.
         if (e.target === ref.current) onClose();
       }}
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-zinc-200 bg-white p-0 text-[#1c1d20] backdrop:bg-black/40"
+      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-black/[0.08] bg-white p-0 text-ink backdrop:bg-black/40"
     >
       <div className="flex flex-col gap-4 p-6">
         <h2 id={titleId} className="text-lg tracking-tight">
           {title}
         </h2>
-        <div className="text-sm text-zinc-600">{children}</div>
+        <div className="text-sm text-ink-muted">{children}</div>
         {footer && <div className="flex justify-end gap-2">{footer}</div>}
       </div>
     </dialog>

@@ -38,22 +38,22 @@ export default function Field({
 
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
-      <label htmlFor={id} className="text-sm text-zinc-500">
+      <label htmlFor={id} className="text-sm text-ink-muted">
         {label}
-        {required && <span aria-hidden className="ml-1 text-[#b25e4a]">*</span>}
+        {required && <span aria-hidden className="ml-1 text-compromise">*</span>}
       </label>
 
       {cloneElement(children, wired)}
 
       {hint && (
-        <p id={hintId} className="text-xs text-zinc-400">
+        <p id={hintId} className="text-xs text-ink-faint">
           {hint}
         </p>
       )}
       {/* Ошибка живёт под своим полем, а не в сводке наверху: так видно, что
           именно править, не отматывая форму. */}
       {error && (
-        <p id={errorId} className="text-xs text-[#b25e4a]">
+        <p id={errorId} className="text-xs text-compromise">
           {error}
         </p>
       )}

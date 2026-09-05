@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
+import { PALETTE } from "@/lib/tokens";
 
 export type BadgeTone = "neutral" | "ok" | "warn" | "danger";
 
-// Палитра совпадает с оценками паспорта (lib/grade.ts): один и тот же зелёный
-// означает «хорошо» и там, и здесь — продавец не переучивается.
+// Тон совпадает с происхождением факта: один и тот же зелёный означает
+// «подтверждено» и в бейдже статуса, и в досье — пользователь не переучивается.
 const TONE: Record<BadgeTone, { bg: string; color: string }> = {
-  neutral: { bg: "#f4f4f5", color: "#52525b" },
-  ok: { bg: "#e9f5ee", color: "#2f8f5f" },
-  warn: { bg: "#f8f0e0", color: "#b3822f" },
-  danger: { bg: "#f6ece9", color: "#b25e4a" },
+  neutral: { bg: "#EFECE7", color: PALETTE.inkMuted },
+  ok:      { bg: "#E7EFEA", color: PALETTE.evidence },
+  warn:    { bg: "#F5EEDF", color: PALETTE.estimate },
+  danger:  { bg: "#F3E7E3", color: PALETTE.compromise },
 };
 
 /**
@@ -21,7 +22,7 @@ export default function Badge({
   return (
     <span
       style={{ backgroundColor: bg, color }}
-      className={`inline-flex items-center rounded-md px-2 py-1 text-xs ${className}`}
+      className={`inline-flex items-center rounded px-2 py-1 text-xs ${className}`}
     >
       {children}
     </span>
