@@ -1,12 +1,26 @@
 import type { Metadata } from "next";
-import { GeistSans } from "geist/font/sans";
-import { GeistMono } from "geist/font/mono";
+import { Literata, Golos_Text } from "next/font/google";
 import AuthGate from "@/components/auth/AuthGate";
 import { ToastProvider } from "@/components/ui";
 import "./globals.css";
 
+// Literata — витринный шрифт (заголовки, досье), Golos Text — интерфейсный.
+// Оба варианта регистрируются как CSS-переменные и читаются из globals.css.
+const display = Literata({
+  subsets: ["cyrillic", "latin"],
+  variable: "--font-display",
+  weight: ["400", "500", "600"],
+  display: "swap",
+});
+const ui = Golos_Text({
+  subsets: ["cyrillic", "latin"],
+  variable: "--font-ui",
+  weight: ["400", "500", "600"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "Urban Intelligence",
+  title: "Habitus",
   description: "ИИ-агент для поиска жилья по жизненным сценариям",
 };
 
@@ -15,7 +29,7 @@ export const metadata: Metadata = {
 // одинаково бессмысленны без входа.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ru" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="ru" className={`${display.variable} ${ui.variable}`}>
       <body>
         <ToastProvider>
           <AuthGate>{children}</AuthGate>

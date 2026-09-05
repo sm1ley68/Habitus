@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import { PALETTE } from "./lib/tokens";
 
 const config: Config = {
   content: [
@@ -8,10 +9,22 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "monospace"],
+        display: ["var(--font-display)", "Georgia", "serif"],
+        sans: ["var(--font-ui)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "monospace"],
       },
-      colors: { accent: "var(--accent)" },
+      colors: {
+        paper: PALETTE.paper,
+        ink: { DEFAULT: PALETTE.ink, muted: PALETTE.inkMuted, faint: PALETTE.inkFaint },
+        evidence: PALETTE.evidence,
+        estimate: PALETTE.estimate,
+        compromise: PALETTE.compromise,
+        // accent — не из палитры задачи 1: примерно два десятка компонентов
+        // (Composer, чаты, инпуты, карта) держатся на bg-accent/text-accent/
+        // border-accent/accent-accent. Удаление сломало бы их все разом —
+        // оставляем алиас на CSS-переменную --accent (см. globals.css).
+        accent: "var(--accent)",
+      },
     },
   },
   plugins: [],
