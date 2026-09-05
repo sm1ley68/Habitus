@@ -2,20 +2,52 @@ import { render, screen } from "@testing-library/react";
 import Provenance, { provenanceOfSource, provenanceOfLeg } from "./Provenance";
 
 describe("Provenance", () => {
-  it("источник-наблюдение — подтверждённая величина", () => {
-    expect(provenanceOfSource("observation")).toBe("measured");
-    expect(provenanceOfSource("computation")).toBe("measured");
-    expect(provenanceOfSource("proxy")).toBe("estimate");
+  describe("provenanceOfSource", () => {
+    it("наблюдение и вычисление — замер", () => {
+      expect(provenanceOfSource("observation")).toBe("measured");
+      expect(provenanceOfSource("computation")).toBe("measured");
+    });
+
+    it("прокси-источник — модель", () => {
+      expect(provenanceOfSource("proxy")).toBe("model");
+    });
   });
 
-  it("плечо по прямой — оценка, по сети — замер", () => {
-    expect(provenanceOfLeg({ estimate_kind: "straight_line" })).toBe("estimate");
-    expect(provenanceOfLeg({ estimate_kind: "model" })).toBe("estimate");
-    expect(provenanceOfLeg({})).toBe("measured");
+  describe("provenanceOfLeg", () => {
+    it("оценка по прямой — straight_line", () => {
+      expect(provenanceOfLeg({ estimate_kind: "straight_line" })).toBe(
+        "straight_line"
+      );
+    });
+
+    it("оценка по модели — model", () => {
+      expect(provenanceOfLeg({ estimate_kind: "model" })).toBe("model");
+    });
+
+    it("плечо без оценки — замер", () => {
+      expect(provenanceOfLeg({})).toBe("measured");
+    });
   });
 
-  it("метка подписана словом, а не только цветом", () => {
-    render(<Provenance kind="estimate" />);
-    expect(screen.getByText("оценка")).toBeInTheDocument();
+  describe("Рендер с предложением смысла", () => {
+    it("замер — замер", () => {
+      render(<Provenance kind="measured" />);
+      expect(screen.getByText("замер")).toBeInTheDocument();
+    });
+
+    it("прямая — по прямой", () => {
+      render(<Provenance kind="straight_line" />);
+      expect(screen.getByText("по прямой")).toBeInTheDocument();
+    });
+
+    it("модель — модель", () => {
+      render(<Provenance kind="model" />);
+      expect(screen.getByText("модель")).toBeInTheDocument();
+    });
+
+    it("компромисс — компромисс", () => {
+      render(<Provenance kind="compromise" />);
+      expect(screen.getByText("компромисс")).toBeInTheDocument();
+    });
   });
 });

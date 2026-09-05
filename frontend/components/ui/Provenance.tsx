@@ -1,27 +1,36 @@
 import { PALETTE } from "@/lib/tokens";
 
-export type ProvenanceKind = "measured" | "estimate" | "compromise";
+export type ProvenanceKind = "measured" | "straight_line" | "model" | "compromise";
 
 const LABEL: Record<ProvenanceKind, string> = {
   measured: "замер",
-  estimate: "оценка",
+  straight_line: "по прямой",
+  model: "модель",
   compromise: "компромисс",
 };
 
 const COLOR: Record<ProvenanceKind, string> = {
   measured: PALETTE.evidence,
-  estimate: PALETTE.estimate,
+  straight_line: PALETTE.estimate,
+  model: PALETTE.estimate,
   compromise: PALETTE.compromise,
 };
 
 /** kind источника блока досье (schema.BlockSource.kind) → происхождение. */
 export function provenanceOfSource(kind: string): ProvenanceKind {
-  return kind === "proxy" ? "estimate" : "measured";
+  return kind === "proxy" ? "model" : "measured";
 }
 
-/** Плечо маршрута: estimate_kind заполнен — величина не замерена. */
+/** Плечо маршрута: estimate_kind конкретизирует вид оценки или неопределён — замер. */
 export function provenanceOfLeg(leg: { estimate_kind?: string | null }): ProvenanceKind {
-  return leg.estimate_kind ? "estimate" : "measured";
+  switch (leg.estimate_kind) {
+    case "straight_line":
+      return "straight_line";
+    case "model":
+      return "model";
+    default:
+      return "measured";
+  }
 }
 
 /** Цвет здесь — усиление, носитель смысла — слово: дальтоник и печать
