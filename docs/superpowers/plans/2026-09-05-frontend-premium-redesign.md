@@ -255,7 +255,22 @@ Expected: PASS (снимок «до»)
 
 - [ ] **Step 2: Перевести примитивы на токены**
 
-В каждом файле заменить сырые `zinc-*` и `#1c1d20` на классы токенов: фон `bg-paper`/`bg-white`, текст `text-ink` / `text-ink-muted` / `text-ink-faint`, границы `border-black/[0.08]`. Скругления привести к `rounded` (4 px) и `rounded-lg` (8 px), пилюли `rounded-full` оставить только у переключателей слоёв карты. В `Badge.tsx` заменить палитру `TONE` на значения из `PALETTE`: `ok → evidence`, `warn → estimate`, `danger → compromise`, `neutral` — `#EFECE7` / `PALETTE.inkMuted`.
+Образец правки — `Badge.tsx`, остальные семь файлов приводятся тем же способом:
+
+```tsx
+import { PALETTE } from "@/lib/tokens";
+
+// Тон совпадает с происхождением факта: один и тот же зелёный означает
+// «подтверждено» и в бейдже статуса, и в досье — пользователь не переучивается.
+const TONE: Record<BadgeTone, { bg: string; color: string }> = {
+  neutral: { bg: "#EFECE7", color: PALETTE.inkMuted },
+  ok:      { bg: "#E7EFEA", color: PALETTE.evidence },
+  warn:    { bg: "#F5EEDF", color: PALETTE.estimate },
+  danger:  { bg: "#F3E7E3", color: PALETTE.compromise },
+};
+```
+
+В остальных файлах: сырые `zinc-*` и `#1c1d20` → `text-ink` / `text-ink-muted` / `text-ink-faint`, фон `bg-paper` или `bg-white`, границы `border-black/[0.08]`. Скругления к `rounded` (4 px) и `rounded-lg` (8 px); `rounded-full` остаётся только у переключателей слоёв карты. Публичные пропсы не трогать.
 
 - [ ] **Step 3: Прогнать тесты примитивов**
 
@@ -332,7 +347,24 @@ Expected: PASS
 
 - [ ] **Step 5: Переписать EmptyState**
 
-Заголовок антиквой (`font-display`), одна фраза обещания, `<ScenarioCards>`, внизу строка доказательности с реальными числами, если они доступны из состояния; если недоступны — строка не рисуется (выдумывать нельзя).
+```tsx
+export default function EmptyState({ onPick }: { onPick: (text: string) => void }) {
+  return (
+    <div className="mx-auto w-full max-w-[720px]">
+      <h1 className="font-display text-[34px] leading-[1.15] tracking-tight text-ink">
+        Расскажите, как вы живёте — подберём, где жить
+      </h1>
+      <p className="mt-3 max-w-[52ch] text-ink-muted">
+        Не фильтры, а сценарий: кто в семье, куда ездите каждый день,
+        что важно и чем готовы поступиться.
+      </p>
+      <ScenarioCards onPick={onPick} />
+    </div>
+  );
+}
+```
+
+Строку доказательности («столько-то объявлений, дата данных») в этой задаче НЕ добавляем: числа берутся из `final_result.data_freshness`, а на первом экране поиска ещё не было — выдумывать их нельзя. Возвращаемся к ней, когда появится источник.
 
 - [ ] **Step 6: Прогон и коммит**
 
@@ -353,32 +385,34 @@ git commit -m "feat: первый экран приглашает сценари
 - Modify: `frontend/components/chat/MessageThread.tsx:2,13`
 
 **Interfaces:**
-- Produces: `<SearchWaiting request={string} stage={string} relaxation={string | null} />`; `isThinking` переезжает из удаляемого файла в `SearchWaiting.tsx` с той же сигнатурой — `MessageThread` его импортирует.
+- Produces: `<SearchWaiting />` — читает `useSession` сам, как это делал `GeoThinkingCanvas` (пропсов нет: остальные компоненты ветки устроены так же). Внутри переиспользует существующий `<StageCaption />`, а не заводит вторую карту стадий.
+- Produces: `isThinking(stage: Stage): boolean` переезжает из удаляемого файла дословно вместе с константой `THINKING: Stage[] = ["linguistic", "geo", "context", "relaxation", "streaming"]`; `MessageThread.tsx:2` импортирует его уже из `SearchWaiting`.
+- **Ослабление условий НЕ дублируем:** `RelaxationCard` уже рисуется в `MessageThread` при `stage === "relaxation"`. `SearchWaiting` его не повторяет — язык карточка получает в Task 3 через примитивы.
 
 **Решение по объёму:** бриф показывает ТО, ЧТО ЕСТЬ — исходную просьбу человека, стадию человеческим языком и ослабление условий, когда оно приходит. Разобранных критериев в структурном виде фронту сейчас никто не отдаёт (`final_result` несёт объекты и диагностику, но не критерии), а синтезировать их на фронте запрещено. Растущий бриф из понятых критериев требует нового поля в SSE — это отдельная задача, вне этого плана.
 
 - [ ] **Step 1: Написать падающий тест**
 
 ```tsx
-import { render, screen } from "@testing-library/react";
-import SearchWaiting from "./SearchWaiting";
+import { render, screen, act } from "@testing-library/react";
+import SearchWaiting, { isThinking } from "./SearchWaiting";
+import { useSession } from "@/lib/store/session";
 
-it("во время ожидания показывает просьбу человека и стадию", () => {
-  render(<SearchWaiting request="двушка до 25 млн, ребёнку в школу пешком"
-                        stage="Строю маршруты" relaxation={null} />);
+it("во время ожидания показывает просьбу человека", () => {
+  act(() => useSession.setState({ stage: "geo" }));
+  render(<SearchWaiting request="двушка до 25 млн, ребёнку в школу пешком" />);
   expect(screen.getByText(/ребёнку в школу пешком/)).toBeInTheDocument();
-  expect(screen.getByText("Строю маршруты")).toBeInTheDocument();
-});
-
-it("ослабление условия говорится сразу, а не постфактум", () => {
-  render(<SearchWaiting request="тихая двушка" stage="Собираю ответ"
-                        relaxation="пешком до метро: 15→20 мин" />);
-  expect(screen.getByText(/15→20 мин/)).toBeInTheDocument();
 });
 
 it("не изображает работу машины: никакого geo-engine", () => {
-  render(<SearchWaiting request="тихая двушка" stage="Разбираю запрос" relaxation={null} />);
+  act(() => useSession.setState({ stage: "geo" }));
+  render(<SearchWaiting />);
   expect(screen.queryByText(/geo-engine/i)).not.toBeInTheDocument();
+});
+
+it("isThinking переехал без изменения поведения", () => {
+  expect(isThinking("geo")).toBe(true);
+  expect(isThinking("done")).toBe(false);
 });
 ```
 
@@ -389,7 +423,27 @@ Expected: FAIL — модуль не найден
 
 - [ ] **Step 3: Реализовать**
 
-Спокойный блок на бумаге: просьба человека набрана антиквой как цитата, ниже стадия обычным языком, ниже — ослабление условий с меткой `<Provenance kind="compromise" />`, когда оно пришло. Никакой карты, никакой полосы-луча, никакой мигающей точки, никакого моноширинного псевдотерминала. Индикатор ожидания — одна тонкая линия прогресса без процентов.
+```tsx
+export default function SearchWaiting({ request }: { request?: string }) {
+  return (
+    <div className="mx-auto w-full max-w-[540px] rounded-lg border border-black/[0.08] bg-white p-6">
+      {request && (
+        <p className="font-display text-lg leading-snug text-ink">«{request}»</p>
+      )}
+      <div className="mt-5 border-t border-black/[0.06] pt-4">
+        <StageCaption />
+      </div>
+      {/* Одна тонкая линия вместо процентов: честного процента у нас нет —
+          сколько осталось до ответа, пайплайн не знает. */}
+      <div aria-hidden className="mt-4 h-px w-full overflow-hidden bg-black/[0.06]">
+        <div className="h-full w-1/3 animate-[waiting_1.8s_ease-in-out_infinite] bg-ink-faint" />
+      </div>
+    </div>
+  );
+}
+```
+
+Никакой карты, никакой полосы-луча по ней, никакой мигающей точки, никакого моноширинного `geo-engine`. `request` `MessageThread` берёт из последнего сообщения пользователя в `useSession`; если его нет — блок цитаты не рисуется.
 
 - [ ] **Step 4: Прогнать тест**
 
@@ -484,6 +538,10 @@ git commit -m "fix: числительное в тегах карточки со
 **Interfaces:**
 - Consumes: `<Provenance>` из Task 2, токены Task 1.
 
+**Решение по объёму (из спеки, раздел 2.3):** берём ФОЛБЭК. Подбор фактов под запрос и строка «почему» требуют разобранного запроса, который живёт на бэкенде, — это отдельная задача в `display_fields.go`, вне этого плана. Здесь фронт показывает существующие теги: ограничивает их числом, набирает как документ и красит по происхождению. Строка «почему» и «честный минус» НЕ рисуются: пустая строка честнее выдуманной.
+
+**Происхождение тега** определяется его смыслом, а не текстом: пешие минуты (`walk_min_*`) — замер по сети, плотность баров — замер, шум — модель. Так как теги приходят строками, маппинг делается по префиксу в одном месте — `frontend/lib/factProvenance.ts` — и покрывается тестом.
+
 - [ ] **Step 1: Написать падающий тест**
 
 ```tsx
@@ -502,7 +560,22 @@ Expected: FAIL — сейчас рисуются все теги
 
 - [ ] **Step 3: Реализовать**
 
-Факты получают `data-testid="card-fact"`, показываются первые три (порядок задаёт бэкенд — он ближе к запросу), четвёртый и далее не рисуются. Типографика: адрес антиквой, цена — крупно, мета-строка приглушённо. Пилюли заменяются на строки с волосяной линейкой: документ, а не чат.
+```tsx
+// frontend/lib/factProvenance.ts
+import type { ProvenanceKind } from "@/components/ui/Provenance";
+
+/** Теги приходят строками, поэтому происхождение выводится по смыслу факта.
+ *  Шум — модельная величина (слой дорог + барный прокси), минуты и плотность
+ *  баров посчитаны по данным. Неизвестный тег метки не получает вовсе. */
+export function factProvenance(tag: string): ProvenanceKind | null {
+  if (/^\d+\s+минут/.test(tag)) return "measured";
+  if (tag.startsWith("баров рядом")) return "measured";
+  if (tag.includes("шум")) return "estimate";
+  return null;
+}
+```
+
+В `PropertyCard.tsx`: факты получают `data-testid="card-fact"`, показываются первые три (порядок задаёт бэкенд — он ближе к запросу), четвёртый и далее не рисуются. Каждый факт — строка с волосяной линейкой и меткой `<Provenance>` там, где `factProvenance` вернул значение; пилюли уходят: документ, а не чат. Адрес антиквой (`font-display`), цена крупно, мета-строка `text-ink-faint`.
 
 - [ ] **Step 4: Прогнать тесты карточки и весь фронт**
 
@@ -571,7 +644,21 @@ Expected: PASS
 
 - [ ] **Step 5: Применить в Chapter.tsx**
 
-Метрики фильтруются через `metricLabel`; строки без подписи не рисуются. Заголовки глав — `font-display`, полоса набора описания ограничена (`max-w-[62ch]`). Источники блока получают `<Provenance kind={provenanceOfSource(source.kind)} />` рядом с названием.
+```tsx
+// Chapter.tsx: было Object.entries(block.metrics)
+const metrics = Object.entries(block.metrics ?? {})
+  .map(([k, v]) => [metricLabel(k), v] as const)
+  .filter((pair): pair is readonly [string, unknown] => pair[0] !== null);
+```
+
+Дальше в разметке `<dt>` печатает подпись, а не ключ. Заголовки глав — `font-display`, полоса набора описания `max-w-[62ch]`. Источники блока получают метку рядом с названием:
+
+```tsx
+<span className="flex items-center gap-2">
+  {source.label}
+  <Provenance kind={provenanceOfSource(source.kind)} />
+</span>
+```
 
 - [ ] **Step 6: Прогон и коммит**
 
