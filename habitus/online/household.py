@@ -16,7 +16,8 @@ from __future__ import annotations
 from typing import Callable, Iterable
 
 from habitus.clean.geocode import geocode_address
-from habitus.online.schema import HouseholdLegIntent, ParsedQuery
+from habitus.online.schema import (GeoConstraint, HouseholdLegIntent,
+                                   ParsedQuery)
 
 #: Суффикс города для геокодера: без него «офис» в питерском запросе
 #: находится в Москве.
@@ -70,6 +71,46 @@ def inside_moscow(point: tuple[float, float]) -> bool:
     lon, lat = point
     west, south, east, north = MSK_BOUNDS
     return west <= lon <= east and south <= lat <= north
+
+
+#: Порог пешей доступности, когда человек сказал «пешком», но минут не назвал.
+#: 15 — не догадка о его желаниях, а осознанная точка старта: продукт умеет
+#: ослаблять гео-порог шагами по 5 минут до потолка 30 (GEO_STEP_MIN и
+#: GEO_CAP_MIN в orchestrator), и 15 оставляет три шага запаса, если окажется
+#: строго. Число ОБЯЗАНО быть названо пользователю в заметке: принятое за него
+#: решение, о котором он не знает, — тот же выдуманный факт.
+DEFAULT_WALK_MINUTES = 15
+
+#: Категории, для которых у объявления есть ИЗМЕРЕННАЯ пешая доступность
+#: (колонки walk_min_*). Остальные категории требованием к району стать не
+#: могут: мерить нечем.
+DISTRICT_KINDS = ("school", "park", "metro")
+
+
+def district_requirements(pq: ParsedQuery) -> list[GeoConstraint]:
+    """Обобщённые метки поездок → требования к району.
+
+    «Ребёнку в школу пешком» не называет школу, поэтому точкой на карте стать
+    не может (см. GENERIC_LABELS). Но у продукта для каждого объявления уже
+    посчитано walk_min_school — то есть требование выразимо честно, измеренными
+    данными: не «до ЭТОЙ школы», а «школа в пешей доступности».
+
+    Не перебивает то, что человек сказал явно: если он назвал минуты и NLU
+    положил их в pq.geo, оттуда и берём. Возвращает только НОВЫЕ ограничения,
+    вызывающий добавляет их к существующим.
+    """
+    already = {g.kind for g in pq.geo}
+    out: list[GeoConstraint] = []
+    for member in pq.household or []:
+        for leg in member.legs:
+            if leg.mode != "walk" or leg.to_kind not in DISTRICT_KINDS:
+                continue
+            if leg.to_kind in already or not is_generic_label(leg.to_label):
+                continue
+            already.add(leg.to_kind)
+            out.append(GeoConstraint(kind=leg.to_kind,
+                                     walk_minutes=DEFAULT_WALK_MINUTES))
+    return out
 
 
 def geocode_leg(intent: HouseholdLegIntent, city: str,

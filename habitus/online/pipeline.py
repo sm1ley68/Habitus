@@ -7,7 +7,7 @@ from habitus.online.cache import embed_cache, explain_cache, parse_cache
 from habitus.online.explain import cache_key as explain_cache_key
 from habitus.online.explain import explain as build_explanation
 from habitus.online.geo import IsochroneProvider
-from habitus.online.household import household_points
+from habitus.online.household import district_requirements, household_points
 from habitus.online.household_time import (all_point_times,
                                            costs as household_time_costs)
 from habitus.online.llm import LLMClient, LLMUnavailable
@@ -19,6 +19,10 @@ from habitus.online.retrieval import (Candidate, constraint_diagnostics,
                                       encode_query, orientation_coverage)
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
                                    SearchResponse, TurnIntent)
+
+#: Как называть категорию в заметке пользователю: «school» ему ни о чём
+#: не говорит.
+KIND_WORD = {"school": "школа", "park": "парк", "metro": "метро"}
 
 log = logging.getLogger("habitus.online.pipeline")
 
@@ -108,6 +112,21 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
             notes.append(
                 f"места семьи ({named}) не удалось найти на карте — на порядок "
                 f"выдачи они не повлияли")
+
+    # 1.6 обобщённые поездки («ребёнку в школу пешком») точкой на карте быть не
+    #     могут — школа не названа. Но пешая доступность школы у объявления
+    #     ИЗМЕРЕНА (walk_min_school), поэтому требование выражается честно: не
+    #     «до этой школы», а «школа в пешей доступности». Принятый порог
+    #     обязательно называется человеку — решение, принятое за него молча,
+    #     это тот же выдуманный факт.
+    district = district_requirements(pq)
+    if district:
+        pq = pq.model_copy(update={"geo": list(pq.geo) + district})
+        for g in district:
+            notes.append(
+                f"«{KIND_WORD.get(g.kind, g.kind)} пешком» — вы не назвали "
+                f"минуты, приняли не больше {g.walk_minutes}; скажите точнее, "
+                f"если нужен другой порог")
 
     # 2. кодирование запроса (кэш; отказ → filter-only retrieval)
     query_vec = None
