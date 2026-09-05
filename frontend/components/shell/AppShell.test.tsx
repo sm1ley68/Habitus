@@ -6,7 +6,9 @@ beforeEach(() => act(() => useSession.getState().reset()));
 
 test("shows chat empty state by default", () => {
   render(<AppShell />);
-  expect(screen.getByText("С чего начнём поиск?")).toBeInTheDocument();
+  expect(
+    screen.getByText("Расскажите, как вы живёте — подберём, где жить"),
+  ).toBeInTheDocument();
 });
 test("routes to result screen when store screen is result", () => {
   act(() => useSession.setState({ screen: "result" }));

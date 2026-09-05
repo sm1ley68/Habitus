@@ -1,5 +1,5 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Composer from "./Composer";
 import EmptyState from "./EmptyState";
 import ErrorState from "./ErrorState";
@@ -14,22 +14,18 @@ export default function ChatScreen() {
   const idle = stage === "idle";
   const error = stage === "error";
   const send = (text: string) => start(client, text);
+  // Клик по карточке сценария подставляет формулировку в композер, но не
+  // отправляет её — человек должен успеть отредактировать текст под себя.
+  const [draft, setDraft] = useState<string | undefined>(undefined);
 
-  // Idle (Gemini-like): heading + composer centered together over a soft ambient.
+  // Idle: heading + composer centered together над спокойной бумажной
+  // подложкой. Индиговый градиент убран — в проекте индиго нигде не остаётся.
   if (idle) {
     return (
       <div className="relative flex-1 flex flex-col items-center justify-center px-4">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(52% 40% at 50% 52%, rgba(124,140,255,0.09), transparent 70%)",
-          }}
-        />
         <div className="relative flex w-full flex-col items-center gap-10">
-          <EmptyState />
-          <Composer onSubmit={send} />
+          <EmptyState onPick={setDraft} />
+          <Composer onSubmit={send} draft={draft} />
         </div>
       </div>
     );

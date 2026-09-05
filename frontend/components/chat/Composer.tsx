@@ -1,8 +1,22 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-export default function Composer({ onSubmit }: { onSubmit: (text: string) => void }) {
+export default function Composer({
+  onSubmit,
+  draft,
+}: {
+  onSubmit: (text: string) => void;
+  /** Текст сценария, подставляемый извне (клик по карточке первого экрана).
+   *  Композер остаётся владельцем поля — подстановка лишь кладёт значение
+   *  в него, чтобы человек мог отредактировать формулировку перед отправкой. */
+  draft?: string;
+}) {
   const [text, setText] = useState("");
+
+  useEffect(() => {
+    if (draft !== undefined) setText(draft);
+  }, [draft]);
+
   const submit = () => {
     const t = text.trim();
     if (!t) return;
