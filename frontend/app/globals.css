@@ -188,38 +188,16 @@
   .lmap-pin__label { animation: none; opacity: 1; }
 }
 
-/* Thinking geo-canvas: anchor ping + candidate pop. */
-@keyframes thinkPing {
-  0%   { transform: scale(0.5); opacity: 0.55; }
-  80%, 100% { transform: scale(2.6); opacity: 0; }
-}
-@keyframes thinkPop {
-  from { transform: scale(0); opacity: 0; }
-  to   { transform: scale(1); opacity: 1; }
-}
-.think-cand {
-  width: 11px; height: 11px; border-radius: 9999px;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px rgba(124, 140, 255, 0.18), 0 1px 4px rgba(20, 20, 34, 0.3);
-  transform: scale(0);
-  animation: thinkPop var(--dur-base) var(--ease-decelerate) forwards;
-  animation-delay: calc(var(--i, 0) * 110ms);
-}
-.think-anchor { position: relative; width: 12px; height: 12px; }
-.think-anchor__dot {
-  position: absolute; inset: 0; border-radius: 9999px;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px rgba(124, 140, 255, 0.28), 0 1px 4px rgba(20, 20, 34, 0.35);
-}
-.think-anchor__ping {
-  position: absolute; inset: 0; border-radius: 9999px;
-  border: 1.5px solid var(--accent);
-  transform-origin: center;
-  animation: thinkPing 1.9s var(--ease-glow) infinite;
+/* Ожидание поиска (SearchWaiting): тонкая линия вместо честного процента —
+   пайплайн не знает, сколько осталось до ответа. Компонент сам прячет её
+   при prefers-reduced-motion (useReducedMotion), но правило дублируем и тут
+   на случай, если разметку используют где-то ещё через тот же класс. */
+@keyframes waiting {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .think-anchor__ping { animation: none; opacity: 0; }
-  .think-cand { animation: none; transform: scale(1); }
+  .animate-\[waiting_1\.8s_ease-in-out_infinite\] { animation: none; }
 }
 
 html, body { padding: 0; margin: 0; background: #ffffff; color: #1c1d20; }
