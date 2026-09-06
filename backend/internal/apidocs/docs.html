@@ -1,0 +1,1482 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Habitus Partner API — документация</title>
+<meta name="description" content="Подбор жилья по запросу словами как встраиваемый сервис: поиск, досье объекта, гео-слои города, витрина и заявки.">
+<style>
+/* Палитра снята с ночного плана города: чернильная синева, бумага с холодным
+   подтоном, зелень воды и парков. Единственный тёплый цвет — предупреждающий,
+   и тратится он только на лимиты и ошибки. */
+:root {
+  color-scheme: light dark;
+  --paper:      #F4F6F4;
+  --paper-2:    #EAEEEC;
+  --ink:        #101A26;
+  --ink-soft:   #46596B;
+  --line:       #CBD5D8;
+  --line-soft:  #DDE4E3;
+  --accent:     #16645F;
+  --accent-dim: #E1EDEA;
+  --signal:     #A6491B;
+  --signal-dim: #F6E7DD;
+  --code-bg:    #0C1620;
+  --code-fg:    #D6E2E6;
+  --code-line:  #1E2C39;
+  --code-key:   #7FC7BE;
+  --code-str:   #D9B48A;
+  --code-num:   #A9C7E8;
+  --code-dim:   #63798A;
+
+  --serif: Georgia, "Iowan Old Style", "Noto Serif", "Times New Roman", serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --rail: 264px;
+  --code-col: 430px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:      #0E151C;
+    --paper-2:    #141D26;
+    --ink:        #E4EBEC;
+    --ink-soft:   #94A7B4;
+    --line:       #26333F;
+    --line-soft:  #1D2831;
+    --accent:     #6FC3B6;
+    --accent-dim: #14312F;
+    --signal:     #E0946A;
+    --signal-dim: #33200F;
+    /* В тёмной теме панель кода СВЕТЛЕЕ страницы: чернильный фон светлой
+       темы здесь слился бы с самой страницей, и блок перестал бы читаться
+       как отдельная поверхность. */
+    --code-bg:    #16222D;
+    --code-line:  #27384A;
+    --code-dim:   #7E93A3;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: var(--sans); font-size: 15.5px; line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+a:hover { border-bottom-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+code { font-family: var(--mono); font-size: 0.88em; }
+h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; letter-spacing: -0.012em; line-height: 1.2; }
+
+/* ---------- шапка ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 20px;
+  padding: 0; height: 60px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+/* Полоса шапки идёт во всю ширину, а её содержимое стоит на той же сетке,
+   что и текст ниже: иначе логотип уезжает к краю монитора один. */
+.topbar-inner {
+  display: flex; align-items: center; gap: 20px; height: 100%;
+  width: 100%; max-width: 1520px; margin-inline: auto; padding: 0 24px;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; border: 0; }
+.brand b { font-family: var(--serif); font-size: 19px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
+.brand span { font-size: 12.5px; color: var(--ink-soft); }
+.topbar-inner .spacer { flex: 1; }
+.ver {
+  font-family: var(--mono); font-size: 12px; color: var(--ink-soft);
+  border: 1px solid var(--line); padding: 3px 8px;
+}
+.langpick { display: flex; border: 1px solid var(--line); }
+.langpick button {
+  font: inherit; font-size: 12.5px; padding: 4px 11px; cursor: pointer;
+  background: transparent; color: var(--ink-soft); border: 0; border-right: 1px solid var(--line);
+}
+.langpick button:last-child { border-right: 0; }
+.langpick button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* ---------- каркас ---------- */
+.shell {
+  display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); gap: 0;
+  /* Полоса «навигация + текст + код» держится вместе и целиком центрируется
+     на широком мониторе. Растягивать её на всю ширину нельзя: колонка текста
+     и колонка кода расходятся по краям, и глаз теряет их связь. */
+  max-width: 1520px; margin-inline: auto;
+}
+.rail {
+  position: sticky; top: 60px; align-self: start; height: calc(100vh - 60px);
+  overflow-y: auto; padding: 26px 18px 60px 24px; border-right: 1px solid var(--line);
+}
+.filter {
+  width: 100%; font: inherit; font-size: 13.5px; padding: 7px 10px; margin-bottom: 18px;
+  background: var(--paper-2); color: var(--ink); border: 1px solid var(--line);
+}
+.filter::placeholder { color: var(--ink-soft); }
+.rail h5 {
+  margin: 22px 0 7px; font-family: var(--sans); font-size: 11.5px; font-weight: 600;
+  color: var(--ink-soft); letter-spacing: 0.04em;
+}
+.rail h5:first-of-type { margin-top: 0; }
+.rail a {
+  display: block; padding: 3.5px 0 3.5px 13px; font-size: 13.8px; color: var(--ink-soft);
+  border: 0; border-left: 1px solid var(--line-soft); margin-left: 1px;
+}
+.rail a:hover { color: var(--ink); border-left-color: var(--line); }
+.rail a.on { color: var(--accent); border-left: 2px solid var(--accent); margin-left: 0; font-weight: 500; }
+.rail a.hide { display: none; }
+.rail .verb {
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-soft);
+  display: inline-block; min-width: 40px;
+}
+
+main { min-width: 0; padding: 0 0 140px; }
+
+
+/* ---------- ряд: текст слева, код справа ---------- */
+.row {
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--code-col);
+  gap: 46px; padding: 0 42px; align-items: start;
+}
+.prose { max-width: 72ch; padding: 34px 0; }
+.aside { padding: 34px 0; position: sticky; top: 76px; }
+.row + .row .prose, .row + .row .aside { border-top: 1px solid var(--line-soft); }
+.prose > :first-child { margin-top: 0; }
+.prose p { margin: 0 0 15px; }
+.prose h2 { font-size: 27px; margin: 0 0 14px; }
+.prose h3 { font-size: 19px; margin: 30px 0 10px; }
+.prose h4 { font-family: var(--sans); font-size: 14px; font-weight: 650; margin: 22px 0 8px; }
+.prose ul, .prose ol { margin: 0 0 15px; padding-left: 20px; }
+.prose li { margin-bottom: 6px; }
+.prose code:not(pre code) {
+  background: var(--paper-2); border: 1px solid var(--line-soft); padding: 1px 5px;
+}
+
+/* ---------- герой ---------- */
+.hero { padding: 62px 42px 46px; border-bottom: 1px solid var(--line); }
+.hero-lead { max-width: 62ch; }
+.hero h1 { font-size: 44px; margin: 0 0 16px; letter-spacing: -0.025em; }
+.hero p { font-size: 17.5px; color: var(--ink-soft); margin: 0 0 12px; line-height: 1.55; }
+.hero-demo {
+  display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 0; margin-top: 38px; border: 1px solid var(--line);
+}
+.hero-said { padding: 28px 30px; background: var(--paper-2); }
+.hero-said .cap, .hero-got .cap {
+  font-size: 11.5px; color: var(--ink-soft); margin-bottom: 14px;
+}
+.hero-said q {
+  font-family: var(--serif); font-size: 21px; line-height: 1.45; quotes: "«" "»";
+  display: block; color: var(--ink);
+}
+.hero-got {
+  background: var(--code-bg); color: var(--code-fg); padding: 22px 24px;
+  /* Граница между «что сказал человек» и «что поняла система»: в тёмной теме
+     оба поля близки по светлоте и без неё читаются как одна панель. */
+  border-left: 1px solid var(--line);
+}
+.hero-got .cap { color: var(--code-dim); }
+.hero-got pre { margin: 0; font-size: 12.6px; line-height: 1.62; overflow-x: auto; }
+.hero-note {
+  margin-top: 22px; font-size: 14px; color: var(--ink-soft); max-width: 72ch;
+}
+
+/* ---------- код ---------- */
+.code { background: var(--code-bg); color: var(--code-fg); border: 1px solid var(--code-line); }
+.code-head {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  border-bottom: 1px solid var(--code-line); font-size: 12px; color: var(--code-dim);
+}
+.code-head .t { flex: 1; font-family: var(--mono); }
+.copy {
+  font: inherit; font-size: 11.5px; background: transparent; color: var(--code-dim);
+  border: 1px solid var(--code-line); padding: 2px 8px; cursor: pointer;
+}
+.copy:hover { color: var(--code-fg); border-color: var(--code-dim); }
+.code pre {
+  margin: 0; padding: 15px 16px; font-size: 12.7px; line-height: 1.62;
+  /* Перенос, а не горизонтальная прокрутка: команду, уехавшую за край, не
+     видно, и её молча копируют обрезанной. */
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.code + .code { margin-top: 14px; }
+.k { color: var(--code-key); }
+.s { color: var(--code-str); }
+.n { color: var(--code-num); }
+.c { color: var(--code-dim); }
+[data-lang] { display: none; }
+[data-lang].on { display: block; }
+
+/* ---------- таблицы ---------- */
+table { width: 100%; border-collapse: collapse; margin: 6px 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+th { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); border-bottom-color: var(--line); }
+td code { white-space: nowrap; }
+
+/* ---------- маркер происхождения величины ---------- */
+.src { font-size: 12px; padding: 1.5px 7px; border: 1px solid var(--line); color: var(--ink-soft); white-space: nowrap; }
+.src.measured { border-color: var(--accent); color: var(--accent); }
+.src.computed { border-color: var(--line); }
+.src.proxy { border-color: var(--signal); color: var(--signal); background: var(--signal-dim); }
+
+/* ---------- врезки ---------- */
+.note { border-left: 2px solid var(--accent); background: var(--accent-dim); padding: 13px 16px; margin: 0 0 16px; font-size: 14.2px; }
+.warn { border-left: 2px solid var(--signal); background: var(--signal-dim); padding: 13px 16px; margin: 0 0 16px; font-size: 14.2px; }
+.note p:last-child, .warn p:last-child { margin-bottom: 0; }
+
+/* ---------- строка ручки ---------- */
+.ep { margin: 30px 0 12px; }
+.ep:first-of-type { margin-top: 22px; }
+.ep-line {
+  display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap;
+  padding-bottom: 7px; border-bottom: 1px solid var(--line);
+}
+.m { font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em;
+     padding: 2px 7px; border: 1px solid; }
+.m.get { color: var(--accent); border-color: var(--accent); }
+.m.post { color: var(--ink); border-color: var(--ink); }
+.m.patch { color: var(--signal); border-color: var(--signal); }
+.m.del { color: var(--signal); border-color: var(--signal); background: var(--signal-dim); }
+.ep-line .p { font-family: var(--mono); font-size: 13.6px; word-break: break-all; }
+.ep-line .p b { font-weight: 600; }
+.ep-line .sc { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); margin-left: auto; }
+.ep > p { margin: 9px 0 0; font-size: 14.4px; }
+
+/* ---------- подвал ---------- */
+footer { padding: 40px 42px 80px; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 14px; }
+footer p { max-width: 68ch; }
+
+/* ---------- адаптив ---------- */
+@media (max-width: 1180px) {
+  .row { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .aside { position: static; padding: 0 0 34px; border-top: 0 !important; }
+  .row + .row .prose { border-top: 1px solid var(--line-soft); }
+  .prose { padding-bottom: 22px; }
+  .hero-demo { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 20px 22px; }
+  .row, .hero, footer { padding-left: 22px; padding-right: 22px; }
+  .hero h1 { font-size: 33px; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+ <div class="topbar-inner">
+  <a class="brand" href="#start"><b>Habitus</b> <span>Partner API</span></a>
+  <div class="spacer"></div>
+  <span class="ver">v1 · 2026-09-06</span>
+  <div class="langpick" role="group" aria-label="Язык примеров кода">
+    <button type="button" data-pick="curl" aria-pressed="true">cURL</button>
+    <button type="button" data-pick="python" aria-pressed="false">Python</button>
+    <button type="button" data-pick="node" aria-pressed="false">Node</button>
+    <button type="button" data-pick="go" aria-pressed="false">Go</button>
+  </div>
+ </div>
+</header>
+
+<div class="shell">
+<nav class="rail" aria-label="Разделы документации">
+  <input class="filter" type="search" placeholder="Фильтр по разделам" aria-label="Фильтр по разделам">
+  <h5>Начало</h5>
+  <a href="#start">Что это</a>
+  <a href="#quickstart">Первый запрос</a>
+  <a href="#auth">Ключи и права</a>
+  <h5>Соглашения</h5>
+  <a href="#shape">Форма ответов</a>
+  <a href="#honesty">Чего здесь не бывает</a>
+  <a href="#paging">Постраничность</a>
+  <a href="#limits">Лимиты</a>
+  <a href="#idempotency">Повторные запросы</a>
+  <a href="#errors">Ошибки</a>
+  <h5>Поиск</h5>
+  <a href="#search-create"><span class="verb">POST</span>/search</a>
+  <a href="#search-get"><span class="verb">GET</span>/searches/:id</a>
+  <a href="#search-results"><span class="verb">GET</span>/results</a>
+  <h5>Объекты</h5>
+  <a href="#prop-dossier"><span class="verb">GET</span>досье под запрос</a>
+  <a href="#prop-ask"><span class="verb">POST</span>вопрос по объекту</a>
+  <a href="#prop-plain"><span class="verb">GET</span>объект вне подбора</a>
+  <h5>Город</h5>
+  <a href="#geo-layers"><span class="verb">GET</span>/geo/layers</a>
+  <a href="#geo-listings"><span class="verb">GET</span>/geo/listings</a>
+  <h5>Витрина</h5>
+  <a href="#listings">Объявления</a>
+  <a href="#leads">Заявки</a>
+  <h5>События</h5>
+  <a href="#webhooks">Подписки</a>
+  <a href="#signature">Проверка подписи</a>
+  <a href="#delivery">Повторы и журнал</a>
+  <h5>Прочее</h5>
+  <a href="#meta">Служебные ручки</a>
+  <a href="#versioning">Версии</a>
+</nav>
+
+<main>
+
+<section class="hero" id="start">
+  <div class="hero-lead">
+    <h1>Подбор жилья по запросу словами</h1>
+    <p>Habitus читает то, как человек описывает свою жизнь, и возвращает квартиры, объясняя каждую фактами о районе: сколько ребёнку идти до школы, куда выходят окна, что вокруг по вечерам.</p>
+    <p>Partner API отдаёт то же ядро, что работает в самом продукте. Вы получаете поиск, разбор запроса, досье объекта, слои города, свою витрину и заявки покупателей.</p>
+  </div>
+
+  <div class="hero-demo">
+    <div class="hero-said">
+      <div class="cap">Человек говорит</div>
+      <q>Двушка до 18 миллионов, чтобы ребёнку пешком до школы и окна не на трассу</q>
+    </div>
+    <div class="hero-got">
+      <div class="cap">API возвращает разбор</div>
+<pre><span class="k">"parsed"</span>: {
+  <span class="k">"price_max"</span>: <span class="n">18000000</span>,
+  <span class="k">"rooms"</span>: [<span class="n">2</span>],
+  <span class="k">"geo"</span>: [{ <span class="k">"kind"</span>: <span class="s">"school"</span>, <span class="k">"walk_minutes"</span>: <span class="n">15</span> }],
+  <span class="k">"noise_max"</span>: <span class="s">"moderate"</span>,
+  <span class="k">"window_orientation"</span>: [],   <span class="c">// не сказано — не выдумано</span>
+  <span class="k">"semantic_text"</span>: <span class="s">"тихая квартира для семьи с ребёнком"</span>
+}</pre>
+    </div>
+  </div>
+  <p class="hero-note">База: <code>https://api.habitus.city</code>. Локально после <code>docker compose up</code> — <code>http://localhost:8080</code>. Все ручки живут под <code>/partner/v1</code>, отвечают JSON в UTF-8 и требуют ключ, кроме <code>/status</code> и <code>/openapi.json</code>.</p>
+</section>
+
+<div class="row" id="quickstart">
+  <div class="prose">
+    <h2>Первый запрос</h2>
+    <p>Три шага от ключа до выдачи. Дальше всё строится вокруг идентификатора поиска: по нему запрашивают следующие страницы, досье объекта и ответы на вопросы.</p>
+    <h4>1. Проверьте ключ</h4>
+    <p><code>GET /partner/v1/me</code> отвечает сразу на три вопроса: рабочий ли ключ, что им разрешено и в какие лимиты вы упрётесь.</p>
+    <h4>2. Найдите квартиры</h4>
+    <p><code>POST /partner/v1/search</code> — синхронный запрос без стриминга. Разбор, подбор и пересчёт совпадения занимают от нескольких секунд до минуты, поэтому держите таймаут клиента не меньше <b>120 секунд</b>.</p>
+    <h4>3. Откройте досье</h4>
+    <p>Карточка объекта в контексте поиска приходит с процентом совпадения, вердиктом и блоками разбора — маршруты семьи, социальная среда, вид и инсоляция.</p>
+    <div class="note"><p>Досье считается лениво при первом обращении и кэшируется. Первый вызов по объекту заметно дольше следующих — это нормально.</p></div>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Проверка ключа</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">curl https://api.habitus.city/partner/v1/me \
+  -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span></pre>
+<pre data-lang="python">import os, httpx
+
+api = httpx.Client(
+    base_url=<span class="s">"https://api.habitus.city/partner/v1"</span>,
+    headers={<span class="s">"Authorization"</span>: <span class="s">f"Bearer {os.environ['HABITUS_KEY']}"</span>},
+    timeout=<span class="n">120.0</span>,
+)
+print(api.get(<span class="s">"/me"</span>).json())</pre>
+<pre data-lang="node">const api = (path, init = {}) =&gt;
+  fetch(<span class="s">`https://api.habitus.city/partner/v1${path}`</span>, {
+    ...init,
+    headers: {
+      Authorization: <span class="s">`Bearer ${process.env.HABITUS_KEY}`</span>,
+      <span class="s">"Content-Type"</span>: <span class="s">"application/json"</span>,
+      ...init.headers,
+    },
+  }).then((r) =&gt; r.json());
+
+console.log(await api(<span class="s">"/me"</span>));</pre>
+<pre data-lang="go">req, _ := http.NewRequest(<span class="s">"GET"</span>,
+    <span class="s">"https://api.habitus.city/partner/v1/me"</span>, nil)
+req.Header.Set(<span class="s">"Authorization"</span>, <span class="s">"Bearer "</span>+os.Getenv(<span class="s">"HABITUS_KEY"</span>))
+
+client := &amp;http.Client{Timeout: <span class="n">120</span> * time.Second}
+resp, err := client.Do(req)</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Поиск</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">curl -X POST https://api.habitus.city/partner/v1/search \
+  -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -H <span class="s">"Idempotency-Key: 8f3c1a90-orders-42"</span> \
+  --max-time <span class="n">120</span> \
+  -d <span class="s">'{
+    "query": "двушка до 18 млн, ребёнку пешком до школы, окна не на трассу",
+    "city": "msk",
+    "limit": 10
+  }'</span></pre>
+<pre data-lang="python">search = api.post(<span class="s">"/search"</span>, json={
+    <span class="s">"query"</span>: <span class="s">"двушка до 18 млн, ребёнку пешком до школы"</span>,
+    <span class="s">"city"</span>: <span class="s">"msk"</span>,
+    <span class="s">"limit"</span>: <span class="n">10</span>,
+}, headers={<span class="s">"Idempotency-Key"</span>: <span class="s">"8f3c1a90-orders-42"</span>}).json()
+
+for item in search[<span class="s">"results"</span>][<span class="s">"data"</span>]:
+    print(item[<span class="s">"match_score"</span>], item[<span class="s">"address"</span>], item[<span class="s">"price"</span>])</pre>
+<pre data-lang="node">const search = await api(<span class="s">"/search"</span>, {
+  method: <span class="s">"POST"</span>,
+  headers: { <span class="s">"Idempotency-Key"</span>: <span class="s">"8f3c1a90-orders-42"</span> },
+  body: JSON.stringify({
+    query: <span class="s">"двушка до 18 млн, ребёнку пешком до школы"</span>,
+    city: <span class="s">"msk"</span>,
+    limit: <span class="n">10</span>,
+  }),
+});
+
+for (const item of search.results.data) {
+  console.log(item.match_score, item.address, item.price);
+}</pre>
+<pre data-lang="go">body, _ := json.Marshal(map[string]any{
+    <span class="s">"query"</span>: <span class="s">"двушка до 18 млн, ребёнку пешком до школы"</span>,
+    <span class="s">"city"</span>:  <span class="s">"msk"</span>,
+    <span class="s">"limit"</span>: <span class="n">10</span>,
+})
+req, _ := http.NewRequest(<span class="s">"POST"</span>, base+<span class="s">"/search"</span>, bytes.NewReader(body))
+req.Header.Set(<span class="s">"Authorization"</span>, <span class="s">"Bearer "</span>+key)
+req.Header.Set(<span class="s">"Content-Type"</span>, <span class="s">"application/json"</span>)
+req.Header.Set(<span class="s">"Idempotency-Key"</span>, <span class="s">"8f3c1a90-orders-42"</span>)</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row" id="auth">
+  <div class="prose">
+    <h2>Ключи и права</h2>
+    <p>Ключ передаётся заголовком <code>Authorization: Bearer hab_live_…</code>. Cookie здесь не используются: у интеграции нет браузера.</p>
+    <p>Секрет показывается <b>один раз</b> — в момент выпуска. В системе хранится только его хеш, поэтому потерянный ключ нельзя восстановить, можно лишь выпустить новый и отозвать старый.</p>
+    <h3>Среды</h3>
+    <p>Префикс ключа говорит, в какой среде он работает: <code>hab_live_…</code> — боевые данные, <code>hab_test_…</code> — тот же контур с пометкой, по которой вы отличаете свои прогоны от продакшена. Среда видна в ответе <code>/me</code>.</p>
+    <h3>Права</h3>
+    <p>Каждый ключ несёт набор прав. Ключ для CRM не должен уметь читать слои города, а ключ витрины — чужие заявки: выдавайте ровно то, что нужно интеграции.</p>
+    <table>
+      <thead><tr><th>Право</th><th>Что открывает</th></tr></thead>
+      <tbody>
+        <tr><td><code>search:read</code></td><td>Поиск, выдача, объекты, досье, вопросы</td></tr>
+        <tr><td><code>geo:read</code></td><td>Слои города и объявления под вьюпортом</td></tr>
+        <tr><td><code>listings:read</code></td><td>Чтение своей витрины</td></tr>
+        <tr><td><code>listings:write</code></td><td>Создание, изменение, публикация объявлений</td></tr>
+        <tr><td><code>leads:read</code></td><td>Заявки покупателей по вашим объявлениям</td></tr>
+        <tr><td><code>webhooks:write</code></td><td>Подписки на события</td></tr>
+      </tbody>
+    </table>
+    <div class="warn"><p>Ключ — это доступ к боевым данным и к вашей витрине. Держите его на сервере, не в мобильном приложении и не в браузерном коде: оттуда его достанет любой желающий.</p></div>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">GET /partner/v1/me</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">{
+  <span class="k">"object"</span>: <span class="s">"partner"</span>,
+  <span class="k">"id"</span>: <span class="s">"b7c0…"</span>,
+  <span class="k">"slug"</span>: <span class="s">"gorod-agency"</span>,
+  <span class="k">"name"</span>: <span class="s">"Агентство «Город»"</span>,
+  <span class="k">"status"</span>: <span class="s">"active"</span>,
+  <span class="k">"key"</span>: {
+    <span class="k">"prefix"</span>: <span class="s">"hab_live_k4m2rq7t"</span>,
+    <span class="k">"environment"</span>: <span class="s">"live"</span>,
+    <span class="k">"scopes"</span>: [<span class="s">"search:read"</span>, <span class="s">"leads:read"</span>],
+    <span class="k">"expires_at"</span>: <span class="c">null</span>,
+    <span class="k">"last_used_at"</span>: <span class="s">"2026-09-06T09:14:22Z"</span>
+  },
+  <span class="k">"limits"</span>: {
+    <span class="k">"requests_per_minute"</span>: <span class="n">120</span>,
+    <span class="k">"llm_requests_per_hour"</span>: <span class="n">60</span>
+  },
+  <span class="k">"api_version"</span>: <span class="s">"2026-09-06"</span>
+}</pre>
+<pre data-lang="python">me = api.get(<span class="s">"/me"</span>).json()
+
+if <span class="s">"search:read"</span> not in me[<span class="s">"key"</span>][<span class="s">"scopes"</span>]:
+    raise SystemExit(<span class="s">"ключу не хватает права search:read"</span>)
+
+print(me[<span class="s">"limits"</span>][<span class="s">"requests_per_minute"</span>], <span class="s">"запросов в минуту"</span>)</pre>
+<pre data-lang="node">const me = await api(<span class="s">"/me"</span>);
+
+if (!me.key.scopes.includes(<span class="s">"search:read"</span>)) {
+  throw new Error(<span class="s">"ключу не хватает права search:read"</span>);
+}
+console.log(me.limits.requests_per_minute, <span class="s">"запросов в минуту"</span>);</pre>
+<pre data-lang="go"><span class="c">// Ответ /me — единственный способ узнать права ключа,</span>
+<span class="c">// не выясняя их методом подстановки в бою.</span>
+type Me struct {
+    Key struct {
+        Prefix string   <span class="s">`json:"prefix"`</span>
+        Scopes []string <span class="s">`json:"scopes"`</span>
+    } <span class="s">`json:"key"`</span>
+    Limits struct {
+        RequestsPerMinute int <span class="s">`json:"requests_per_minute"`</span>
+    } <span class="s">`json:"limits"`</span>
+}</pre>
+    </div>
+  </div>
+</div>
+<div class="row" id="shape">
+  <div class="prose">
+    <h2>Форма ответов</h2>
+    <p>Каждый ресурс несёт поле <code>object</code> с именем своего типа — <code>search</code>, <code>search_result</code>, <code>property</code>, <code>listing</code>, <code>lead</code>, <code>webhook</code>. Разбирайте ответ по нему, а не по тому, из какой ручки он приехал: так код переживёт добавление новых полей и вложений.</p>
+    <h3>Координаты</h3>
+    <p>Везде пара <code>[lng, lat]</code> в WGS84 (EPSG:4326) — сначала долгота. Никаких преобразований на вашей стороне не требуется. Перепутанный порядок — самая частая ошибка интеграции, поэтому при записи объявления координаты за пределами допустимого диапазона отклоняются с объяснением, а не принимаются молча.</p>
+    <h3>Время</h3>
+    <p>Все метки времени — RFC 3339 в UTC: <code>2026-09-06T09:14:22Z</code>.</p>
+    <h3>Деньги и площади</h3>
+    <p>Цена — целое число рублей. Площадь — число с плавающей точкой в квадратных метрах. Ни то, ни другое не форматируется на нашей стороне.</p>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Объект выдачи</span><button class="copy" type="button">Копировать</button></div>
+<pre>{
+  <span class="k">"object"</span>: <span class="s">"search_result"</span>,
+  <span class="k">"id"</span>: <span class="s">"cian_318472905"</span>,
+  <span class="k">"name"</span>: <span class="s">"2-комнатная, 54 м²"</span>,
+  <span class="k">"address"</span>: <span class="s">"Москва, Кастанаевская, 18"</span>,
+  <span class="k">"cover_image"</span>: <span class="s">"https://…/1.jpg"</span>,
+  <span class="k">"match_score"</span>: <span class="n">84</span>,
+  <span class="k">"coordinates"</span>: [<span class="n">37.4831</span>, <span class="n">55.7311</span>],
+  <span class="k">"price"</span>: <span class="n">17450000</span>,
+  <span class="k">"rooms"</span>: <span class="n">2</span>,
+  <span class="k">"area_sqm"</span>: <span class="n">54.2</span>,
+  <span class="k">"floor"</span>: <span class="s">"5 из 12"</span>,
+  <span class="k">"tags"</span>: [<span class="s">"тихий двор"</span>, <span class="s">"школа в 8 минутах"</span>]
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row" id="honesty">
+  <div class="prose">
+    <h2>Чего здесь не бывает</h2>
+    <p>Главное правило сервиса: <b>не выдумывать факты о городе</b>. Оно определяет форму ответов сильнее, чем что-либо ещё, и нарушает привычное ожидание «в JSON всегда есть все поля».</p>
+    <ul>
+      <li><b>Отсутствующий замер приходит как <code>null</code>, а не как ноль.</b> Ноль минут до школы — это утверждение, что школа во дворе. Если данных нет, поле придёт пустым, и подставлять вместо него ноль на своей стороне тоже не стоит.</li>
+      <li><b>Блок досье, под который не хватило данных, деградирует или исчезает.</b> Не рассчитывайте на фиксированный набор блоков: перебирайте <code>blocks</code> по <code>key</code>.</li>
+      <li><b>Названия объектов синтезированы из структурных фактов</b> — «2-комнатная, 54 м²». Рекламных заголовков в API нет.</li>
+      <li><b>Процент совпадения существует только внутри запроса.</b> Вне поиска он равен нулю и означает «не считался», а не «плохо подходит».</li>
+    </ul>
+    <h3>Откуда взялась величина</h3>
+    <p>Каждый блок досье перечисляет источники своих чисел в поле <code>sources</code>. Это не украшение: разница между замером и модельной оценкой определяет, можно ли показывать величину клиенту как факт.</p>
+    <table>
+      <thead><tr><th>Вид</th><th>Что означает</th></tr></thead>
+      <tbody>
+        <tr><td><span class="src measured">observation</span></td><td>Замер или запись в источнике данных.</td></tr>
+        <tr><td><span class="src computed">computation</span></td><td>Расчёт по данным: маршрут по графу улиц, площадь буфера.</td></tr>
+        <tr><td><span class="src proxy">proxy</span></td><td>Модельная оценка. Показывать как измеренный факт нельзя.</td></tr>
+      </tbody>
+    </table>
+    <p>Слои <code>communal</code>, <code>noise</code> и <code>crime</code> целиком относятся к третьему виду — это модели, а не датчики в каждом дворе.</p>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Блок досье</span><button class="copy" type="button">Копировать</button></div>
+<pre>{
+  <span class="k">"key"</span>: <span class="s">"family_routing"</span>,
+  <span class="k">"tier"</span>: <span class="s">"hero"</span>,
+  <span class="k">"title"</span>: <span class="s">"Дорога ребёнка в школу"</span>,
+  <span class="k">"score"</span>: <span class="s">"A-"</span>,
+  <span class="k">"verdict_line"</span>: <span class="s">"8 минут пешком, дорогу переходить не нужно"</span>,
+  <span class="k">"metrics"</span>: { <span class="k">"walk_min_school"</span>: <span class="n">8</span> },
+  <span class="k">"data"</span>: {
+    <span class="k">"home"</span>: [<span class="n">37.4831</span>, <span class="n">55.7311</span>],
+    <span class="k">"members"</span>: [{
+      <span class="k">"label"</span>: <span class="s">"ребёнок"</span>,
+      <span class="k">"legs"</span>: [{
+        <span class="k">"to_label"</span>: <span class="s">"Школа № 1195"</span>,
+        <span class="k">"mode"</span>: <span class="s">"walk"</span>,
+        <span class="k">"minutes"</span>: <span class="n">8</span>,
+        <span class="k">"safety"</span>: <span class="c">null</span>,        <span class="c">// не измеряли</span>
+        <span class="k">"estimate_kind"</span>: <span class="c">null</span>, <span class="c">// маршрут по графу</span>
+        <span class="k">"geometry"</span>: { <span class="k">"type"</span>: <span class="s">"LineString"</span>, … }
+      }]
+    }]
+  },
+  <span class="k">"sources"</span>: [{
+    <span class="k">"key"</span>: <span class="s">"walk_min_school"</span>,
+    <span class="k">"label"</span>: <span class="s">"Время пешком до школы"</span>,
+    <span class="k">"kind"</span>: <span class="s">"computation"</span>,
+    <span class="k">"basis"</span>: <span class="s">"маршрут по пешеходному графу OSM"</span>
+  }]
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row" id="paging">
+  <div class="prose">
+    <h2>Постраничность</h2>
+    <p>Списки приходят в одном конверте: <code>object: "list"</code>, массив <code>data</code>, счётчик <code>total</code>, флаг <code>has_more</code> и <code>next_cursor</code>.</p>
+    <p>Курсор непрозрачен — собирать его самостоятельно не нужно и нельзя. Листайте, пока <code>has_more</code> не станет <code>false</code>. Неверный курсор возвращает <code>400</code>, а не первую страницу: молчаливый сброс закольцевал бы вас на первой странице навсегда.</p>
+    <p>Размер страницы задаётся параметром <code>limit</code> — до 100, по умолчанию 25.</p>
+    <div class="note"><p>Выдача поиска уже сохранена целиком, поэтому листание страниц не запускает поиск заново и не тратит квоту на модель.</p></div>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Конверт списка</span><button class="copy" type="button">Копировать</button></div>
+<pre>{
+  <span class="k">"object"</span>: <span class="s">"list"</span>,
+  <span class="k">"item_object"</span>: <span class="s">"search_result"</span>,
+  <span class="k">"data"</span>: [ … ],
+  <span class="k">"total"</span>: <span class="n">28</span>,
+  <span class="k">"has_more"</span>: <span class="k">true</span>,
+  <span class="k">"next_cursor"</span>: <span class="s">"bzoxMA"</span>
+}</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Обход всех страниц</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">curl <span class="s">"$BASE/searches/$SEARCH_ID/results?limit=50"</span> \
+  -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span>
+
+<span class="c"># следующая страница — next_cursor из ответа</span>
+curl <span class="s">"$BASE/searches/$SEARCH_ID/results?limit=50&cursor=bzoxMA"</span> \
+  -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span></pre>
+<pre data-lang="python">def all_results(search_id):
+    cursor = None
+    while True:
+        params = {<span class="s">"limit"</span>: <span class="n">50</span>}
+        if cursor:
+            params[<span class="s">"cursor"</span>] = cursor
+        page = api.get(<span class="s">f"/searches/{search_id}/results"</span>, params=params).json()
+        yield from page[<span class="s">"data"</span>]
+        if not page[<span class="s">"has_more"</span>]:
+            return
+        cursor = page[<span class="s">"next_cursor"</span>]</pre>
+<pre data-lang="node">async function* allResults(searchId) {
+  let cursor = null;
+  for (;;) {
+    const qs = new URLSearchParams({ limit: <span class="s">"50"</span> });
+    if (cursor) qs.set(<span class="s">"cursor"</span>, cursor);
+    const page = await api(<span class="s">`/searches/${searchId}/results?${qs}`</span>);
+    yield* page.data;
+    if (!page.has_more) return;
+    cursor = page.next_cursor;
+  }
+}</pre>
+<pre data-lang="go">cursor := <span class="s">""</span>
+for {
+    u := fmt.Sprintf(<span class="s">"%s/searches/%s/results?limit=50&amp;cursor=%s"</span>, base, id, cursor)
+    var page struct {
+        Data       []json.RawMessage <span class="s">`json:"data"`</span>
+        HasMore    bool              <span class="s">`json:"has_more"`</span>
+        NextCursor string            <span class="s">`json:"next_cursor"`</span>
+    }
+    <span class="c">// … запрос и разбор …</span>
+    if !page.HasMore {
+        break
+    }
+    cursor = page.NextCursor
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row" id="limits">
+  <div class="prose">
+    <h2>Лимиты</h2>
+    <p>Лимитов два, и они считаются раздельно. Тысяча дешёвых чтений в час — норма; тысяча вызовов модели — счёт за месяц.</p>
+    <table>
+      <thead><tr><th>Квота</th><th>Окно</th><th>Что попадает</th></tr></thead>
+      <tbody>
+        <tr><td>Общая</td><td>Скользящая минута</td><td>Все ручки</td></tr>
+        <tr><td>Модель</td><td>Скользящий час</td><td><code>/search</code>, досье объекта, вопрос по объекту</td></tr>
+      </tbody>
+    </table>
+    <p>Ваши значения видны в <code>/me</code> и приходят заголовками на каждом ответе — не только при отказе. Клиент должен уметь притормозить сам, а не узнавать о лимите в момент, когда в него уже упёрся.</p>
+    <table>
+      <thead><tr><th>Заголовок</th><th>Значение</th></tr></thead>
+      <tbody>
+        <tr><td><code>RateLimit-Limit</code></td><td>Потолок в текущем окне</td></tr>
+        <tr><td><code>RateLimit-Remaining</code></td><td>Сколько осталось</td></tr>
+        <tr><td><code>RateLimit-Reset</code></td><td>Через сколько секунд освободится место</td></tr>
+        <tr><td><code>Retry-After</code></td><td>Только при 429 — сколько ждать</td></tr>
+      </tbody>
+    </table>
+    <p>Те же значения дублируются как <code>X-RateLimit-*</code> — их понимают готовые клиенты.</p>
+    <div class="warn"><p>При <code>429</code> повторяйте с растущей паузой, начиная со значения <code>Retry-After</code>. Повтор без паузы просто съедает следующее окно.</p></div>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Заголовки ответа</span><button class="copy" type="button">Копировать</button></div>
+<pre>HTTP/1.1 <span class="n">200</span> OK
+RateLimit-Limit: <span class="n">120</span>
+RateLimit-Remaining: <span class="n">117</span>
+RateLimit-Reset: <span class="n">44</span>
+RateLimit-Policy-LLM: <span class="n">60</span>;w=<span class="n">3600</span>
+X-Request-Id: 01J8Z5C3K9QW2Y6R7T8V9XA0BC</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Отказ по лимиту</span><button class="copy" type="button">Копировать</button></div>
+<pre>HTTP/1.1 <span class="n">429</span> Too Many Requests
+Retry-After: <span class="n">37</span>
+
+{
+  <span class="k">"error"</span>: {
+    <span class="k">"type"</span>: <span class="s">"rate_limit_error"</span>,
+    <span class="k">"code"</span>: <span class="s">"rate_limit_exceeded"</span>,
+    <span class="k">"message"</span>: <span class="s">"Превышен лимит запросов (120 в минуту). Повторите через 37 с"</span>,
+    <span class="k">"request_id"</span>: <span class="s">"01J8Z5C3K9QW2Y6R7T8V9XA0BC"</span>
+  }
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row" id="idempotency">
+  <div class="prose">
+    <h2>Повторные запросы</h2>
+    <p>Сеть рвётся тогда, когда операция уже выполнена, но ответ до вас не дошёл. Чтобы повтор не создал второй объект, передайте заголовок <code>Idempotency-Key</code> с любой уникальной строкой до 255 символов.</p>
+    <ul>
+      <li><b>Тот же ключ, то же тело</b> — вернётся первый ответ с заголовком <code>Idempotent-Replay: true</code>. Вторая операция не выполняется.</li>
+      <li><b>Тот же ключ, другое тело</b> — <code>409 idempotency_key_reuse</code>. Отдать вам чужой сохранённый ответ было бы хуже отказа.</li>
+      <li><b>Неуспешный ответ не запоминается.</b> Ошибку можно и нужно повторять тем же ключом — иначе клиент оказался бы заперт в ней навсегда.</li>
+    </ul>
+    <p>Ключи хранятся 24 часа. Поддерживают его <code>POST /search</code>, <code>POST /listings</code>, <code>POST /webhooks</code> и вопрос по объекту.</p>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Повтор того же запроса</span><button class="copy" type="button">Копировать</button></div>
+<pre>HTTP/1.1 <span class="n">201</span> Created
+Idempotent-Replay: <span class="k">true</span>
+
+<span class="c">// то же тело, что в первый раз — операция не повторилась</span></pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Ключ переиспользован</span><button class="copy" type="button">Копировать</button></div>
+<pre>HTTP/1.1 <span class="n">409</span> Conflict
+
+{
+  <span class="k">"error"</span>: {
+    <span class="k">"type"</span>: <span class="s">"conflict_error"</span>,
+    <span class="k">"code"</span>: <span class="s">"idempotency_key_reuse"</span>,
+    <span class="k">"message"</span>: <span class="s">"Этот Idempotency-Key уже использован с другим телом запроса"</span>,
+    <span class="k">"param"</span>: <span class="s">"Idempotency-Key"</span>
+  }
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row" id="errors">
+  <div class="prose">
+    <h2>Ошибки</h2>
+    <p>Конверт один на все ручки и все коды. Ветвитесь по <code>code</code>: <code>message</code> написан для человека и может меняться.</p>
+    <p>Поле <code>request_id</code> совпадает с заголовком <code>X-Request-Id</code>. Назовите его в обращении в поддержку — по нему запрос находится за секунды.</p>
+    <h3>Классы</h3>
+    <table>
+      <thead><tr><th>type</th><th>Что делать</th></tr></thead>
+      <tbody>
+        <tr><td><code>authentication_error</code></td><td>Починить ключ. Повтор не поможет.</td></tr>
+        <tr><td><code>permission_error</code></td><td>Выпустить ключ с нужным правом.</td></tr>
+        <tr><td><code>invalid_request_error</code></td><td>Исправить запрос. Поле названо в <code>param</code>.</td></tr>
+        <tr><td><code>conflict_error</code></td><td>Состояние не позволяет операцию. Прочитать <code>message</code>.</td></tr>
+        <tr><td><code>rate_limit_error</code></td><td>Подождать <code>Retry-After</code> и повторить.</td></tr>
+        <tr><td><code>api_error</code></td><td>Наша сторона. Повторить с паузой, при повторении — написать нам.</td></tr>
+      </tbody>
+    </table>
+    <h3>Частые коды</h3>
+    <table>
+      <thead><tr><th>HTTP</th><th>code</th><th>Причина</th></tr></thead>
+      <tbody>
+        <tr><td>401</td><td><code>api_key_missing</code></td><td>Заголовок <code>Authorization</code> не передан.</td></tr>
+        <tr><td>401</td><td><code>invalid_api_key</code></td><td>Ключ не распознан или секрет не сошёлся.</td></tr>
+        <tr><td>401</td><td><code>api_key_revoked</code></td><td>Ключ отозван — выпустите новый.</td></tr>
+        <tr><td>401</td><td><code>api_key_expired</code></td><td>Срок действия ключа истёк.</td></tr>
+        <tr><td>403</td><td><code>insufficient_scope</code></td><td>Ключу не хватает права; какого — в <code>message</code>.</td></tr>
+        <tr><td>403</td><td><code>partner_suspended</code></td><td>Доступ партнёра приостановлен.</td></tr>
+        <tr><td>400</td><td><code>validation_error</code></td><td>Поле запроса не прошло проверку.</td></tr>
+        <tr><td>404</td><td><code>search_not_found</code></td><td>Поиск не найден или удалён по сроку хранения.</td></tr>
+        <tr><td>404</td><td><code>object_not_found</code></td><td>Объекта нет в витрине.</td></tr>
+        <tr><td>404</td><td><code>owner_listing_not_found</code></td><td>Объявления нет или оно не ваше.</td></tr>
+        <tr><td>409</td><td><code>idempotency_key_reuse</code></td><td>Ключ повторён с другим телом.</td></tr>
+        <tr><td>429</td><td><code>rate_limit_exceeded</code></td><td>Кончилась квота — общая или на модель.</td></tr>
+        <tr><td>502</td><td><code>ml_error</code></td><td>Поисковое ядро вернуло ошибку.</td></tr>
+        <tr><td>504</td><td><code>search_timeout</code></td><td>Поиск не уложился в бюджет. Повтор имеет смысл.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Конверт ошибки</span><button class="copy" type="button">Копировать</button></div>
+<pre>{
+  <span class="k">"error"</span>: {
+    <span class="k">"type"</span>: <span class="s">"invalid_request_error"</span>,
+    <span class="k">"code"</span>: <span class="s">"validation_error"</span>,
+    <span class="k">"message"</span>: <span class="s">"coordinates[1] — широта, от -90 до 90. Порядок именно [lng, lat]"</span>,
+    <span class="k">"param"</span>: <span class="s">"coordinates"</span>,
+    <span class="k">"request_id"</span>: <span class="s">"01J8Z5C3K9QW2Y6R7T8V9XA0BC"</span>,
+    <span class="k">"doc_url"</span>: <span class="s">"https://api.habitus.city/docs#errors"</span>
+  }
+}</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Разбор на стороне клиента</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on"><span class="c"># cause и hint приходят, только когда есть что сказать:</span>
+<span class="c"># cause — техническая улика, hint — что с ней делать.</span>
+{
+  <span class="k">"error"</span>: {
+    <span class="k">"type"</span>: <span class="s">"api_error"</span>,
+    <span class="k">"code"</span>: <span class="s">"search_timeout"</span>,
+    <span class="k">"message"</span>: <span class="s">"Поиск не уложился в 120 с"</span>,
+    <span class="k">"cause"</span>: <span class="s">"stage=rerank, 118420 ms"</span>,
+    <span class="k">"hint"</span>: <span class="s">"Упростите запрос или повторите позже"</span>
+  }
+}</pre>
+<pre data-lang="python">resp = api.post(<span class="s">"/search"</span>, json=payload)
+
+if resp.is_error:
+    err = resp.json()[<span class="s">"error"</span>]
+    if err[<span class="s">"code"</span>] == <span class="s">"rate_limit_exceeded"</span>:
+        time.sleep(int(resp.headers.get(<span class="s">"Retry-After"</span>, <span class="s">"5"</span>)))
+    elif err[<span class="s">"type"</span>] == <span class="s">"invalid_request_error"</span>:
+        raise ValueError(<span class="s">f"{err['message']} (поле {err.get('param')})"</span>)
+    else:
+        log.error(<span class="s">"habitus %s: %s"</span>, err[<span class="s">"code"</span>], err[<span class="s">"request_id"</span>])</pre>
+<pre data-lang="node">const resp = await fetch(url, init);
+
+if (!resp.ok) {
+  const { error } = await resp.json();
+  if (error.code === <span class="s">"rate_limit_exceeded"</span>) {
+    await sleep(Number(resp.headers.get(<span class="s">"Retry-After"</span>) ?? <span class="n">5</span>) * <span class="n">1000</span>);
+  }
+  throw new Error(<span class="s">`${error.code}: ${error.message} [${error.request_id}]`</span>);
+}</pre>
+<pre data-lang="go">type APIError struct {
+    Type      string <span class="s">`json:"type"`</span>
+    Code      string <span class="s">`json:"code"`</span>
+    Message   string <span class="s">`json:"message"`</span>
+    Param     string <span class="s">`json:"param"`</span>
+    RequestID string <span class="s">`json:"request_id"`</span>
+}
+
+func (e *APIError) Error() string {
+    return e.Code + <span class="s">": "</span> + e.Message + <span class="s">" ["</span> + e.RequestID + <span class="s">"]"</span>
+}</pre>
+    </div>
+  </div>
+</div>
+<div class="row">
+  <div class="prose">
+    <h2 id="search-create">Поиск</h2>
+    <div class="ep">
+      <div class="ep-line"><span class="m post">POST</span><span class="p">/partner/v1/<b>search</b></span><span class="sc">search:read</span></div>
+      <p>Разбирает запрос, подбирает объекты и сохраняет выдачу. Возвращает поиск вместе с первой страницей.</p>
+    </div>
+    <table>
+      <thead><tr><th>Поле</th><th>Описание</th></tr></thead>
+      <tbody>
+        <tr><td><code>query</code> <b>обяз.</b></td><td>Запрос словами, до 2000 символов.</td></tr>
+        <tr><td><code>city</code></td><td><code>msk</code> или <code>spb</code>. По умолчанию <code>msk</code>.</td></tr>
+        <tr><td><code>point</code></td><td>Точка притяжения: <code>lon</code>, <code>lat</code>, <code>minutes</code> (1–60), <code>mode</code> — <code>foot-walking</code>, <code>cycling-regular</code>, <code>driving-car</code>, <code>metro</code>.</td></tr>
+        <tr><td><code>explain</code></td><td>Просить текстовое объяснение выдачи. Стоит отдельного вызова модели и заметных секунд, поэтому выключено по умолчанию.</td></tr>
+        <tr><td><code>limit</code></td><td>Размер первой страницы, 1–50. По умолчанию 20.</td></tr>
+        <tr><td><code>prev_search_id</code></td><td>Идентификатор предыдущего поиска. Тогда запрос читается как уточнение: «а теперь подешевле» не теряет всё, что было сказано раньше.</td></tr>
+      </tbody>
+    </table>
+    <h4>Что вернётся кроме объектов</h4>
+    <p><code>parsed</code> — что система поняла из запроса. <code>relaxed</code> — требования, которые пришлось ослабить, чтобы выдача не оказалась пустой; покажите их пользователю, иначе он не поймёт, почему в списке дороже, чем он просил. <code>degraded</code> — слои данных, недоступные в момент запроса. <code>notes</code> — примечания о покрытии: например, ориентация окон известна у малой доли объявлений, поэтому учитывается как предпочтение, а не как фильтр.</p>
+
+    <h3 id="search-get">Метаданные и выдача</h3>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/searches/<b>{search_id}</b></span><span class="sc">search:read</span></div>
+      <p>Разбор запроса, ослабления и объяснение — без самой выдачи.</p>
+    </div>
+    <div class="ep" id="search-results">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/searches/<b>{search_id}</b>/results</span><span class="sc">search:read</span></div>
+      <p>Страница выдачи. Поиск заново не выполняется, квота на модель не тратится. Параметры — <code>limit</code> и <code>cursor</code>.</p>
+    </div>
+    <div class="note"><p>Поиски хранятся ограниченное время. Если вам нужен долгоживущий подбор, сохраните идентификаторы объектов у себя: карточка объекта доступна и без поиска, только без досье.</p></div>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Уточнение предыдущего запроса</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">curl -X POST <span class="s">"$BASE/search"</span> \
+  -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d <span class="s">'{
+    "query": "то же, но подешевле и ближе к парку",
+    "prev_search_id": "0c9d2f6e-…"
+  }'</span></pre>
+<pre data-lang="python">refined = api.post(<span class="s">"/search"</span>, json={
+    <span class="s">"query"</span>: <span class="s">"то же, но подешевле и ближе к парку"</span>,
+    <span class="s">"prev_search_id"</span>: search[<span class="s">"id"</span>],
+}).json()
+
+if refined[<span class="s">"relaxed"</span>]:
+    print(<span class="s">"пришлось ослабить:"</span>, <span class="s">", "</span>.join(refined[<span class="s">"relaxed"</span>]))</pre>
+<pre data-lang="node">const refined = await api(<span class="s">"/search"</span>, {
+  method: <span class="s">"POST"</span>,
+  body: JSON.stringify({
+    query: <span class="s">"то же, но подешевле и ближе к парку"</span>,
+    prev_search_id: search.id,
+  }),
+});
+
+if (refined.relaxed.length) {
+  console.log(<span class="s">"пришлось ослабить:"</span>, refined.relaxed.join(<span class="s">", "</span>));
+}</pre>
+<pre data-lang="go">payload := map[string]any{
+    <span class="s">"query"</span>:          <span class="s">"то же, но подешевле и ближе к парку"</span>,
+    <span class="s">"prev_search_id"</span>: search.ID,
+}
+<span class="c">// relaxed непустой — покажите пользователю, что именно ослабили,</span>
+<span class="c">// иначе он не поймёт, почему в списке дороже, чем он просил.</span></pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Ответ POST /search</span><button class="copy" type="button">Копировать</button></div>
+<pre>{
+  <span class="k">"object"</span>: <span class="s">"search"</span>,
+  <span class="k">"id"</span>: <span class="s">"0c9d2f6e-…"</span>,
+  <span class="k">"query"</span>: <span class="s">"двушка до 18 млн…"</span>,
+  <span class="k">"city"</span>: <span class="s">"msk"</span>,
+  <span class="k">"parsed"</span>: { <span class="k">"price_max"</span>: <span class="n">18000000</span>, <span class="k">"rooms"</span>: [<span class="n">2</span>], … },
+  <span class="k">"relaxed"</span>: [<span class="s">"радиус до школы расширен до 20 минут"</span>],
+  <span class="k">"degraded"</span>: [],
+  <span class="k">"notes"</span>: [<span class="s">"ориентация окон известна у 2% объявлений"</span>],
+  <span class="k">"explanation"</span>: <span class="s">""</span>,
+  <span class="k">"data_freshness"</span>: <span class="s">"2026-09-04"</span>,
+  <span class="k">"area_label"</span>: <span class="s">"Фили-Давыдково"</span>,
+  <span class="k">"area_geojson"</span>: { <span class="k">"type"</span>: <span class="s">"FeatureCollection"</span>, … },
+  <span class="k">"total"</span>: <span class="n">28</span>,
+  <span class="k">"results"</span>: {
+    <span class="k">"object"</span>: <span class="s">"list"</span>,
+    <span class="k">"item_object"</span>: <span class="s">"search_result"</span>,
+    <span class="k">"data"</span>: [ … <span class="n">10</span> объектов … ],
+    <span class="k">"has_more"</span>: <span class="k">true</span>,
+    <span class="k">"next_cursor"</span>: <span class="s">"bzoxMA"</span>
+  }
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="prose">
+    <h2 id="prop-dossier">Объекты</h2>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/searches/<b>{search_id}</b>/properties/<b>{object_id}</b></span><span class="sc">search:read</span></div>
+      <p>Объект в контексте запроса: процент совпадения, вердикт и блоки досье. Первый вызов по объекту считает досье и потому дольше следующих.</p>
+    </div>
+    <p>Если объекта в этой выдаче не было, вернётся тот же объект без досье — это не ошибка. Так работает переход по прямой ссылке.</p>
+
+    <h3 id="prop-ask">Вопрос по объекту</h3>
+    <div class="ep">
+      <div class="ep-line"><span class="m post">POST</span><span class="p">/partner/v1/searches/<b>{search_id}</b>/properties/<b>{object_id}</b>/ask</span><span class="sc">search:read</span></div>
+      <p>Ответ строится только по досье и фактам объекта. Чего в них нет — того не будет и в ответе.</p>
+    </div>
+    <p>Ответ приходит разложенным на предложения со ссылками на источники. Предложение с <code>unknown: true</code> означает «данных для ответа нет» — отдельным полем, чтобы вы могли отличить ответ от признания незнания программно, а не разбором текста.</p>
+
+    <h3 id="prop-plain">Объект вне подбора</h3>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/properties/<b>{object_id}</b></span><span class="sc">search:read</span></div>
+      <p>Факты объекта без привязки к запросу: адрес, цена, площадь, этаж, фотографии, координаты и блоки, собранные из данных самого объекта.</p>
+    </div>
+    <div class="warn"><p>Процента совпадения и досье здесь нет и быть не может: оба считаются относительно запроса. В отрыве от него это были бы выдуманные числа, а <code>match_score</code> придёт нулём — читайте это как «не считался».</p></div>
+
+    <h4>Как связаться по объекту</h4>
+    <p>Поле <code>contact.kind</code> говорит, что делать дальше: <code>lead</code> — объявление ведёт продавец в системе, заявку примет он; <code>external</code> — витринный объект, ссылка на источник в <code>source_url</code>; <code>none</code> — связаться нечем.</p>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Вопрос и ответ</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">curl -X POST <span class="s">"$BASE/searches/$SEARCH_ID/properties/$OBJ/ask"</span> \
+  -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d <span class="s">'{"question": "Далеко ли до школы и шумно ли во дворе?"}'</span></pre>
+<pre data-lang="python">answer = api.post(
+    <span class="s">f"/searches/{search['id']}/properties/{obj_id}/ask"</span>,
+    json={<span class="s">"question"</span>: <span class="s">"Далеко ли до школы и шумно ли во дворе?"</span>},
+).json()
+
+for sentence in answer[<span class="s">"sentences"</span>]:
+    mark = <span class="s">"нет данных"</span> if sentence[<span class="s">"unknown"</span>] else <span class="s">", "</span>.join(sentence[<span class="s">"evidence_paths"</span>])
+    print(sentence[<span class="s">"text"</span>], <span class="s">"—"</span>, mark)</pre>
+<pre data-lang="node">const answer = await api(
+  <span class="s">`/searches/${search.id}/properties/${objId}/ask`</span>,
+  { method: <span class="s">"POST"</span>, body: JSON.stringify({ question }) },
+);
+
+<span class="c">// Показывайте только подтверждённые утверждения,</span>
+<span class="c">// если интерфейс не умеет объяснять «не знаю».</span>
+const grounded = answer.sentences.filter((s) =&gt; !s.unknown);</pre>
+<pre data-lang="go">type Sentence struct {
+    Text          string   <span class="s">`json:"text"`</span>
+    EvidencePaths []string <span class="s">`json:"evidence_paths"`</span>
+    Unknown       bool     <span class="s">`json:"unknown"`</span>
+}
+
+type Answer struct {
+    Answer    string     <span class="s">`json:"answer"`</span>
+    Sentences []Sentence <span class="s">`json:"sentences"`</span>
+}</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Ответ</span><button class="copy" type="button">Копировать</button></div>
+<pre>{
+  <span class="k">"object"</span>: <span class="s">"answer"</span>,
+  <span class="k">"answer"</span>: <span class="s">"До школы № 1195 восемь минут пешком…"</span>,
+  <span class="k">"sentences"</span>: [
+    {
+      <span class="k">"text"</span>: <span class="s">"До школы № 1195 восемь минут пешком."</span>,
+      <span class="k">"evidence_paths"</span>: [<span class="s">"blocks.family_routing.metrics.walk_min_school"</span>],
+      <span class="k">"unknown"</span>: <span class="k">false</span>
+    },
+    {
+      <span class="k">"text"</span>: <span class="s">"Про шум во дворе в досье данных нет."</span>,
+      <span class="k">"evidence_paths"</span>: [],
+      <span class="k">"unknown"</span>: <span class="k">true</span>
+    }
+  ]
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="prose">
+    <h2 id="geo-layers">Город</h2>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/geo/<b>layers</b></span><span class="sc">geo:read</span></div>
+      <p>Слои для карты в границах вьюпорта. Каждый слой — GeoJSON FeatureCollection.</p>
+    </div>
+    <table>
+      <thead><tr><th>Слой</th><th>Что это</th><th>Вид</th></tr></thead>
+      <tbody>
+        <tr><td><code>schools</code></td><td>Школы</td><td><span class="src measured">observation</span></td></tr>
+        <tr><td><code>parks</code></td><td>Парки и скверы</td><td><span class="src measured">observation</span></td></tr>
+        <tr><td><code>bars</code></td><td>Бары и алкомаркеты</td><td><span class="src measured">observation</span></td></tr>
+        <tr><td><code>metro</code></td><td>Станции рельсового транспорта</td><td><span class="src measured">observation</span></td></tr>
+        <tr><td><code>communal</code></td><td>Коммунальная нагрузка</td><td><span class="src proxy">proxy</span></td></tr>
+        <tr><td><code>noise</code></td><td>Шум</td><td><span class="src proxy">proxy</span></td></tr>
+        <tr><td><code>crime</code></td><td>Криминогенность</td><td><span class="src proxy">proxy</span></td></tr>
+      </tbody>
+    </table>
+    <p>Параметры: <code>city</code>, <code>layers</code> через запятую и <code>bbox</code> — <code>minLng,minLat,maxLng,maxLat</code>. Незнакомое имя слоя и кривой <code>bbox</code> дают <code>400</code>, а не пустой слой: опечатку иначе не отличить от «данных нет».</p>
+    <p>Ответ содержит карту <code>truncated</code>: слой, обрезанный по потолку точек, помечен явно — считать его полным нельзя.</p>
+
+    <h3 id="geo-listings">Объявления под вьюпортом</h3>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/geo/<b>listings</b></span><span class="sc">geo:read</span></div>
+      <p>Точки объявлений в границах карты. <code>bbox</code> обязателен: весь город одним ответом не отдаётся.</p>
+    </div>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Слои под вьюпортом</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">curl -G <span class="s">"$BASE/geo/layers"</span> \
+  -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span> \
+  --data-urlencode <span class="s">"city=msk"</span> \
+  --data-urlencode <span class="s">"layers=schools,parks,noise"</span> \
+  --data-urlencode <span class="s">"bbox=37.44,55.71,37.53,55.75"</span></pre>
+<pre data-lang="python">layers = api.get(<span class="s">"/geo/layers"</span>, params={
+    <span class="s">"city"</span>: <span class="s">"msk"</span>,
+    <span class="s">"layers"</span>: <span class="s">"schools,parks,noise"</span>,
+    <span class="s">"bbox"</span>: <span class="s">"37.44,55.71,37.53,55.75"</span>,
+}).json()
+
+for name, cut in layers[<span class="s">"truncated"</span>].items():
+    if cut:
+        print(<span class="s">f"слой {name} обрезан — уменьшите вьюпорт"</span>)</pre>
+<pre data-lang="node">const qs = new URLSearchParams({
+  city: <span class="s">"msk"</span>,
+  layers: <span class="s">"schools,parks,noise"</span>,
+  bbox: <span class="s">"37.44,55.71,37.53,55.75"</span>,
+});
+const layers = await api(<span class="s">`/geo/layers?${qs}`</span>);
+
+map.getSource(<span class="s">"schools"</span>).setData(layers.layers.schools);</pre>
+<pre data-lang="go"><span class="c">// Слой, помеченный в truncated, обрезан по потолку точек —</span>
+<span class="c">// показывать его как полную картину района нельзя.</span>
+var out struct {
+    Layers    map[string]json.RawMessage <span class="s">`json:"layers"`</span>
+    Truncated map[string]bool            <span class="s">`json:"truncated"`</span>
+}</pre>
+    </div>
+  </div>
+</div>
+<div class="row">
+  <div class="prose">
+    <h2 id="listings">Витрина</h2>
+    <p>Ваши объявления в поиске Habitus. Выборка всегда ограничена вашим аккаунтом — чужих объявлений здесь не бывает.</p>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/<b>listings</b></span><span class="sc">listings:read</span></div>
+      <p>Каталог постранично. Фильтр <code>status</code>: <code>draft</code>, <code>publishing</code>, <code>published</code>, <code>unpublished</code>, <code>failed</code>.</p>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m post">POST</span><span class="p">/partner/v1/<b>listings</b></span><span class="sc">listings:write</span></div>
+      <p>Заводит объявление. С <code>publish: true</code> сразу отдаёт его в поиск.</p>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/listings/<b>{listing_id}</b></span><span class="sc">listings:read</span></div>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m patch">PATCH</span><span class="p">/partner/v1/listings/<b>{listing_id}</b></span><span class="sc">listings:write</span></div>
+      <p>Непереданное поле сохраняет прежнее значение. В поиск изменения попадут после следующей публикации.</p>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m del">DELETE</span><span class="p">/partner/v1/listings/<b>{listing_id}</b></span><span class="sc">listings:write</span></div>
+      <p>Сначала объект гасится в поиске и только потом удаляется карточка.</p>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m post">POST</span><span class="p">/partner/v1/listings/<b>{listing_id}</b>/publish</span><span class="sc">listings:write</span></div>
+      <div class="ep-line" style="border:0;padding-top:6px"><span class="m post">POST</span><span class="p">/partner/v1/listings/<b>{listing_id}</b>/unpublish</span><span class="sc">listings:write</span></div>
+      <p>Публикация считает эмбеддинг объявления и занимает секунды.</p>
+    </div>
+
+    <h4>Статусы</h4>
+    <table>
+      <thead><tr><th>Статус</th><th>Что значит</th></tr></thead>
+      <tbody>
+        <tr><td><code>draft</code></td><td>Карточка заведена, в поиске её нет.</td></tr>
+        <tr><td><code>publishing</code></td><td>Идёт индексация. Состояние промежуточное.</td></tr>
+        <tr><td><code>published</code></td><td>Объявление в поиске и принимает заявки.</td></tr>
+        <tr><td><code>unpublished</code></td><td>Снято вами. Заявки не принимает.</td></tr>
+        <tr><td><code>failed</code></td><td>Публикация не удалась. Причина в поле <code>error</code>, повторить — вызовом <code>/publish</code>.</td></tr>
+      </tbody>
+    </table>
+    <div class="warn"><p>Без координат публикация отклоняется. По ним строятся гео-факты и досье, а нулевая точка — это точка в Гвинейском заливе, а не отсутствие данных. Порядок пары — <code>[lng, lat]</code>.</p></div>
+    <p>Провал публикации не отменяет создание: объявление остаётся со статусом <code>failed</code> и причиной. Уже принятые данные не теряются из-за недоступного индексатора.</p>
+
+    <h2 id="leads">Заявки</h2>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/<b>leads</b></span><span class="sc">leads:read</span></div>
+      <p>Обращения покупателей по вашим объявлениям, свежие сверху.</p>
+    </div>
+    <p>Заявка хранит адрес и идентификатор объекта копией на момент отправки: снятое или удалённое объявление не делает историю нечитаемой. Поле <code>listing_id</code> при этом станет <code>null</code>.</p>
+    <div class="note"><p>Опрашивать эту ручку не обязательно. Подпишитесь на событие <code>lead.created</code> — и заявка придёт в вашу систему сама, в течение секунд, а не следующего цикла опроса.</p></div>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Завести и опубликовать</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">curl -X POST <span class="s">"$BASE/listings"</span> \
+  -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -H <span class="s">"Idempotency-Key: import-2026-09-06-000431"</span> \
+  -d <span class="s">'{
+    "city": "msk",
+    "coordinates": [37.4831, 55.7311],
+    "price": 17450000,
+    "area": 54.2,
+    "kitchen_area": 9.1,
+    "rooms": 2,
+    "level": 5,
+    "levels": 12,
+    "address": "Москва, Кастанаевская, 18",
+    "window_orientation": ["S", "W"],
+    "description": "Окна во двор, школа через дорогу",
+    "photos": ["https://cdn.example.com/1.jpg"],
+    "publish": true
+  }'</span></pre>
+<pre data-lang="python">listing = api.post(<span class="s">"/listings"</span>, json={
+    <span class="s">"city"</span>: <span class="s">"msk"</span>,
+    <span class="s">"coordinates"</span>: [<span class="n">37.4831</span>, <span class="n">55.7311</span>],  <span class="c"># [lng, lat]</span>
+    <span class="s">"price"</span>: <span class="n">17450000</span>,
+    <span class="s">"area"</span>: <span class="n">54.2</span>,
+    <span class="s">"rooms"</span>: <span class="n">2</span>,
+    <span class="s">"address"</span>: <span class="s">"Москва, Кастанаевская, 18"</span>,
+    <span class="s">"publish"</span>: <span class="k">True</span>,
+}, headers={<span class="s">"Idempotency-Key"</span>: ext_id}).json()
+
+if listing[<span class="s">"status"</span>] == <span class="s">"failed"</span>:
+    <span class="c"># карточка создана, в поиск не попала — повторить публикацию</span>
+    api.post(<span class="s">f"/listings/{listing['id']}/publish"</span>)</pre>
+<pre data-lang="node">const listing = await api(<span class="s">"/listings"</span>, {
+  method: <span class="s">"POST"</span>,
+  headers: { <span class="s">"Idempotency-Key"</span>: externalId },
+  body: JSON.stringify({
+    city: <span class="s">"msk"</span>,
+    coordinates: [<span class="n">37.4831</span>, <span class="n">55.7311</span>],
+    price: <span class="n">17450000</span>,
+    area: <span class="n">54.2</span>,
+    rooms: <span class="n">2</span>,
+    address: <span class="s">"Москва, Кастанаевская, 18"</span>,
+    publish: <span class="k">true</span>,
+  }),
+});
+
+if (listing.status === <span class="s">"failed"</span>) {
+  console.warn(<span class="s">"не опубликовано:"</span>, listing.error);
+}</pre>
+<pre data-lang="go"><span class="c">// Idempotency-Key = ваш внутренний идентификатор объявления.</span>
+<span class="c">// Повторный прогон импорта тогда не заведёт дубль.</span>
+req.Header.Set(<span class="s">"Idempotency-Key"</span>, externalID)</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Заявка</span><button class="copy" type="button">Копировать</button></div>
+<pre>{
+  <span class="k">"object"</span>: <span class="s">"lead"</span>,
+  <span class="k">"id"</span>: <span class="s">"3f1a…"</span>,
+  <span class="k">"listing_id"</span>: <span class="s">"9b2c…"</span>,
+  <span class="k">"external_id"</span>: <span class="s">"owner_4f19c0…"</span>,
+  <span class="k">"address"</span>: <span class="s">"Москва, Кастанаевская, 18"</span>,
+  <span class="k">"name"</span>: <span class="s">"Мария"</span>,
+  <span class="k">"contact"</span>: <span class="s">"+7 916 000-00-00"</span>,
+  <span class="k">"message"</span>: <span class="s">"Можно посмотреть в субботу утром?"</span>,
+  <span class="k">"created_at"</span>: <span class="s">"2026-09-06T09:14:22Z"</span>
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="prose">
+    <h2 id="webhooks">События</h2>
+    <p>Заявка приходит в вашу систему сама. Без подписки единственный способ узнать о ней — опрашивать <code>/leads</code>, и между «покупатель написал» и «менеджер увидел» ложатся минуты опроса.</p>
+    <div class="ep">
+      <div class="ep-line"><span class="m post">POST</span><span class="p">/partner/v1/<b>webhooks</b></span><span class="sc">webhooks:write</span></div>
+      <p>Создаёт подписку. Ответ содержит секрет подписи — сохраните его.</p>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/<b>webhooks</b></span><span class="sc">webhooks:write</span></div>
+      <div class="ep-line" style="border:0;padding-top:6px"><span class="m get">GET</span><span class="p">/partner/v1/webhooks/<b>{webhook_id}</b></span><span class="sc">webhooks:write</span></div>
+      <div class="ep-line" style="border:0;padding-top:6px"><span class="m del">DELETE</span><span class="p">/partner/v1/webhooks/<b>{webhook_id}</b></span><span class="sc">webhooks:write</span></div>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m post">POST</span><span class="p">/partner/v1/webhooks/<b>{webhook_id}</b>/test</span><span class="sc">webhooks:write</span></div>
+      <p>Ставит в очередь проверочное событие <code>ping</code>. Иначе первая проверка подписи у вас случится на боевой заявке — то есть тогда, когда ошибиться дороже всего.</p>
+    </div>
+    <h4>События</h4>
+    <table>
+      <thead><tr><th>Событие</th><th>Когда приходит</th></tr></thead>
+      <tbody>
+        <tr><td><code>lead.created</code></td><td>Покупатель оставил заявку по вашему объявлению.</td></tr>
+        <tr><td><code>listing.published</code></td><td>Объявление попало в поиск.</td></tr>
+        <tr><td><code>listing.unpublished</code></td><td>Объявление снято с публикации.</td></tr>
+        <tr><td><code>ping</code></td><td>Проверочное событие. На него нельзя подписаться — оно приходит только по вашему запросу.</td></tr>
+      </tbody>
+    </table>
+    <p>Адрес подписки должен быть <code>https</code> и указывать на публичный хост. Локальные и внутренние адреса отклоняются.</p>
+
+    <h3 id="signature">Проверка подписи</h3>
+    <p>Каждая доставка несёт заголовок <code>X-Habitus-Signature</code> вида <code>t=&lt;unix&gt;,v1=&lt;hex&gt;</code>. Подписывается строка <code>&lt;t&gt;.&lt;тело запроса как есть&gt;</code> алгоритмом HMAC-SHA256 на секрете подписки.</p>
+    <ul>
+      <li>Считайте подпись <b>от сырого тела</b>, до разбора JSON: пересобранный JSON даст другие байты и другую подпись.</li>
+      <li>Сравнивайте <b>постоянным по времени</b> сравнением.</li>
+      <li>Отвергайте метки времени старше пяти минут — иначе перехваченный запрос можно повторять бесконечно.</li>
+    </ul>
+    <p>Отвечайте любым кодом <code>2xx</code> и как можно быстрее: тяжёлую работу ставьте в свою очередь. Долгий ответ считается неудачей и приводит к повтору.</p>
+
+    <h3 id="delivery">Повторы и журнал</h3>
+    <p>Неудачная доставка повторяется пять раз с растущей паузой — через минуту, пять минут, полчаса, два часа и шесть часов. Этого хватает пережить ночной деплой вашей CRM и мало, чтобы неделю долбиться в мёртвый адрес.</p>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/webhooks/<b>{webhook_id}</b>/deliveries</span><span class="sc">webhooks:write</span></div>
+      <p>Что отправляли, сколько раз пытались и чем кончилось. Причина последнего отказа — в поле <code>last_error</code>.</p>
+    </div>
+    <div class="note"><p>Доставка гарантируется «не менее одного раза»: при разрыве после вашего ответа событие придёт повторно. Проверяйте <code>id</code> события на своей стороне.</p></div>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Тело события</span><button class="copy" type="button">Копировать</button></div>
+<pre>POST /hooks/habitus HTTP/1.1
+X-Habitus-Event: lead.created
+X-Habitus-Delivery: 7c41…
+X-Habitus-Signature: t=<span class="n">1788684862</span>,v1=<span class="s">9f2c…</span>
+
+{
+  <span class="k">"object"</span>: <span class="s">"event"</span>,
+  <span class="k">"id"</span>: <span class="s">"7c41…"</span>,
+  <span class="k">"event"</span>: <span class="s">"lead.created"</span>,
+  <span class="k">"created_at"</span>: <span class="s">"2026-09-06T09:14:22Z"</span>,
+  <span class="k">"data"</span>: {
+    <span class="k">"id"</span>: <span class="s">"3f1a…"</span>,
+    <span class="k">"external_id"</span>: <span class="s">"owner_4f19c0…"</span>,
+    <span class="k">"address"</span>: <span class="s">"Москва, Кастанаевская, 18"</span>,
+    <span class="k">"name"</span>: <span class="s">"Мария"</span>,
+    <span class="k">"contact"</span>: <span class="s">"+7 916 000-00-00"</span>,
+    <span class="k">"message"</span>: <span class="s">"Можно посмотреть в субботу утром?"</span>,
+    <span class="k">"created_at"</span>: <span class="s">"2026-09-06T09:14:22Z"</span>
+  }
+}</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Проверка подписи</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on"><span class="c"># Подписывается строка "&lt;t&gt;.&lt;сырое тело&gt;", секрет — из ответа</span>
+<span class="c"># POST /webhooks. Проверка вручную:</span>
+
+T=<span class="n">1788684862</span>
+BODY=$(cat request.json)
+printf <span class="s">'%s.%s'</span> <span class="s">"$T"</span> <span class="s">"$BODY"</span> \
+  | openssl dgst -sha256 -hmac <span class="s">"$WEBHOOK_SECRET"</span> -hex</pre>
+<pre data-lang="python">import hashlib, hmac, time
+
+def verify(raw_body: bytes, header: str, secret: str) -&gt; bool:
+    parts = dict(p.split(<span class="s">"="</span>, <span class="n">1</span>) for p in header.split(<span class="s">","</span>))
+    ts, given = parts[<span class="s">"t"</span>], parts[<span class="s">"v1"</span>]
+
+    <span class="c"># Старую метку не принимаем: иначе перехваченный запрос</span>
+    <span class="c"># можно повторять бесконечно.</span>
+    if abs(time.time() - int(ts)) &gt; <span class="n">300</span>:
+        return <span class="k">False</span>
+
+    expected = hmac.new(
+        secret.encode(), <span class="s">f"{ts}."</span>.encode() + raw_body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, given)</pre>
+<pre data-lang="node">import { createHmac, timingSafeEqual } from <span class="s">"node:crypto"</span>;
+
+export function verify(rawBody, header, secret) {
+  const parts = Object.fromEntries(
+    header.split(<span class="s">","</span>).map((p) =&gt; p.split(<span class="s">"="</span>)),
+  );
+  if (Math.abs(Date.now() / <span class="n">1000</span> - Number(parts.t)) &gt; <span class="n">300</span>) return <span class="k">false</span>;
+
+  const expected = createHmac(<span class="s">"sha256"</span>, secret)
+    .update(<span class="s">`${parts.t}.`</span>)
+    .update(rawBody)
+    .digest();
+
+  const given = Buffer.from(parts.v1, <span class="s">"hex"</span>);
+  return expected.length === given.length &amp;&amp; timingSafeEqual(expected, given);
+}</pre>
+<pre data-lang="go">func Verify(rawBody []byte, header, secret string) bool {
+    var ts, given string
+    for _, part := range strings.Split(header, <span class="s">","</span>) {
+        k, v, _ := strings.Cut(part, <span class="s">"="</span>)
+        switch k {
+        case <span class="s">"t"</span>:
+            ts = v
+        case <span class="s">"v1"</span>:
+            given = v
+        }
+    }
+    sec, err := strconv.ParseInt(ts, <span class="n">10</span>, <span class="n">64</span>)
+    if err != nil || time.Since(time.Unix(sec, <span class="n">0</span>)) &gt; <span class="n">5</span>*time.Minute {
+        return false
+    }
+
+    mac := hmac.New(sha256.New, []byte(secret))
+    fmt.Fprintf(mac, <span class="s">"%s."</span>, ts)
+    mac.Write(rawBody)
+    return hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(given))
+}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="prose">
+    <h2 id="meta">Служебные ручки</h2>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/<b>me</b></span><span class="sc">любой ключ</span></div>
+      <p>Партнёр, права ключа и действующие лимиты.</p>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/<b>status</b></span><span class="sc">без ключа</span></div>
+      <p>Состояние сервиса. Отвечает <code>503</code>, когда часть зависимостей недоступна. Ключ не нужен намеренно: «мой ключ протух» надо уметь отличить от «у них лежит поиск», не имея валидного ключа.</p>
+    </div>
+    <div class="ep">
+      <div class="ep-line"><span class="m get">GET</span><span class="p">/partner/v1/<b>openapi.json</b></span><span class="sc">без ключа</span></div>
+      <p>Спецификация OpenAPI 3.1. Вшита в сборку сервиса, поэтому не может разъехаться с тем, что реально задеплоено. Импортируйте её в Postman, Insomnia или генератор клиента.</p>
+    </div>
+
+    <h2 id="versioning">Версии и совместимость</h2>
+    <p>Версия живёт в пути: <code>/partner/v1</code>. Ломающее изменение поедет как <code>/partner/v2</code>, а не правкой действующей версии — у вашей интеграции свой релизный цикл, и «обновиться вместе с нами» она не может.</p>
+    <h4>Что мы считаем совместимым изменением</h4>
+    <ul>
+      <li>Новое поле в ответе или новое необязательное поле в запросе.</li>
+      <li>Новая ручка, новое значение в перечислении, новый код ошибки.</li>
+      <li>Изменение текста в <code>message</code>: ветвиться нужно по <code>code</code>.</li>
+    </ul>
+    <p>Пишите клиент так, чтобы незнакомые поля и значения не роняли разбор. Дата в поле <code>api_version</code> ответа <code>/me</code> говорит, на каком срезе контракта работает сервис сейчас.</p>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Состояние сервиса</span><button class="copy" type="button">Копировать</button></div>
+<pre>{
+  <span class="k">"object"</span>: <span class="s">"status"</span>,
+  <span class="k">"status"</span>: <span class="s">"operational"</span>,
+  <span class="k">"api_version"</span>: <span class="s">"2026-09-06"</span>,
+  <span class="k">"checks"</span>: { <span class="k">"db"</span>: <span class="s">"ok"</span>, <span class="k">"ml"</span>: <span class="s">"ok"</span> }
+}</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Клиент из спецификации</span><button class="copy" type="button">Копировать</button></div>
+<pre>curl -O https://api.habitus.city/partner/v1/openapi.json
+
+npx @openapitools/openapi-generator-cli generate \
+  -i openapi.json -g typescript-fetch -o ./habitus-client</pre>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>Habitus Partner API · версия контракта 2026-09-06 · <a href="/partner/v1/openapi.json">openapi.json</a></p>
+  <p>Вопросы по интеграции — <a href="mailto:api@habitus.city">api@habitus.city</a>. Приложите <code>request_id</code> из ответа: по нему запрос находится за секунды.</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+(() => {
+  const store = (() => {
+    try { return window.localStorage; } catch { return null; }
+  })();
+
+  // Язык примеров общий на всю страницу: разработчик выбирает его один раз.
+  const buttons = document.querySelectorAll("[data-pick]");
+  const apply = (lang) => {
+    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.pick === lang)));
+    document.querySelectorAll(".code").forEach((block) => {
+      const variants = block.querySelectorAll("pre[data-lang]");
+      if (!variants.length) return;
+      let shown = false;
+      variants.forEach((pre) => {
+        const on = pre.dataset.lang === lang;
+        pre.classList.toggle("on", on);
+        shown = shown || on;
+      });
+      // Нет примера на выбранном языке — показываем первый, а не пустоту.
+      if (!shown) variants[0].classList.add("on");
+    });
+  };
+  buttons.forEach((b) => b.addEventListener("click", () => {
+    apply(b.dataset.pick);
+    try { store && store.setItem("habitus-docs-lang", b.dataset.pick); } catch {}
+  }));
+  let saved = null;
+  try { saved = store && store.getItem("habitus-docs-lang"); } catch {}
+  apply(saved || "curl");
+
+  document.querySelectorAll(".copy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pre = btn.closest(".code").querySelector("pre.on, pre");
+      try {
+        await navigator.clipboard.writeText(pre.innerText);
+        const was = btn.textContent;
+        btn.textContent = "Скопировано";
+        setTimeout(() => { btn.textContent = was; }, 1400);
+      } catch {
+        btn.textContent = "Выделите вручную";
+      }
+    });
+  });
+
+  const links = [...document.querySelectorAll(".rail a")];
+  const byHash = new Map(links.map((a) => [a.getAttribute("href").slice(1), a]));
+  const targets = [...byHash.keys()]
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+
+  if ("IntersectionObserver" in window && targets.length) {
+    const seen = new Set();
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((e) => e.isIntersecting ? seen.add(e.target.id) : seen.delete(e.target.id));
+      const first = targets.find((t) => seen.has(t.id));
+      links.forEach((a) => a.classList.remove("on"));
+      if (first) byHash.get(first.id).classList.add("on");
+    }, { rootMargin: "-80px 0px -70% 0px" });
+    targets.forEach((t) => observer.observe(t));
+  }
+
+  const filter = document.querySelector(".filter");
+  filter.addEventListener("input", () => {
+    const q = filter.value.trim().toLowerCase();
+    links.forEach((a) => a.classList.toggle("hide", q !== "" && !a.textContent.toLowerCase().includes(q)));
+    document.querySelectorAll(".rail h5").forEach((h) => {
+      let node = h.nextElementSibling, any = false;
+      while (node && node.tagName === "A") {
+        any = any || !node.classList.contains("hide");
+        node = node.nextElementSibling;
+      }
+      h.style.display = any ? "" : "none";
+    });
+  });
+})();
+</script>
+</body>
+</html>

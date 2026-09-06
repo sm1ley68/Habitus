@@ -13,6 +13,13 @@ import (
 	"habitus-backend/internal/repository"
 )
 
+// OwnerPageStore — постраничная выборка. Отдельно от OwnerStore, потому что
+// нужна только Partner API: кабинет продавца показывает все свои объявления
+// сразу, у интегратора их тысячи.
+type OwnerPageStore interface {
+	ListPage(ctx context.Context, userID uuid.UUID, status string, limit, offset int) ([]domain.OwnerListing, int, error)
+}
+
 type OwnerStore interface {
 	Create(ctx context.Context, l domain.OwnerListing) (domain.OwnerListing, error)
 	GetOwned(ctx context.Context, id, userID uuid.UUID) (domain.OwnerListing, error)
@@ -46,6 +53,18 @@ func (s *OwnerListingService) Autopublish() bool { return s.autopublish }
 
 func (s *OwnerListingService) List(ctx context.Context, userID uuid.UUID) ([]domain.OwnerListing, error) {
 	return s.store.List(ctx, userID)
+}
+
+// ListPage — постраничный список объявлений владельца. Возвращает ошибку,
+// если хранилище не умеет страницы: проводка обязана дать сюда репозиторий,
+// а не молча отдать первую страницу как весь список.
+func (s *OwnerListingService) ListPage(ctx context.Context, userID uuid.UUID,
+	status string, limit, offset int) ([]domain.OwnerListing, int, error) {
+	pager, ok := s.store.(OwnerPageStore)
+	if !ok {
+		return nil, 0, apperr.Internal("постраничный список объявлений недоступен")
+	}
+	return pager.ListPage(ctx, userID, status, limit, offset)
 }
 
 func (s *OwnerListingService) Get(ctx context.Context, userID, id uuid.UUID) (domain.OwnerListing, error) {

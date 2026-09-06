@@ -57,6 +57,35 @@ type Settings struct {
 	// гостя: гостевой аккаунт заводится в один запрос, поэтому общий лимит по
 	// user_id его не сдерживает.
 	RateLimitLLMGuestPerHour int
+
+	// --- Partner API (B2B) ---
+	// PartnerAPIEnabled — рубильник всего B2B-контура. Выключенный контур не
+	// регистрирует ни одного маршрута: /partner/v1 отвечает 404, а не «ключ
+	// не подошёл», и снаружи не видно даже, что он существует.
+	PartnerAPIEnabled bool
+	// PartnerRateLimitPerMin — общий потолок запросов партнёра, когда в его
+	// строке в базе не задан индивидуальный.
+	PartnerRateLimitPerMin int
+	// PartnerLLMPerHour — отдельный, более скупой потолок на ручки, за
+	// каждой из которых стоит вызов модели.
+	PartnerLLMPerHour int
+	// PartnerIdempotencyTTLHours — сколько помнить ответ на Idempotency-Key.
+	PartnerIdempotencyTTLHours int
+	// PartnerSearchTTLDays — сколько живёт сохранённый поиск партнёра вместе
+	// с выдачей. Это рабочий контекст интеграции, а не архив.
+	PartnerSearchTTLDays int
+	// PartnerSweepMinutes — как часто чистить протухшие поиски и ключи
+	// идемпотентности.
+	PartnerSweepMinutes    int
+	PartnerWebhookTimeoutS int
+	PartnerWebhookPollSec  int
+	PartnerWebhookBatch    int
+	// PartnerWebhookAllowInsecure разрешает http:// и локальные адреса
+	// подписок. Только для разработки: в бою это дыра SSRF.
+	PartnerWebhookAllowInsecure bool
+	// PublicBaseURL — по нему собирается doc_url в конверте ошибки и адрес
+	// страницы документации.
+	PublicBaseURL string
 }
 
 func Load() Settings {
@@ -90,6 +119,20 @@ func Load() Settings {
 		GuestRetentionDays:       getenvInt("GUEST_RETENTION_DAYS", 30),
 		GuestSweepMinutes:        getenvInt("GUEST_SWEEP_MINUTES", 720),
 		RateLimitLLMGuestPerHour: getenvInt("RATE_LIMIT_LLM_GUEST_PER_HOUR", 5),
+
+		PartnerAPIEnabled:          getenvBool("PARTNER_API_ENABLED", true),
+		PartnerRateLimitPerMin:     getenvInt("PARTNER_RATE_LIMIT_PER_MIN", 120),
+		PartnerLLMPerHour:          getenvInt("PARTNER_LLM_PER_HOUR", 60),
+		PartnerIdempotencyTTLHours: getenvInt("PARTNER_IDEMPOTENCY_TTL_HOURS", 24),
+		PartnerSearchTTLDays:       getenvInt("PARTNER_SEARCH_TTL_DAYS", 30),
+		PartnerSweepMinutes:        getenvInt("PARTNER_SWEEP_MINUTES", 360),
+
+		PartnerWebhookTimeoutS:      getenvInt("PARTNER_WEBHOOK_TIMEOUT_S", 10),
+		PartnerWebhookPollSec:       getenvInt("PARTNER_WEBHOOK_POLL_S", 15),
+		PartnerWebhookBatch:         getenvInt("PARTNER_WEBHOOK_BATCH", 20),
+		PartnerWebhookAllowInsecure: getenvBool("PARTNER_WEBHOOK_ALLOW_INSECURE", false),
+
+		PublicBaseURL: getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
 	}
 }
 

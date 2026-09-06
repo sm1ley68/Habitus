@@ -17,6 +17,10 @@ type Error struct {
 	// Пустые поля означают «улики нет» и в конверт не попадают вовсе.
 	Cause string
 	Hint  string
+	// Param — поле запроса, из-за которого отказ. Нужен Partner API: конверт
+	// ошибки без имени поля заставляет разработчика гадать, что именно в его
+	// теле не так.
+	Param string
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -33,6 +37,13 @@ func (e *Error) WithCause(cause string) *Error {
 func (e *Error) WithHint(hint string) *Error {
 	copied := *e
 	copied.Hint = hint
+	return &copied
+}
+
+// WithParam возвращает копию с именем поля, вызвавшего отказ.
+func (e *Error) WithParam(param string) *Error {
+	copied := *e
+	copied.Param = param
 	return &copied
 }
 
@@ -144,4 +155,66 @@ func RegistrationRequired() *Error {
 	return New(http.StatusForbidden, "registration_required",
 		"Заведите аккаунт, чтобы отправить заявку — продавцу нужно, кому ответить. "+
 			"Всё, что вы уже нашли и сохранили, останется при вас")
+}
+
+// --- Partner API (B2B) ---
+//
+// Отдельные коды, а не переиспользование B2C: у интеграции другой читатель.
+// Человеку сообщение показывают в интерфейсе, а разработчику партнёра оно
+// попадает в лог, и «Нет / истёк токен сессии» там не значит ничего.
+
+// PartnerKeyInvalid — общий ответ на любой негодный ключ: не тот формат, не
+// найден, не сошёлся секрет. Разные сообщения на эти случаи позволяли бы
+// перебором выяснять, какие префиксы существуют.
+func PartnerKeyInvalid() *Error {
+	return New(http.StatusUnauthorized, "invalid_api_key",
+		"Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…")
+}
+
+func PartnerKeyMissing() *Error {
+	return New(http.StatusUnauthorized, "api_key_missing",
+		"Нужен ключ API: заголовок Authorization: Bearer hab_live_…")
+}
+
+func PartnerKeyRevoked() *Error {
+	return New(http.StatusUnauthorized, "api_key_revoked",
+		"Этот ключ отозван. Выпустите новый в кабинете партнёра")
+}
+
+func PartnerKeyExpired() *Error {
+	return New(http.StatusUnauthorized, "api_key_expired",
+		"Срок действия ключа истёк. Выпустите новый в кабинете партнёра")
+}
+
+func PartnerSuspended() *Error {
+	return New(http.StatusForbidden, "partner_suspended",
+		"Доступ партнёра приостановлен. Напишите нам, чтобы восстановить его")
+}
+
+// PartnerScopeRequired называет недостающий scope прямо в сообщении: без
+// имени права разработчику остаётся угадывать, чего не хватило.
+func PartnerScopeRequired(scope string) *Error {
+	return New(http.StatusForbidden, "insufficient_scope",
+		"Ключу не хватает права "+scope).WithParam("scope")
+}
+
+func PartnerQuotaExceeded(message string) *Error {
+	return New(http.StatusTooManyRequests, "rate_limit_exceeded", message)
+}
+
+// IdempotencyKeyReuse — тот же ключ идемпотентности с другим телом. Это
+// ошибка клиента: отдать ему чужой сохранённый ответ было бы хуже отказа.
+func IdempotencyKeyReuse() *Error {
+	return New(http.StatusConflict, "idempotency_key_reuse",
+		"Этот Idempotency-Key уже использован с другим телом запроса").
+		WithParam("Idempotency-Key")
+}
+
+func SearchNotFound() *Error {
+	return New(http.StatusNotFound, "search_not_found",
+		"Поиск не найден или уже удалён по сроку хранения")
+}
+
+func WebhookNotFound() *Error {
+	return New(http.StatusNotFound, "webhook_not_found", "Вебхук не найден")
 }

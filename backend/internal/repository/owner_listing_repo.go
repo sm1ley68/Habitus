@@ -108,6 +108,41 @@ func (r *OwnerListingRepo) List(ctx context.Context, userID uuid.UUID) ([]domain
 	return out, rows.Err()
 }
 
+// ListPage — та же выборка постранично, для Partner API: у интегратора
+// объявлений тысячи, и отдавать их одним ответом нельзя. total считается
+// отдельным COUNT(*), а не оконной функцией: на странице за концом списка
+// окно не вернёт ни строки и total ложно схлопнется в 0.
+func (r *OwnerListingRepo) ListPage(ctx context.Context, userID uuid.UUID,
+	status string, limit, offset int) ([]domain.OwnerListing, int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT count(*) FROM owner_listings
+		WHERE user_id = $1 AND ($2 = '' OR status = $2)`, userID, status,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+ownerListingColumns+`
+		 FROM owner_listings
+		 WHERE user_id = $1 AND ($2 = '' OR status = $2)
+		 ORDER BY updated_at DESC
+		 LIMIT $3 OFFSET $4`, userID, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	out := []domain.OwnerListing{}
+	for rows.Next() {
+		l, err := scanOwnerListing(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, l)
+	}
+	return out, total, rows.Err()
+}
+
 // UpdateFields применяет только переданные поля: COALESCE($n, колонка)
 // оставляет прежнее значение там, где в запросе был nil.
 //

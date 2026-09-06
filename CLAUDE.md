@@ -21,6 +21,12 @@
   Роуты — `internal/http/router.go`.
 - **`frontend/`** — Next.js (порт 3000). Ходит только в Go-шлюз.
 
+Публичный B2B-контур — `/partner/v1` (ключи вместо cookie-сессии, свои лимиты
+и конверт ошибки), документация — `/docs`, контракт — `/partner/v1/openapi.json`.
+Спека и страница вшиты в бинарь через `internal/apidocs`; тест
+`internal/http/partner_openapi_test.go` не даёт им разъехаться с роутером.
+Ключи выдаёт `cmd/partner`, а не сам API.
+
 БД — Postgres 16 + PostGIS + pgvector (`Dockerfile.db`), порт 5544 наружу.
 
 ## Контракт
@@ -28,6 +34,8 @@
 `frontend/Пайплайн фронт.md` — первичный источник по API. `Пайплайн бэк — изменения.md` —
 выжимка по досье объекта. Enum'ы зафиксированы на трёх сторонах:
 `habitus/online/schema.py` ↔ Go `internal/service/` ↔ `frontend/lib/agent/types.ts`.
+Для B2B тот же контракт описан в `backend/internal/apidocs/openapi.json` —
+новая ручка `/partner/v1` без описания в нём роняет тесты.
 
 Координаты **везде** `[lng, lat]`, WGS84 (EPSG:4326). Без трансформаций на фронте.
 

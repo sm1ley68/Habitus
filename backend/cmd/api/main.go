@@ -104,6 +104,37 @@ func main() {
 	leadRepo := repository.NewLeadRepo(pool)
 	leadService := service.NewLeadService(ownerRepo, leadRepo)
 
+	// Partner API (B2B). Собирается всегда — рубильник живёт в app.New:
+	// сервисы без зарегистрированных маршрутов ничего не стоят, а два места
+	// принятия одного решения разъезжаются.
+	partnerRepo := repository.NewPartnerRepo(pool)
+	partnerSearchRepo := repository.NewPartnerSearchRepo(pool)
+	partnerWebhookRepo := repository.NewPartnerWebhookRepo(pool)
+
+	partnerService := service.NewPartnerService(partnerRepo, userRepo)
+	partnerWebhookService := service.NewPartnerWebhookService(
+		partnerWebhookRepo, partnerRepo,
+		time.Duration(cfg.PartnerWebhookTimeoutS)*time.Second,
+		cfg.PartnerWebhookAllowInsecure,
+	)
+	if cfg.PartnerAPIEnabled {
+		partnerWebhookService.StartDispatcher(ctx,
+			time.Duration(cfg.PartnerWebhookPollSec)*time.Second, cfg.PartnerWebhookBatch)
+		service.StartPartnerSweeper(ctx, partnerRepo, partnerSearchRepo,
+			time.Duration(cfg.PartnerSweepMinutes)*time.Minute,
+			time.Duration(cfg.PartnerIdempotencyTTLHours)*time.Hour,
+			time.Duration(cfg.PartnerSearchTTLDays)*24*time.Hour)
+	}
+	// Заявка партнёру должна доехать в его CRM, а не ждать, пока кто-то
+	// откроет кабинет: тот же LeadService, что обслуживает B2C, теперь ещё и
+	// зовёт доставку событий.
+	leadService = leadService.WithNotifier(partnerWebhookService)
+
+	partnerSearchService := service.NewPartnerSearchService(
+		partnerSearchRepo, listingRepo, ownerRepo, mlClient,
+		mlTimeout, dossierTimeout, objectAskTimeout, cfg.DossierTTLHours,
+	)
+
 	favoriteService := service.NewFavoriteService(repository.NewFavoriteRepo(pool), listingRepo)
 
 	feedbackService := service.NewFeedbackService(chatService, chatSearchRepo,
@@ -129,6 +160,11 @@ func main() {
 		Favorites:     favoriteService,
 		Feedback:      feedbackService,
 		Events:        eventRecorder,
+
+		Partners:        partnerService,
+		PartnerSearch:   partnerSearchService,
+		PartnerWebhooks: partnerWebhookService,
+		PartnerIdem:     partnerRepo,
 	})
 
 	go func() {

@@ -2,6 +2,7 @@
 package app
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -9,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 
+	"habitus-backend/internal/apidocs"
 	"habitus-backend/internal/config"
 	httpapi "habitus-backend/internal/http"
 	"habitus-backend/internal/http/handlers"
@@ -42,6 +44,16 @@ type Services struct {
 	// Events может быть nil — телеметрия выключена (так собраны тесты,
 	// строящие app.Services{} напрямую).
 	Events *service.EventRecorder
+
+	// --- Partner API (B2B) ---
+	// Любое из этих полей nil означает «B2B-контур не сконфигурирован»:
+	// маршруты /partner/v1 тогда не регистрируются вовсе. Тот же приём
+	// fallback'а, что и у остальных полей, — тесты собирают Services{}
+	// напрямую и о партнёрах ничего не знают.
+	Partners        *service.PartnerService
+	PartnerSearch   *service.PartnerSearchService
+	PartnerWebhooks *service.PartnerWebhookService
+	PartnerIdem     middleware.IdempotencyStore
 }
 
 // Границы HTTP-слоя. ReadTimeout не режет SSE (он про чтение запроса, а не
@@ -59,6 +71,11 @@ const (
 	// интервала healthcheck'а в compose (10 с), чтобы проба не наслаивалась
 	// сама на себя.
 	readyTimeout = 3 * time.Second
+	// Дефолты лимитов Partner API — тот же приём fallback'а, что у
+	// rateLimitPerHourDef: неположительное значение в конфиге означает
+	// «не задано», а не «ничего не пропускать».
+	partnerRPMDef        = 120
+	partnerLLMPerHourDef = 60
 )
 
 // uploadBodyLimit — сколько байт нужно на одну загрузку фотографий объявления.
@@ -106,6 +123,16 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 
 	app.Static("/static", cfg.StaticDir)
 
+	// Документация для разработчиков. Отдаётся тем же процессом, что и API:
+	// страница, которую можно задеплоить отдельно от кода, однажды разойдётся
+	// с ним — и разработчик партнёра узнает об этом на боевой интеграции.
+	docsHandler := func(c *fiber.Ctx) error {
+		c.Set(fiber.HeaderContentType, fiber.MIMETextHTMLCharsetUTF8)
+		return c.Send(apidocs.DocsHTML())
+	}
+	app.Get("/docs", docsHandler)
+	app.Get("/docs/", docsHandler)
+
 	// RateLimitLLMPerHour <= 0 — конфиг не задан (например, тест собирает
 	// config.Settings{} напрямую, минуя config.Load()) — тот же приём
 	// fallback'а, что у bodyLimit выше.
@@ -146,5 +173,42 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		Feedback:  handlers.NewFeedbackHandler(svc.Feedback, svc.Events),
 	}, svc.Auth, middleware.RateLimitLLM(rateLimiter, guestLimiter))
 
+	registerPartnerAPI(app, cfg, svc, ready)
+
 	return app
+}
+
+// registerPartnerAPI поднимает B2B-контур, когда он сконфигурирован. Молча
+// пропустить его при неполной проводке — сознательный выбор: тесты собирают
+// app.Services{} напрямую, и падать на nil из-за контура, которого они не
+// касаются, приложение не должно.
+func registerPartnerAPI(app *fiber.App, cfg config.Settings, svc Services,
+	ready *service.ReadinessService) {
+	if !cfg.PartnerAPIEnabled || svc.Partners == nil || svc.PartnerSearch == nil ||
+		svc.PartnerIdem == nil {
+		return
+	}
+	rpm := cfg.PartnerRateLimitPerMin
+	if rpm <= 0 {
+		rpm = partnerRPMDef
+	}
+	llm := cfg.PartnerLLMPerHour
+	if llm <= 0 {
+		llm = partnerLLMPerHourDef
+	}
+	quotas := middleware.NewPartnerQuotas(rpm, llm)
+
+	docsURL := strings.TrimRight(cfg.PublicBaseURL, "/") + "/docs"
+	httpapi.RegisterPartnerRoutes(app, httpapi.PartnerHandlers{
+		Meta: handlers.NewPartnerMetaHandler(quotas, ready, apidocs.OpenAPI(),
+			httpapi.PartnerAPIVersion),
+		Search: handlers.NewPartnerSearchHandler(svc.PartnerSearch),
+		Geo:    handlers.NewPartnerGeoHandler(svc.GeoLayers),
+		Inventory: handlers.NewPartnerInventoryHandler(svc.OwnerListings, svc.Leads,
+			svc.PartnerWebhooks),
+		Webhooks: handlers.NewPartnerWebhookHandler(svc.PartnerWebhooks),
+	}, httpapi.PartnerDeps{
+		Auth: svc.Partners, Quotas: quotas, Idempotency: svc.PartnerIdem,
+		DocsURL: docsURL,
+	})
 }

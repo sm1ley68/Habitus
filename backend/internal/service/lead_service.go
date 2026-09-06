@@ -46,14 +46,31 @@ type leadLister interface {
 	ListForSeller(ctx context.Context, sellerID uuid.UUID, limit, offset int) ([]domain.Lead, int, error)
 }
 
+// LeadNotifier — кому сообщить о новой заявке помимо самого кабинета.
+// Сегодня это вебхуки Partner API: у продавца-партнёра заявка должна упасть
+// в его CRM, а не ждать, пока кто-то откроет кабинет. nil — обычное
+// состояние: у B2C-продавца никакой интеграции нет.
+type LeadNotifier interface {
+	LeadCreated(ctx context.Context, lead domain.Lead)
+}
+
 type LeadService struct {
-	targets leadTarget
-	leads   leadStore
-	lists   leadLister
+	targets  leadTarget
+	leads    leadStore
+	lists    leadLister
+	notifier LeadNotifier
 }
 
 func NewLeadService(targets *repository.OwnerListingRepo, leads *repository.LeadRepo) *LeadService {
 	return &LeadService{targets: targets, leads: leads, lists: leads}
+}
+
+// WithNotifier подключает доставку событий. Отдельный метод, а не аргумент
+// конструктора: заявки существовали до Partner API и должны продолжать
+// работать там, где интеграции нет вовсе.
+func (s *LeadService) WithNotifier(n LeadNotifier) *LeadService {
+	s.notifier = n
+	return s
 }
 
 // ListForSeller. sellerID берётся ИЗ СЕССИИ вызывающим хендлером и никогда из
@@ -139,6 +156,11 @@ func (s *LeadService) Send(ctx context.Context, buyerID uuid.UUID, externalID st
 	}
 	if err != nil {
 		return domain.Lead{}, err
+	}
+	// Уведомление — следствие, а не часть операции: заявка уже создана, и
+	// упавшая доставка не должна превращать успех в ошибку для покупателя.
+	if s.notifier != nil {
+		s.notifier.LeadCreated(ctx, lead)
 	}
 	return lead, nil
 }

@@ -1,0 +1,4835 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Habitus Partner API",
+    "version": "2026-09-06",
+    "summary": "Подбор жилья по запросу словами — как встраиваемый сервис.",
+    "description": "Habitus разбирает запрос на естественном языке, подбирает объекты и объясняет каждый выбор фактами о районе: сколько ребёнку идти до школы, куда выходят окна, что вокруг по вечерам.\n\nPartner API отдаёт то же ядро, что работает в самом продукте: поиск, разбор запроса, досье объекта с проверяемыми утверждениями, гео-слои города, управление собственной витриной и заявки покупателей.\n\n**Главное правило сервиса — не выдумывать факты о городе.** Если замера нет, поле придёт как null, а блок разбора деградирует или исчезнет. Нулей вместо отсутствующих измерений здесь не бывает; модельные оценки всегда помечены как proxy.",
+    "termsOfService": "https://habitus.city/terms",
+    "contact": {
+      "name": "Поддержка интеграций",
+      "email": "api@habitus.city",
+      "url": "https://habitus.city/docs"
+    },
+    "license": {
+      "name": "Проприетарная лицензия",
+      "url": "https://habitus.city/terms"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.habitus.city",
+      "description": "Продакшен"
+    },
+    {
+      "url": "http://localhost:8080",
+      "description": "Локальная разработка (docker compose up)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Служебные",
+      "description": "Проверка ключа, лимитов и состояния сервиса."
+    },
+    {
+      "name": "Поиск",
+      "description": "Запрос словами, разбор и выдача."
+    },
+    {
+      "name": "Объекты",
+      "description": "Карточка объекта, досье под запрос и вопросы по нему."
+    },
+    {
+      "name": "Гео",
+      "description": "Слои города и объявления под вьюпортом карты."
+    },
+    {
+      "name": "Витрина",
+      "description": "Ваши объявления: завести, изменить, опубликовать."
+    },
+    {
+      "name": "Заявки",
+      "description": "Обращения покупателей по вашим объявлениям."
+    },
+    {
+      "name": "Вебхуки",
+      "description": "Доставка событий в вашу систему."
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/partner/v1/status": {
+      "get": {
+        "operationId": "getStatus",
+        "tags": [
+          "Служебные"
+        ],
+        "security": [],
+        "summary": "Состояние сервиса",
+        "description": "Публичная проба без ключа. Нужна, чтобы отличить «мой ключ протух» от «у них лежит поиск», не имея валидного ключа.",
+        "responses": {
+          "200": {
+            "description": "Сервис работает.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceStatus"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Часть зависимостей недоступна — поиск может отвечать деградированно.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/openapi.json": {
+      "get": {
+        "operationId": "getOpenAPI",
+        "tags": [
+          "Служебные"
+        ],
+        "security": [],
+        "summary": "Спецификация OpenAPI",
+        "description": "Машиночитаемый контракт этого API. Вшит в сборку сервиса, поэтому не может разъехаться с тем, что реально задеплоено.",
+        "responses": {
+          "200": {
+            "description": "Документ OpenAPI 3.1.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/me": {
+      "get": {
+        "operationId": "getMe",
+        "tags": [
+          "Служебные"
+        ],
+        "summary": "Партнёр, права ключа и лимиты",
+        "description": "Первая ручка любой интеграции: отвечает сразу на три вопроса — рабочий ли ключ, что им разрешено и в какие лимиты вы упрётесь.",
+        "responses": {
+          "200": {
+            "description": "Партнёр и ключ.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Partner"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/search": {
+      "post": {
+        "operationId": "createSearch",
+        "tags": [
+          "Поиск"
+        ],
+        "summary": "Найти квартиры по запросу словами",
+        "description": "Синхронный поиск: один запрос — один ответ, без стриминга. Разбор запроса, подбор и пересчёт совпадения занимают от нескольких секунд до минуты — держите таймаут клиента не меньше 120 с.\n\nОтвет содержит сам поиск (с разбором запроса и списком ослабленных требований) и первую страницу выдачи. Идентификатор поиска нужен дальше: по нему запрашивают следующие страницы, досье объекта и ответы на вопросы.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              },
+              "examples": {
+                "family": {
+                  "summary": "Семья с ребёнком",
+                  "value": {
+                    "query": "двушка до 18 млн, ребёнку пешком до школы, окна не на трассу",
+                    "city": "msk",
+                    "limit": 10
+                  }
+                },
+                "commute": {
+                  "summary": "Привязка к офису",
+                  "value": {
+                    "query": "однушка с ремонтом",
+                    "city": "msk",
+                    "point": {
+                      "lon": 37.6156,
+                      "lat": 55.7522,
+                      "minutes": 30,
+                      "mode": "metro"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Поиск выполнен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchWithResults"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Тот же Idempotency-Key уже использован с другим телом.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "idempotency_key_reuse": {
+                    "value": {
+                      "error": {
+                        "type": "conflict_error",
+                        "code": "idempotency_key_reuse",
+                        "message": "Этот Idempotency-Key уже использован с другим телом запроса",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "Idempotency-Key"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Поисковое ядро вернуло ошибку.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Поиск не уложился в бюджет времени. Повтор имеет смысл.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "search_timeout": {
+                    "value": {
+                      "error": {
+                        "type": "api_error",
+                        "code": "search_timeout",
+                        "message": "Поиск не уложился в 120 с. Попробуйте ещё раз или упростите запрос",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/searches/{search_id}": {
+      "get": {
+        "operationId": "getSearch",
+        "tags": [
+          "Поиск"
+        ],
+        "summary": "Метаданные поиска",
+        "description": "Разбор запроса, ослабленные требования, недоступные слои и объяснение — без самой выдачи.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SearchID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Поиск.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Search"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Поиск не найден или уже удалён по сроку хранения",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "search_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "search_not_found",
+                        "message": "Поиск не найден или уже удалён по сроку хранения",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/searches/{search_id}/results": {
+      "get": {
+        "operationId": "listSearchResults",
+        "tags": [
+          "Поиск"
+        ],
+        "summary": "Страница выдачи",
+        "description": "Постраничный доступ к уже сохранённой выдаче. Повторного поиска не происходит — модель второй раз не тревожат, и квота на неё не тратится.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SearchID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница объектов.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/List"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Поиск не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "search_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "search_not_found",
+                        "message": "Поиск не найден",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/searches/{search_id}/properties/{object_id}": {
+      "get": {
+        "operationId": "getSearchProperty",
+        "tags": [
+          "Объекты"
+        ],
+        "summary": "Объект с досье под запрос",
+        "description": "Карточка объекта в контексте конкретного поиска: с процентом совпадения, вердиктом и блоками разбора — маршруты членов семьи, социальная среда, вид и инсоляция.\n\nДосье считается лениво при первом обращении и кэшируется; первый вызов по объекту заметно дольше последующих. Если объекта в этой выдаче не было, вернётся тот же объект без досье — это не ошибка.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SearchID"
+          },
+          {
+            "$ref": "#/components/parameters/ObjectID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Карточка объекта.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Property"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Объект недвижимости не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "object_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "object_not_found",
+                        "message": "Объект недвижимости не найден",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/searches/{search_id}/properties/{object_id}/ask": {
+      "post": {
+        "operationId": "askProperty",
+        "tags": [
+          "Объекты"
+        ],
+        "summary": "Вопрос по объекту",
+        "description": "Ответ строится только по досье и фактам объекта. Чего в них нет — того не будет и в ответе: предложение с unknown = true означает, что данных для ответа нет, и это честный ответ, а не сбой.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SearchID"
+          },
+          {
+            "$ref": "#/components/parameters/ObjectID"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "description": "Вопрос словами.",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "question"
+                ]
+              },
+              "examples": {
+                "school": {
+                  "value": {
+                    "question": "Сколько идти до ближайшей школы и безопасен ли путь?"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ответ.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Answer"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Объект не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "object_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "object_not_found",
+                        "message": "Объект не найден",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/properties/{object_id}": {
+      "get": {
+        "operationId": "getProperty",
+        "tags": [
+          "Объекты"
+        ],
+        "summary": "Объект вне подбора",
+        "description": "Факты объекта без привязки к запросу. Процента совпадения и досье здесь нет и быть не может: оба считаются относительно запроса, и в отрыве от него это были бы выдуманные числа.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ObjectID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Карточка объекта.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Property"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Объект недвижимости не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "object_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "object_not_found",
+                        "message": "Объект недвижимости не найден",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/geo/layers": {
+      "get": {
+        "operationId": "getGeoLayers",
+        "tags": [
+          "Гео"
+        ],
+        "summary": "Слои города",
+        "description": "Слои для карты: школы, парки, бары, метро, коммунальная инфраструктура, шум, криминогенность. Слои communal, noise и crime — модельные оценки, а не замеры; их происхождение указано в свойствах каждого объекта. Слой без bbox отдаётся пустым, если он тяжёлый.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/City"
+          },
+          {
+            "name": "layers",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Слои через запятую: schools, parks, bars, metro, communal, noise, crime. Незнакомое имя — ошибка 400, а не пустой слой."
+          },
+          {
+            "$ref": "#/components/parameters/BBox"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Слои.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoLayers"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/geo/listings": {
+      "get": {
+        "operationId": "getGeoListings",
+        "tags": [
+          "Гео"
+        ],
+        "summary": "Объявления под вьюпортом",
+        "description": "Точки объявлений в границах карты. bbox обязателен: весь город одним ответом не отдаётся.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/City"
+          },
+          {
+            "$ref": "#/components/parameters/BBox"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Точки объявлений.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoListings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/listings": {
+      "get": {
+        "operationId": "listListings",
+        "tags": [
+          "Витрина"
+        ],
+        "summary": "Объявления партнёра",
+        "description": "Ваш каталог в системе. Чужих объявлений здесь не бывает: выборка всегда ограничена вашим аккаунтом.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "publishing",
+                "published",
+                "unpublished",
+                "failed"
+              ]
+            },
+            "description": "Фильтр по статусу."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница объявлений.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/List"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createListing",
+        "tags": [
+          "Витрина"
+        ],
+        "summary": "Завести объявление",
+        "description": "Создаёт карточку и, если передан publish: true, сразу отдаёт её в поиск. Публикация считает эмбеддинг объявления и занимает секунды.\n\nПровал публикации не отменяет создание: объявление останется со статусом failed и причиной в поле error — уже принятые данные не теряются, повторить можно вызовом /publish.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingInput"
+              },
+              "examples": {
+                "minimal": {
+                  "summary": "Минимум полей",
+                  "value": {
+                    "city": "msk",
+                    "coordinates": [
+                      37.6156,
+                      55.7522
+                    ],
+                    "price": 17500000,
+                    "area": 54.2,
+                    "rooms": 2,
+                    "level": 5,
+                    "levels": 12,
+                    "address": "Москва, ул. Пример, 1",
+                    "publish": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Объявление создано.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Listing"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/listings/{listing_id}": {
+      "get": {
+        "operationId": "getListing",
+        "tags": [
+          "Витрина"
+        ],
+        "summary": "Одно объявление",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ListingID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Объявление.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Listing"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Объявление не найдено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "owner_listing_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "owner_listing_not_found",
+                        "message": "Объявление не найдено",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateListing",
+        "tags": [
+          "Витрина"
+        ],
+        "summary": "Изменить объявление",
+        "description": "Непереданное поле сохраняет прежнее значение: PATCH не обнуляет то, чего в теле не было. Изменения попадут в поиск после следующей публикации.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ListingID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingInput"
+              },
+              "examples": {
+                "price": {
+                  "summary": "Только цена",
+                  "value": {
+                    "price": 16900000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Обновлённое объявление.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Listing"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Объявление не найдено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "owner_listing_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "owner_listing_not_found",
+                        "message": "Объявление не найдено",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteListing",
+        "tags": [
+          "Витрина"
+        ],
+        "summary": "Удалить объявление",
+        "description": "Сначала объект гасится в поиске и только потом удаляется карточка — обратный порядок оставил бы в выдаче объявление, которым уже никто не владеет.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ListingID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Удалено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Объявление не найдено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "owner_listing_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "owner_listing_not_found",
+                        "message": "Объявление не найдено",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/listings/{listing_id}/publish": {
+      "post": {
+        "operationId": "publishListing",
+        "tags": [
+          "Витрина"
+        ],
+        "summary": "Опубликовать",
+        "description": "Отдаёт объявление в поиск. Без координат публикация отклоняется: по ним строятся гео-факты и досье, а нулевая точка — это точка в Гвинейском заливе.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ListingID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Опубликовано.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Listing"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Объявление не найдено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "owner_listing_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "owner_listing_not_found",
+                        "message": "Объявление не найдено",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/listings/{listing_id}/unpublish": {
+      "post": {
+        "operationId": "unpublishListing",
+        "tags": [
+          "Витрина"
+        ],
+        "summary": "Снять с публикации",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ListingID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Снято.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Listing"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Объявление не найдено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "owner_listing_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "owner_listing_not_found",
+                        "message": "Объявление не найдено",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/leads": {
+      "get": {
+        "operationId": "listLeads",
+        "tags": [
+          "Заявки"
+        ],
+        "summary": "Заявки по вашим объявлениям",
+        "description": "Свежие сверху. Опрашивать эту ручку не обязательно — подпишитесь на событие lead.created, и заявка придёт в вашу систему сама.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница заявок.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/List"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/webhooks": {
+      "get": {
+        "operationId": "listWebhooks",
+        "tags": [
+          "Вебхуки"
+        ],
+        "summary": "Подписки",
+        "responses": {
+          "200": {
+            "description": "Подписки.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/List"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWebhook",
+        "tags": [
+          "Вебхуки"
+        ],
+        "summary": "Подписаться на события",
+        "description": "Ответ содержит секрет подписи — сохраните его: им проверяется заголовок X-Habitus-Signature на каждой доставке.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookInput"
+              },
+              "examples": {
+                "leads": {
+                  "value": {
+                    "url": "https://crm.example.com/hooks/habitus",
+                    "events": [
+                      "lead.created"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Подписка создана.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/webhooks/{webhook_id}": {
+      "get": {
+        "operationId": "getWebhook",
+        "tags": [
+          "Вебхуки"
+        ],
+        "summary": "Одна подписка",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Подписка.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Вебхук не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "webhook_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "webhook_not_found",
+                        "message": "Вебхук не найден",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWebhook",
+        "tags": [
+          "Вебхуки"
+        ],
+        "summary": "Отписаться",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Удалено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Вебхук не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "webhook_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "webhook_not_found",
+                        "message": "Вебхук не найден",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/webhooks/{webhook_id}/test": {
+      "post": {
+        "operationId": "testWebhook",
+        "tags": [
+          "Вебхуки"
+        ],
+        "summary": "Отправить проверочное событие",
+        "description": "Ставит в очередь событие ping. Без него первая проверка подписи у вас случится на боевой заявке — то есть тогда, когда ошибиться дороже всего.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookID"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Событие поставлено в очередь.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDelivery"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Вебхук не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "webhook_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "webhook_not_found",
+                        "message": "Вебхук не найден",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/partner/v1/webhooks/{webhook_id}/deliveries": {
+      "get": {
+        "operationId": "listWebhookDeliveries",
+        "tags": [
+          "Вебхуки"
+        ],
+        "summary": "Журнал доставок",
+        "description": "Что отправляли, сколько раз пытались и чем кончилось. Пять попыток за примерно девять часов с растущей паузой.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница доставок.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/List"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ключ не передан, не распознан, отозван или истёк.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "invalid_api_key": {
+                    "value": {
+                      "error": {
+                        "type": "authentication_error",
+                        "code": "invalid_api_key",
+                        "message": "Ключ API не распознан. Проверьте заголовок Authorization: Bearer hab_live_…",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "insufficient_scope": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "insufficient_scope",
+                        "message": "Ключу не хватает права search:read",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "scope"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Превышен лимит. Заголовок Retry-After говорит, через сколько секунд повторять.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "rate_limit_exceeded": {
+                    "value": {
+                      "error": {
+                        "type": "rate_limit_error",
+                        "code": "rate_limit_exceeded",
+                        "message": "Превышен лимит запросов (120 в минуту). Повторите через 12 с",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервиса.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Запрос не прошёл проверку. Поле названо в param.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "validation_error": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "validation_error",
+                        "message": "query обязателен",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors",
+                        "param": "query"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Вебхук не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                },
+                "examples": {
+                  "webhook_not_found": {
+                    "value": {
+                      "error": {
+                        "type": "invalid_request_error",
+                        "code": "webhook_not_found",
+                        "message": "Вебхук не найден",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "hab_live_…",
+        "description": "Ключ передаётся заголовком `Authorization: Bearer hab_live_…`. Секрет показывается один раз при выпуске и в системе не хранится — восстановить его нельзя, только выпустить новый.\n\nПрава ключа задаются скоупами: `search:read`, `geo:read`, `listings:read`, `listings:write`, `leads:read`, `webhooks:write`."
+      }
+    },
+    "parameters": {
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Курсор следующей страницы — берётся из next_cursor предыдущего ответа. Непрозрачен: собирать его самостоятельно не нужно."
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25
+        },
+        "description": "Размер страницы. Больше 100 обрезается до 100."
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "description": "Уникальная строка запроса. Повтор с тем же ключом вернёт первый ответ вместо второй операции; тот же ключ с другим телом — 409."
+      },
+      "SearchID": {
+        "name": "search_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "Идентификатор поиска из POST /search."
+      },
+      "ObjectID": {
+        "name": "object_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Идентификатор объекта из выдачи."
+      },
+      "ListingID": {
+        "name": "listing_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "Идентификатор объявления."
+      },
+      "WebhookID": {
+        "name": "webhook_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "Идентификатор подписки."
+      },
+      "City": {
+        "name": "city",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "msk",
+            "spb"
+          ],
+          "default": "msk"
+        },
+        "description": "Город."
+      },
+      "BBox": {
+        "name": "bbox",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Границы вьюпорта: minLng,minLat,maxLng,maxLat в WGS84. Кривой bbox — ошибка 400, а не пустой ответ."
+      }
+    },
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "description": "Единый конверт ошибки. Один и тот же для всех ручек и всех кодов ответа.",
+        "properties": {
+          "error": {
+            "type": "object",
+            "description": "",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Класс ошибки: authentication_error, permission_error, invalid_request_error, rate_limit_error, conflict_error, api_error. По нему клиент решает — чинить запрос, повторить позже или писать нам.",
+                "enum": [
+                  "authentication_error",
+                  "permission_error",
+                  "invalid_request_error",
+                  "rate_limit_error",
+                  "conflict_error",
+                  "api_error"
+                ]
+              },
+              "code": {
+                "type": "string",
+                "description": "Машинный код конкретной ошибки, например invalid_api_key или idempotency_key_reuse."
+              },
+              "message": {
+                "type": "string",
+                "description": "Человеческое описание. Пригодно для показа оператору, но ветвиться нужно по code."
+              },
+              "param": {
+                "type": "string",
+                "description": "Поле запроса, из-за которого отказ. Отсутствует, если отказ не про конкретное поле."
+              },
+              "cause": {
+                "type": "string",
+                "description": "Техническая улика: стадия, статус вышестоящего сервиса, тайминги. Появляется только когда она есть."
+              },
+              "hint": {
+                "type": "string",
+                "description": "Что с этим делать. Появляется только когда есть что посоветовать."
+              },
+              "request_id": {
+                "type": "string",
+                "description": "Идентификатор запроса. Тот же, что в заголовке X-Request-Id — назовите его в обращении в поддержку."
+              },
+              "doc_url": {
+                "type": "string",
+                "description": "Ссылка на раздел документации об ошибках."
+              }
+            },
+            "required": [
+              "type",
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "List": {
+        "type": "object",
+        "description": "Конверт списка. Пагинация курсорная: клиент листает, пока has_more не станет false, и никогда не собирает курсор сам.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "Всегда list.",
+            "enum": [
+              "list"
+            ]
+          },
+          "item_object": {
+            "type": "string",
+            "description": "Тип элементов в data — то же значение, что в поле object каждого элемента."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Элементы страницы."
+          },
+          "total": {
+            "type": "integer",
+            "description": "Сколько всего элементов в выборке, до пагинации."
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "Есть ли что-то за этой страницей."
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Курсор следующей страницы. null, когда has_more = false."
+          }
+        },
+        "required": [
+          "object",
+          "item_object",
+          "data",
+          "total",
+          "has_more",
+          "next_cursor"
+        ]
+      },
+      "Partner": {
+        "type": "object",
+        "description": "Партнёр и ключ, которым сделан запрос.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "partner"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Короткий идентификатор партнёра."
+          },
+          "name": {
+            "type": "string",
+            "description": "Название компании."
+          },
+          "status": {
+            "type": "string",
+            "description": "active — доступ открыт; suspended — приостановлен.",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          },
+          "key": {
+            "type": "object",
+            "description": "Ключ, которым сделан этот запрос.",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "",
+                "format": "uuid"
+              },
+              "prefix": {
+                "type": "string",
+                "description": "Открытая часть ключа. Секрет не хранится и повторно не показывается."
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Как ключ назвали при выпуске."
+              },
+              "environment": {
+                "type": "string",
+                "description": "live или test.",
+                "enum": [
+                  "live",
+                  "test"
+                ]
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Права ключа."
+              },
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Когда ключ перестанет работать. null — бессрочный.",
+                "format": "date-time"
+              },
+              "last_used_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Когда ключом ходили в последний раз.",
+                "format": "date-time"
+              },
+              "created_at": {
+                "type": "string",
+                "description": "",
+                "format": "date-time"
+              }
+            }
+          },
+          "limits": {
+            "type": "object",
+            "description": "Действующие лимиты именно для этого партнёра.",
+            "properties": {
+              "requests_per_minute": {
+                "type": "integer",
+                "description": "Общий потолок запросов в минуту."
+              },
+              "llm_requests_per_hour": {
+                "type": "integer",
+                "description": "Отдельный потолок на ручки, за которыми стоит вызов модели."
+              }
+            }
+          },
+          "api_version": {
+            "type": "string",
+            "description": "Версия контракта."
+          }
+        }
+      },
+      "ServiceStatus": {
+        "type": "object",
+        "description": "Состояние сервиса. Публичная ручка — доступна без ключа.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "status"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "operational — всё работает; degraded — часть зависимостей недоступна.",
+            "enum": [
+              "operational",
+              "degraded"
+            ]
+          },
+          "api_version": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "object",
+            "description": "Проба → ok либо текст причины отказа.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SearchRequest": {
+        "type": "object",
+        "description": "Запрос поиска на естественном языке.",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Запрос словами, как его сформулировал бы человек: «двушка до 18 млн, чтобы ребёнку пешком до школы и без окон на трассу».",
+            "maxLength": 2000
+          },
+          "city": {
+            "type": "string",
+            "description": "Город. Сейчас поддержаны msk и spb.",
+            "enum": [
+              "msk",
+              "spb"
+            ],
+            "default": "msk"
+          },
+          "point": {
+            "type": "object",
+            "description": "Точка притяжения: искать в пределах доступности от адреса. Например, офис сотрудника.",
+            "properties": {
+              "lon": {
+                "type": "number",
+                "description": "Долгота.",
+                "minimum": -180,
+                "maximum": 180
+              },
+              "lat": {
+                "type": "number",
+                "description": "Широта.",
+                "minimum": -90,
+                "maximum": 90
+              },
+              "minutes": {
+                "type": "integer",
+                "description": "Сколько минут в пути допустимо.",
+                "minimum": 1,
+                "maximum": 60,
+                "default": 15
+              },
+              "mode": {
+                "type": "string",
+                "description": "Способ передвижения.",
+                "enum": [
+                  "foot-walking",
+                  "cycling-regular",
+                  "driving-car",
+                  "metro"
+                ],
+                "default": "foot-walking"
+              }
+            },
+            "required": [
+              "lon",
+              "lat"
+            ]
+          },
+          "explain": {
+            "type": "boolean",
+            "description": "Просить текстовое объяснение выдачи. Стоит отдельного вызова модели и заметных секунд, поэтому по умолчанию выключено.",
+            "default": false
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Сколько объектов вернуть в первой странице. Остальные доступны через /searches/{id}/results.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "prev_search_id": {
+            "type": "string",
+            "description": "Идентификатор предыдущего поиска — тогда запрос читается как уточнение: «а теперь подешевле» не теряет всё, что было сказано раньше.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "Search": {
+        "type": "object",
+        "description": "Поиск: разбор запроса и то, что с ним пришлось сделать.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "search"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "Идентификатор поиска. Нужен для выдачи, досье и вопросов по объекту.",
+            "format": "uuid"
+          },
+          "query": {
+            "type": "string",
+            "description": "Исходный запрос."
+          },
+          "city": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "",
+            "format": "date-time"
+          },
+          "parsed": {
+            "type": "object",
+            "description": "Что система поняла из запроса: диапазон цены, комнаты, площадь, гео-требования, маршруты членов семьи. Структура повторяет разбор поискового ядра."
+          },
+          "relaxed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Требования, которые пришлось ослабить, чтобы выдача не оказалась пустой. Пустой массив — ничего не ослабляли."
+          },
+          "degraded": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Слои данных, недоступные в момент запроса. Их отсутствие уже учтено в оценках, но знать о нём нужно."
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Честные примечания о покрытии данных. Например: ориентация окон известна у малой доли объявлений, поэтому учтена как предпочтение, а не как фильтр."
+          },
+          "explanation": {
+            "type": "string",
+            "description": "Текстовое объяснение выдачи. Пустая строка, если explain не запрашивали."
+          },
+          "data_freshness": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Дата актуальности данных. null — замера нет."
+          },
+          "area_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Название зоны, в которой шёл поиск, если она была определена."
+          },
+          "area_geojson": {
+            "description": "Граница зоны поиска в GeoJSON. null, если зоны не было.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "description": "Сколько объектов сохранено под этим поиском."
+          }
+        }
+      },
+      "SearchWithResults": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Search"
+          },
+          {
+            "type": "object",
+            "description": "",
+            "properties": {
+              "results": {
+                "$ref": "#/components/schemas/List"
+              }
+            }
+          }
+        ],
+        "description": "Поиск вместе с первой страницей выдачи."
+      },
+      "SearchResult": {
+        "type": "object",
+        "description": "Объект в выдаче.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "search_result"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "Идентификатор объекта. Он же используется в /properties/{object_id}."
+          },
+          "name": {
+            "type": "string",
+            "description": "Название, собранное из структурных фактов: «2-комнатная, 54 м²». Выдуманных названий у объектов нет."
+          },
+          "address": {
+            "type": "string"
+          },
+          "cover_image": {
+            "type": "string",
+            "description": "Обложка. Заглушка, если фотографий у источника нет."
+          },
+          "match_score": {
+            "type": "integer",
+            "description": "Насколько объект отвечает запросу, 0–100. Считается по этому конкретному запросу и вне его смысла не имеет.",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "coordinates": {
+            "type": "array",
+            "description": "Координаты [lng, lat] в WGS84 (EPSG:4326). Порядок именно такой — сначала долгота.",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "examples": [
+              [
+                37.6156,
+                55.7522
+              ]
+            ]
+          },
+          "price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Цена в рублях. null — цена не указана в источнике."
+          },
+          "rooms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Комнат. null — не указано."
+          },
+          "area_sqm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Площадь, м². null — не указана."
+          },
+          "floor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Этаж в виде «5 из 12». null — данных нет."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Короткие пометки для карточки."
+          }
+        }
+      },
+      "Property": {
+        "type": "object",
+        "description": "Карточка объекта. В контексте поиска — с досье; вне подбора — только факты объекта.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "property"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Цена в рублях."
+          },
+          "rooms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Комнат."
+          },
+          "area_sqm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Площадь, м²."
+          },
+          "floor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Этаж."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Фотографии."
+          },
+          "coordinates": {
+            "type": "array",
+            "description": "Координаты [lng, lat] в WGS84 (EPSG:4326). Порядок именно такой — сначала долгота.",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "examples": [
+              [
+                37.6156,
+                55.7522
+              ]
+            ]
+          },
+          "contact": {
+            "type": "object",
+            "description": "Единственное действие, которое карточка предлагает дальше.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "lead — объявление ведёт продавец в системе, заявку примет он; external — витринный объект, связь только у источника; none — связаться нечем.",
+                "enum": [
+                  "lead",
+                  "external",
+                  "none"
+                ]
+              },
+              "source_url": {
+                "type": "string",
+                "description": "Страница объявления у источника. Только при kind = external."
+              }
+            }
+          },
+          "analysis": {
+            "$ref": "#/components/schemas/Analysis"
+          }
+        }
+      },
+      "Analysis": {
+        "type": "object",
+        "description": "Разбор объекта под запрос. Пустые блоки означают, что данных не хватило: синтетических значений здесь не бывает — блок скорее исчезнет, чем покажет выдуманное число.",
+        "properties": {
+          "match_score": {
+            "type": "integer",
+            "description": "Совпадение с запросом, 0–100. Ноль вне контекста поиска."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Короткое объяснение, откуда взялась оценка."
+          },
+          "verdict": {
+            "type": "object",
+            "description": "Итог по объекту.",
+            "properties": {
+              "headline": {
+                "type": "string",
+                "description": "Одна фраза вывода."
+              },
+              "confidence": {
+                "type": "number",
+                "description": "Уверенность, 0–1."
+              },
+              "layers_checked": {
+                "type": "integer",
+                "description": "Сколько слоёв данных удалось проверить."
+              }
+            }
+          },
+          "brief": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Требование из запроса."
+                },
+                "status": {
+                  "type": "string",
+                  "description": "met — выполнено; compromise — частично; relaxed — требование ослаблено; unknown — данных нет.",
+                  "enum": [
+                    "met",
+                    "compromise",
+                    "relaxed",
+                    "unknown"
+                  ]
+                }
+              }
+            },
+            "description": "Требования запроса и что с каждым получилось."
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnalysisBlock"
+            },
+            "description": "Содержательные блоки разбора."
+          },
+          "compromises": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+                "block_key": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "На чём пришлось пойти на компромисс."
+          },
+          "relaxation": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Что было ослаблено, чтобы выдача не оказалась пустой."
+          },
+          "zone_rationale": {
+            "type": "string",
+            "description": "Почему объект отнесён к этой зоне."
+          }
+        }
+      },
+      "AnalysisBlock": {
+        "type": "object",
+        "description": "Один блок разбора: маршруты семьи, социальная среда, вид и климат.",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Идентификатор блока: family_routing, social_environment, view_and_climate и другие."
+          },
+          "tier": {
+            "type": "string",
+            "description": "hero — блок отвечает на требование из запроса; secondary — фоновый факт о районе.",
+            "enum": [
+              "hero",
+              "secondary"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "score": {
+            "type": "string",
+            "description": "Оценка блока буквой, от A+ до D."
+          },
+          "verdict_line": {
+            "type": "string",
+            "description": "Одна фраза по блоку."
+          },
+          "description": {
+            "type": "string"
+          },
+          "metrics": {
+            "type": "object",
+            "description": "Числа блока. Отсутствующий замер отсутствует, а не равен нулю."
+          },
+          "data": {
+            "type": "object",
+            "description": "Развёрнутые данные блока: геометрия маршрутов, разбивка поездки на метро, обзор и инсоляция. Форма зависит от key."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Как называется величина."
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "observation — замер; computation — расчёт по данным; proxy — модельная оценка.",
+                  "enum": [
+                    "observation",
+                    "computation",
+                    "proxy"
+                  ]
+                },
+                "basis": {
+                  "type": "string",
+                  "description": "На чём основано."
+                },
+                "observed_at": {
+                  "type": "string",
+                  "description": "Когда наблюдалось. Отсутствует, если дата неприменима."
+                }
+              }
+            },
+            "description": "Происхождение каждой величины блока. Модельная оценка всегда помечена как proxy — выдавать её за замер нельзя."
+          }
+        }
+      },
+      "Answer": {
+        "type": "object",
+        "description": "Ответ на вопрос по объекту, разложенный на проверяемые утверждения.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "answer"
+            ]
+          },
+          "answer": {
+            "type": "string",
+            "description": "Ответ целиком, склеенный из предложений."
+          },
+          "sentences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "evidence_paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Пути к фактам досье, на которых стоит это предложение."
+                },
+                "unknown": {
+                  "type": "boolean",
+                  "description": "true — в досье нет данных для ответа, и модель прямо это говорит. Отдельным полем, чтобы интеграция могла отличить ответ от признания незнания программно."
+                }
+              }
+            },
+            "description": "Утверждения ответа со ссылками на источники."
+          }
+        }
+      },
+      "ListingInput": {
+        "type": "object",
+        "description": "Объявление партнёра.",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "Город.",
+            "enum": [
+              "msk",
+              "spb"
+            ]
+          },
+          "price": {
+            "type": "integer",
+            "description": "Цена в рублях."
+          },
+          "area": {
+            "type": "number",
+            "description": "Площадь, м²."
+          },
+          "kitchen_area": {
+            "type": "number",
+            "description": "Площадь кухни, м²."
+          },
+          "rooms": {
+            "type": "integer",
+            "description": "Комнат."
+          },
+          "level": {
+            "type": "integer",
+            "description": "Этаж."
+          },
+          "levels": {
+            "type": "integer",
+            "description": "Этажей в доме."
+          },
+          "address": {
+            "type": "string"
+          },
+          "coordinates": {
+            "type": "array",
+            "description": "Координаты [lng, lat] в WGS84 (EPSG:4326). Порядок именно такой — сначала долгота.",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "examples": [
+              [
+                37.6156,
+                55.7522
+              ]
+            ]
+          },
+          "window_orientation": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Стороны света, куда выходят окна: N, NE, E, SE, S, SW, W, NW."
+          },
+          "description": {
+            "type": "string"
+          },
+          "photos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ссылки на фотографии."
+          },
+          "publish": {
+            "type": "boolean",
+            "description": "Опубликовать тем же запросом. Если публикация не удалась, объявление остаётся созданным со статусом failed и причиной в поле error — уже принятые данные не теряются.",
+            "default": false
+          }
+        },
+        "required": [
+          "city",
+          "coordinates"
+        ]
+      },
+      "Listing": {
+        "type": "object",
+        "description": "Объявление в витрине партнёра.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "listing"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "",
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Идентификатор объекта в поиске. Именно он приходит в выдаче и в заявках."
+          },
+          "origin": {
+            "type": "string",
+            "description": "manual — заведено через API; cian — импортировано.",
+            "enum": [
+              "manual",
+              "cian"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "draft — черновик; publishing — идёт публикация; published — в поиске; unpublished — снято; failed — публикация не удалась, причина в error.",
+            "enum": [
+              "draft",
+              "publishing",
+              "published",
+              "unpublished",
+              "failed"
+            ]
+          },
+          "verification": {
+            "type": "string",
+            "description": "Проверено ли объявление.",
+            "enum": [
+              "unverified",
+              "verified"
+            ]
+          },
+          "city": {
+            "type": "string"
+          },
+          "price": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": ""
+          },
+          "area": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": ""
+          },
+          "kitchen_area": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": ""
+          },
+          "rooms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": ""
+          },
+          "level": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": ""
+          },
+          "levels": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": ""
+          },
+          "address": {
+            "type": "string"
+          },
+          "coordinates": {
+            "description": "Координаты [lng, lat]. null у черновика без точки на карте — нулевые координаты поставили бы объект в Гвинейский залив.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            }
+          },
+          "window_orientation": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          "description": {
+            "type": "string"
+          },
+          "photos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          "source_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Страница у источника, если объявление импортировано."
+          },
+          "error": {
+            "type": "string",
+            "description": "Причина, по которой публикация не удалась. Появляется только при status = failed."
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "",
+            "format": "date-time"
+          }
+        }
+      },
+      "Lead": {
+        "type": "object",
+        "description": "Заявка покупателя по объявлению партнёра.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "lead"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "",
+            "format": "uuid"
+          },
+          "listing_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Объявление, по которому пришла заявка. null, если объявление уже удалено — сама заявка при этом остаётся читаемой.",
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Идентификатор объекта на момент отправки."
+          },
+          "address": {
+            "type": "string",
+            "description": "Адрес на момент отправки."
+          },
+          "name": {
+            "type": "string",
+            "description": "Как представился покупатель."
+          },
+          "contact": {
+            "type": "string",
+            "description": "Телефон или другой способ связи, который он оставил."
+          },
+          "message": {
+            "type": "string",
+            "description": "Текст заявки."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookInput": {
+        "type": "object",
+        "description": "Подписка на события.",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "HTTPS-адрес, куда слать события. Локальные и внутренние адреса не принимаются."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "",
+              "enum": [
+                "lead.created",
+                "listing.published",
+                "listing.unpublished"
+              ]
+            },
+            "description": "События подписки. Список закрытый: подписка на несуществующее событие молча никогда не сработала бы."
+          }
+        },
+        "required": [
+          "url",
+          "events"
+        ]
+      },
+      "Webhook": {
+        "type": "object",
+        "description": "Подписка на события.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "webhook"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string",
+            "description": "Секрет для проверки подписи. В отличие от ключа API показывается повторно — иначе проверять подпись нечем."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          "active": {
+            "type": "boolean",
+            "description": ""
+          },
+          "created_at": {
+            "type": "string",
+            "description": "",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "description": "Попытка доставки события.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "webhook_delivery"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "",
+            "format": "uuid"
+          },
+          "event": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending — в очереди; delivered — принято; failed — попытки исчерпаны.",
+            "enum": [
+              "pending",
+              "delivered",
+              "failed"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "description": "Сколько раз пытались доставить."
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Причина последнего отказа. Появляется, только если отказ был."
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "description": "Когда будет следующая попытка. Только для pending.",
+            "format": "date-time"
+          },
+          "delivered_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "",
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object",
+            "description": "Тело события."
+          }
+        }
+      },
+      "GeoLayers": {
+        "type": "object",
+        "description": "Гео-слои города в границах вьюпорта.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "geo_layers"
+            ]
+          },
+          "city": {
+            "type": "string"
+          },
+          "layers": {
+            "type": "object",
+            "description": "Имя слоя → GeoJSON FeatureCollection.",
+            "additionalProperties": {
+              "type": "object"
+            }
+          },
+          "truncated": {
+            "type": "object",
+            "description": "Имя слоя → был ли он обрезан по потолку точек. Обрезанный слой нельзя считать полным.",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "GeoListings": {
+        "type": "object",
+        "description": "Объявления под вьюпортом, точками для карты.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "",
+            "enum": [
+              "geo_listings"
+            ]
+          },
+          "city": {
+            "type": "string"
+          },
+          "listings": {
+            "type": "object",
+            "description": "GeoJSON FeatureCollection точек объявлений."
+          }
+        }
+      },
+      "Deleted": {
+        "type": "object",
+        "description": "Подтверждение удаления.",
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "description": "",
+            "format": "uuid"
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "Всегда true."
+          }
+        }
+      }
+    }
+  },
+  "externalDocs": {
+    "description": "Документация для разработчиков",
+    "url": "https://api.habitus.city/docs"
+  }
+}
