@@ -213,3 +213,44 @@ def test_merge_parsed_followup_keeps_prev_unchanged():
     turn = ParsedTurn(intent="followup")
     merged = merge_parsed(prev, turn)
     assert merged == prev
+
+
+# --- домохозяйство шире, чем люди -------------------------------------------
+
+def test_prompt_defines_a_household_member_not_a_person():
+    """Правило одно на всех: член домохозяйства — тот, у кого есть регулярные
+    поездки. Пока в промпте стояло «человек», собака в household попасть не
+    могла и держалась на одном примере-исключении."""
+    assert "животное" in SYSTEM_PROMPT
+    assert "Собака" in SYSTEM_PROMPT
+
+
+def test_prompt_routes_the_dog_through_household_not_through_geo():
+    """Двух путей к одному результату быть не должно.
+
+    Раньше «гулять с собакой» упиралось в единственный пример, который клал
+    geo park напрямую: на любой другой формулировке («живу с псом», «надо
+    выгуливать») правило не срабатывало вовсе. Требование к району теперь
+    выводится из состава домохозяйства — тем же кодом, что «в школу пешком».
+    """
+    assert '"label": "Собака"' in SYSTEM_PROMPT
+    assert "гулять с собакой" not in SYSTEM_PROMPT
+
+
+def test_prompt_does_not_send_every_pet_to_the_park():
+    """У кошки регулярных поездок нет — выдуманного требования быть не должно."""
+    assert "кошк" in SYSTEM_PROMPT.lower()
+
+
+def test_dog_household_becomes_a_district_requirement_end_to_end():
+    """Разбор → требование к району, без единой строки про собаку по пути."""
+    from habitus.online.household import DEFAULT_WALK_MINUTES, district_requirements
+    from habitus.online.schema import GeoConstraint
+
+    fake = FakeLLM([_tool_resp({"rooms": [2], "area": "север",
+                                "semantic_text": "", "household": [
+        {"id": "dog", "label": "Собака", "legs": [
+            {"to_label": "парк", "to_kind": "park", "mode": "walk"}]}]})])
+    pq = parse_query("двушка на севере, живём с собакой", fake)
+    assert district_requirements(pq) == [
+        GeoConstraint(kind="park", walk_minutes=DEFAULT_WALK_MINUTES)]

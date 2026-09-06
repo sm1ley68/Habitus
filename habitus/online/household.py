@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Literal
 
 from habitus.clean.geocode import geocode_address
 from habitus.online.schema import (GeoConstraint, HouseholdLegIntent,
@@ -41,6 +41,15 @@ GENERIC_LABELS = {
     "школа", "школы", "садик", "детский сад", "сад", "вуз", "университет",
     "институт", "работа", "офис", "метро", "парк", "магазин", "поликлиника",
     "больница", "спортзал", "зал", "секция", "кружок",
+    # Выгул собаки — тот же класс мест, что «школа», и та же ловушка: на
+    # «зону выгула» геокодер отдаёт произвольную площадку города, и район
+    # подбирается вокруг чужого двора. Меряется выгул колонкой walk_min_park
+    # (парк и зона выгула для подбора района — одно и то же место), поэтому
+    # NLU велено присылать «парк»; остальные написания держим сеткой
+    # безопасности, а не вторым правилом.
+    "выгул", "выгул собаки", "выгул собак", "зона выгула", "зона выгула собак",
+    "площадка для выгула", "площадка для выгула собак", "собачья площадка",
+    "сквер", "ветклиника", "ветеринарная клиника", "ветеринар",
 }
 
 
@@ -115,13 +124,42 @@ def nearest_poi(conn, city: str, kind: str, home: tuple[float, float]
     return (float(lon), float(lat)), (name or POI_KINDS.get(kind, kind))
 
 
+#: Чем нога домохозяйства оказывается для поиска. Собака ничего нового сюда не
+#: добавила: «выгул» — это нога члена домохозяйства к КЛАССУ мест, ровно как
+#: «ребёнку в школу пешком», и роль у неё та же самая.
+LegRole = Literal["point", "district", "unmeasured"]
+
+
+def leg_role(leg: HouseholdLegIntent) -> LegRole:
+    """Единственное место, где решается, чем нога станет для поиска.
+
+    - "point" — место названо ИМЕНЕМ («Лицей 239»): его можно геокодировать,
+      и оно работает сигналом ранжирования (household_points).
+    - "district" — назван КЛАСС мест, пешая доступность которого измерена
+      колонкой walk_min_* («парк», «школа»): становится требованием к району.
+    - "unmeasured" — назван класс мест без измеренной колонки
+      («поликлиника»), либо поездка не пешая: не становится ничем.
+
+    Раньше это правило было размазано по трём местам — district_requirements,
+    _family_data и счётчику заметок в pipeline — и они успели разойтись:
+    pipeline считал ногу-класс «местом, которое не удалось найти на карте»,
+    хотя именно она и отфильтровала выдачу.
+    """
+    if not is_generic_label(leg.to_label):
+        return "point"
+    if leg.mode == "walk" and leg.to_kind in DISTRICT_KINDS:
+        return "district"
+    return "unmeasured"
+
+
 def district_requirements(pq: ParsedQuery) -> list[GeoConstraint]:
     """Обобщённые метки поездок → требования к району.
 
     «Ребёнку в школу пешком» не называет школу, поэтому точкой на карте стать
     не может (см. GENERIC_LABELS). Но у продукта для каждого объявления уже
     посчитано walk_min_school — то есть требование выразимо честно, измеренными
-    данными: не «до ЭТОЙ школы», а «школа в пешей доступности».
+    данными: не «до ЭТОЙ школы», а «школа в пешей доступности». «Живём с
+    собакой» проходит здесь тем же путём: выгул — это walk_min_park.
 
     Не перебивает то, что человек сказал явно: если он назвал минуты и NLU
     положил их в pq.geo, оттуда и берём. Возвращает только НОВЫЕ ограничения,
@@ -131,14 +169,46 @@ def district_requirements(pq: ParsedQuery) -> list[GeoConstraint]:
     out: list[GeoConstraint] = []
     for member in pq.household or []:
         for leg in member.legs:
-            if leg.mode != "walk" or leg.to_kind not in DISTRICT_KINDS:
-                continue
-            if leg.to_kind in already or not is_generic_label(leg.to_label):
+            if leg_role(leg) != "district" or leg.to_kind in already:
                 continue
             already.add(leg.to_kind)
             out.append(GeoConstraint(kind=leg.to_kind,
                                      walk_minutes=DEFAULT_WALK_MINUTES))
     return out
+
+
+def household_notes(pq: ParsedQuery,
+                    points: list[tuple[float, float]]) -> list[str]:
+    """Что честно сказать человеку про названный им состав домохозяйства.
+
+    Заметку про принятый порог пешей доступности выдаёт вызывающий рядом с
+    district_requirements — она про ограничение, а не про ногу. Здесь остаются
+    две вещи, о которых промолчать нельзя: сколько НАЗВАННЫХ мест реально
+    доехало до ранжирования, и какие классы мест продукт мерить не умеет.
+    """
+    roles = [(leg, leg_role(leg)) for m in pq.household for leg in m.legs]
+    named = sum(1 for _, role in roles if role == "point")
+    notes: list[str] = []
+    if points:
+        notes.append(
+            f"учли {len(points)} из {named} названных мест семьи как "
+            f"предпочтение по расположению — это близость по прямой, "
+            f"время в пути считается в досье объекта")
+    elif named:
+        # Молчать нельзя: пользователь назвал места и вправе знать, что на
+        # выдачу они не повлияли.
+        notes.append(
+            f"места семьи ({named}) не удалось найти на карте — на порядок "
+            f"выдачи они не повлияли")
+    # Класс мест без измеренной колонки исчезает бесследно: ни точкой, ни
+    # требованием он стать не может. Об этом тоже нельзя молчать — иначе
+    # человек считает, что его поликлинику учли.
+    for label in dict.fromkeys(leg.to_label for leg, role in roles
+                               if role == "unmeasured"):
+        notes.append(
+            f"«{label}» — это класс мест, а не адрес: пешую доступность "
+            f"таких мест продукт пока не меряет, на выдачу это не повлияло")
+    return notes
 
 
 def geocode_leg(intent: HouseholdLegIntent, city: str,

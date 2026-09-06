@@ -21,7 +21,7 @@ from habitus.clean.geocode import geocode_address
 from habitus.geo.metro_access import ORSWalker, straight_walk_seconds
 from habitus.online.geo import DirectionsProvider
 from habitus.online.household import (POI_KINDS, geocode_leg, is_generic_label,
-                                      nearest_poi)
+                                      leg_role, nearest_poi)
 from habitus.online.metro_route import door_to_door
 from habitus.online.schema import (
     BlockSource, BriefItem, CompromiseNote, DirectLight, DossierPayload, DossierRequest,
@@ -624,9 +624,28 @@ def _fact_num(facts: dict, key: str) -> float | None:
 def _brief(req: DossierRequest, facts: dict) -> list[BriefItem]:
     result = []
     relaxed_text = " ".join(req.relaxed).lower()
+    # Ради кого принято требование к району. Обобщённая нога («собаку
+    # выгуливать», «ребёнку в школу пешком») и гео-ограничение — одно и то же
+    # условие с двух сторон: pipeline.district_requirements делает из первой
+    # второе. В брифе оно обязано быть ОДНОЙ строкой с именем того, ради кого
+    # принято. Раньше строк было две: измеренная безымянная («park: не более
+    # 15 мин пешком») и именная («Собака: парк») со статусом unknown НАВСЕГДА —
+    # маршрут до ближайшего парка строился и показывался рядом, а пункт брифа
+    # об этом не узнавал никогда, потому что метку ноги досье к тому моменту
+    # уже переписало в «ближайший парк: Сокольники».
+    owner: dict[str, str] = {}
+    for member in req.parsed_query.household:
+        for leg in member.legs:
+            if leg_role(leg) == "district":
+                owner.setdefault(leg.to_kind, member.label)
     for geo in req.parsed_query.geo:
         value = _fact_num(facts, f"walk_min_{geo.kind}")
-        label = f"{geo.kind}: не более {geo.walk_minutes} мин пешком"
+        # Английский enum в интерфейс не выпускаем: человек просил парк, а не
+        # "park". Слова те же, что у слоя POI, — второго словаря не заводим.
+        word = POI_KINDS.get(geo.kind, geo.kind)
+        label = (f"{owner[geo.kind]}: {word} не дальше {geo.walk_minutes} мин пешком"
+                 if geo.kind in owner else
+                 f"{word.capitalize()}: не более {geo.walk_minutes} мин пешком")
         if value is None:
             status = "unknown"
         elif value <= geo.walk_minutes:
@@ -650,8 +669,11 @@ def _brief(req: DossierRequest, facts: dict) -> list[BriefItem]:
         orientation = _orientation(facts, req.parsed_query.window_orientation)
         result.append(BriefItem(label="Ориентация окон: " + ", ".join(req.parsed_query.window_orientation),
                                 status="met" if orientation is not None else "unknown"))
+    covered = {g.kind for g in req.parsed_query.geo}
     for member in req.parsed_query.household:
         for leg in member.legs:
+            if leg_role(leg) == "district" and leg.to_kind in covered:
+                continue      # уже названо строкой требования выше, со статусом
             result.append(BriefItem(label=f"{member.label}: {leg.to_label}", status="unknown"))
     return result
 

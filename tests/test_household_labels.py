@@ -149,3 +149,74 @@ def test_named_place_does_not_get_replaced_by_nearest(monkeypatch):
                             None, lambda _: (37.61, 55.71))
     assert data.members[0].legs[0].to_label == "Лицей 239"
     assert called == []
+
+
+# --- домохозяйство шире, чем люди -------------------------------------------
+# Собака — такой же член домохозяйства, и её поездка самая частая из всех:
+# выгул 2–3 раза в день, 365 дней в году. Отдельной ветки под неё в продукте
+# быть не должно: правило «член домохозяйства + класс мест → требование к
+# району» уже действует для «ребёнку в школу пешком», собака подпадает под
+# него без исключений.
+
+from habitus.online.household import household_notes, leg_role
+
+
+def _dog(legs):
+    return ParsedQuery.model_validate({
+        "household": [{"id": "dog", "label": "Собака", "legs": legs}]})
+
+
+def test_walking_the_dog_becomes_a_district_requirement():
+    got = district_requirements(_dog([
+        {"to_label": "парк", "to_kind": "park", "mode": "walk"}]))
+    assert got == [GeoConstraint(kind="park", walk_minutes=DEFAULT_WALK_MINUTES)]
+
+
+def test_dog_walking_zone_is_a_class_of_places_not_a_place():
+    """«Зона выгула» — класс мест: геокодер отдал бы произвольную площадку.
+
+    Это тот же дефект, что «школа» → случайная школа в Кузьминках, только
+    для собаки: подобранный по выдуманной точке район выглядел бы как замер.
+    """
+    for label in ("зона выгула", "площадка для выгула собак", "выгул собаки"):
+        assert is_generic_label(label), label
+    assert geocode_leg(_leg("зона выгула", kind="park"), "msk",
+                       lambda _: (37.72, 55.71)) is None
+
+
+def test_leg_role_separates_point_from_district_from_unmeasured():
+    # названо имя места → точка на карте (сигнал ранжирования)
+    assert leg_role(_leg("Лицей 239")) == "point"
+    # назван класс мест, доступность которого измерена → требование к району
+    assert leg_role(_leg("парк", kind="park")) == "district"
+    # назван класс мест без измеренной колонки → ничем: мерить нечем
+    assert leg_role(_leg("поликлиника", kind="poi")) == "unmeasured"
+    # поездка НА метро — не «метро в пешей доступности»
+    assert leg_role(_leg("работа", kind="work", mode="metro")) == "unmeasured"
+
+
+def test_generic_leg_is_not_counted_as_a_place_we_failed_to_find():
+    """Нога-класс на выдачу ПОВЛИЯЛА — требованием к району.
+
+    Раньше она попадала в счётчик названных мест, геокодироваться не могла и
+    порождала заметку «места семьи не удалось найти на карте» — прямую ложь о
+    единственной ноге, которая как раз и отфильтровала выдачу.
+    """
+    notes = household_notes(_dog([
+        {"to_label": "парк", "to_kind": "park", "mode": "walk"}]), points=[])
+    assert notes == []
+
+
+def test_named_place_we_could_not_find_is_still_reported():
+    notes = household_notes(_pq([
+        {"to_label": "Лицей 239", "to_kind": "school", "mode": "walk"}]), points=[])
+    assert len(notes) == 1 and "не удалось найти на карте" in notes[0]
+
+
+def test_unmeasured_class_of_places_is_named_honestly():
+    """Молчать нельзя: человек назвал поликлинику и вправе знать, что её
+    доступность продукт не мерит и на выдачу она не повлияла."""
+    notes = household_notes(_pq([
+        {"to_label": "поликлиника", "to_kind": "poi", "mode": "walk"}]), points=[])
+    assert len(notes) == 1
+    assert "поликлиника" in notes[0] and "не повлияло" in notes[0]

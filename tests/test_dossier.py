@@ -561,3 +561,56 @@ def _leg_stub(minutes: int):
     return RouteLeg(to_label="Лицей 1535", to_kind="school", mode="walk",
                     minutes=minutes,
                     geometry=LineStringGeometry(coordinates=[(37.6, 55.7), (37.61, 55.71)]))
+
+
+# --- бриф: требование района называется тем, ради кого оно принято ----------
+
+def _dog_req(facts_kind: str = "park") -> DossierRequest:
+    """Запрос «живём с собакой»: NLU завёл члена домохозяйства с выгулом,
+    pipeline превратил обобщённую ногу в требование к району."""
+    return DossierRequest(object_id="A", parsed_query=ParsedQuery.model_validate({
+        "geo": [{"kind": facts_kind, "walk_minutes": 15}],
+        "household": [{"id": "dog", "label": "Собака", "legs": [
+            {"to_label": "парк", "to_kind": facts_kind, "mode": "walk"}]}],
+    }))
+
+
+def test_brief_names_the_member_the_requirement_was_taken_for():
+    """Одна строка с именем, а не две: измеренная безымянная и вечная «unknown».
+
+    Обобщённая нога («собаку выгуливать») и требование к району — одно и то же
+    ограничение, увиденное с двух сторон. Раньше бриф показывал его дважды:
+    «park: не более 15 мин пешком» со статусом по walk_min_park и «Собака:
+    парк» со статусом unknown НАВСЕГДА — маршрут до ближайшего парка строился
+    и показывался рядом, но пункт брифа об этом не узнавал никогда.
+    """
+    from habitus.online.dossier import _brief
+
+    brief = _brief(_dog_req(), {"walk_min_park": 6.0})
+    assert len(brief) == 1
+    assert brief[0].status == "met"
+    assert "Собака" in brief[0].label and "парк" in brief[0].label.lower()
+    assert "park" not in brief[0].label          # английского enum'а в UI не бывает
+
+
+def test_brief_requirement_without_an_owner_stays_impersonal():
+    """«Школа в 10 минутах» человек попросил сам, без состава семьи —
+    приписывать требование несуществующему члену домохозяйства нельзя."""
+    from habitus.online.dossier import _brief
+
+    req = DossierRequest(object_id="A", parsed_query=ParsedQuery.model_validate({
+        "geo": [{"kind": "school", "walk_minutes": 10}]}))
+    brief = _brief(req, {"walk_min_school": 22.0})
+    assert len(brief) == 1 and brief[0].status == "compromise"
+    assert brief[0].label.lower().startswith("школа")
+
+
+def test_brief_keeps_named_places_as_their_own_line():
+    """Названное место требованием к району не становится — строка остаётся."""
+    from habitus.online.dossier import _brief
+
+    req = DossierRequest(object_id="A", parsed_query=ParsedQuery.model_validate({
+        "household": [{"id": "son", "label": "Сын", "legs": [
+            {"to_label": "Лицей 239", "to_kind": "school", "mode": "walk"}]}]}))
+    brief = _brief(req, {})
+    assert [i.label for i in brief] == ["Сын: Лицей 239"]

@@ -7,7 +7,11 @@ from habitus.online.cache import embed_cache, explain_cache, parse_cache
 from habitus.online.explain import cache_key as explain_cache_key
 from habitus.online.explain import explain as build_explanation
 from habitus.online.geo import IsochroneProvider
-from habitus.online.household import district_requirements, household_points
+# POI_KINDS — он же словарь «категория → слово для человека»: «school» в
+# заметке пользователю ни о чём не говорит. Второй такой словарь здесь уже
+# заводили (KIND_WORD), и он дословно дублировал первый.
+from habitus.online.household import (POI_KINDS, district_requirements,
+                                      household_notes, household_points)
 from habitus.online.household_time import (all_point_times,
                                            costs as household_time_costs)
 from habitus.online.llm import LLMClient, LLMUnavailable
@@ -19,10 +23,6 @@ from habitus.online.retrieval import (Candidate, constraint_diagnostics,
                                       encode_query, orientation_coverage)
 from habitus.online.schema import (ParsedQuery, PointConstraint, ResultItem,
                                    SearchResponse, TurnIntent)
-
-#: Как называть категорию в заметке пользователю: «school» ему ни о чём
-#: не говорит.
-KIND_WORD = {"school": "школа", "park": "парк", "metro": "метро"}
 
 log = logging.getLogger("habitus.online.pipeline")
 
@@ -100,18 +100,13 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
         except Exception as exc:
             log.warning("резолв точек домохозяйства не удался: %s",
                         exc, exc_info=True)
-        named = sum(len(m.legs) for m in pq.household)
-        if household:
-            notes.append(
-                f"учли {len(household)} из {named} названных мест семьи как "
-                f"предпочтение по расположению — это близость по прямой, "
-                f"время в пути считается в досье объекта")
-        elif named:
-            # Молчать нельзя: пользователь назвал места и вправе знать, что на
-            # выдачу они не повлияли.
-            notes.append(
-                f"места семьи ({named}) не удалось найти на карте — на порядок "
-                f"выдачи они не повлияли")
+        # Что из состава домохозяйства чем стало — решает household.leg_role,
+        # там же собираются и заметки. Раньше счётчик стоял здесь и считал
+        # названными местами ВСЕ ноги подряд, включая обобщённые: «собаку
+        # выгуливать» и «ребёнку в школу пешком» точкой стать не могут, и
+        # человеку сообщалось, что их «не удалось найти на карте» — про
+        # единственную ногу, которая как раз и отфильтровала выдачу.
+        notes.extend(household_notes(pq, household))
 
     # 1.6 обобщённые поездки («ребёнку в школу пешком») точкой на карте быть не
     #     могут — школа не названа. Но пешая доступность школы у объявления
@@ -124,7 +119,7 @@ def run_search(query: str, conn, *, llm: LLMClient | None = None,
         pq = pq.model_copy(update={"geo": list(pq.geo) + district})
         for g in district:
             notes.append(
-                f"«{KIND_WORD.get(g.kind, g.kind)} пешком» — вы не назвали "
+                f"«{POI_KINDS.get(g.kind, g.kind)} пешком» — вы не назвали "
                 f"минуты, приняли не больше {g.walk_minutes}; скажите точнее, "
                 f"если нужен другой порог")
 

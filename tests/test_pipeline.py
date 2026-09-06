@@ -463,3 +463,47 @@ def test_diagnostics_describe_the_query_user_asked_not_the_relaxed_one(conn):
     # условие исчезать не должно
     assert "шум" in by_label
     assert by_label["комнаты"] == 0     # девятикомнатных в фикстуре нет
+
+
+# --- собака: обобщённая нога → требование к району ---------------------------
+
+def test_dog_walk_becomes_a_geo_filter_and_is_explained(conn):
+    """«Живём с собакой» отбирает объекты по ИЗМЕРЕННОЙ доступности парка.
+
+    Собака проходит ровно тем же путём, что «ребёнку в школу пешком»: NLU
+    заводит члена домохозяйства с ногой к КЛАССУ мест, district_requirements
+    превращает её в walk_min_park <= 15. Отдельной ветки под животное в
+    продукте нет — проверяем, что и не появилось.
+    """
+    with conn.cursor() as cur:
+        cur.execute("UPDATE listings SET walk_min_park=6 WHERE external_id='A';")
+        cur.execute("UPDATE listings SET walk_min_park=41 WHERE external_id='B';")
+    conn.commit()
+    llm = FakeLLM([LLMResponse(content=None, tool_arguments=json.dumps(
+        {"rooms": [2], "semantic_text": "", "household": [
+            {"id": "dog", "label": "Собака", "legs": [
+                {"to_label": "парк", "to_kind": "park", "mode": "walk"}]}]},
+        ensure_ascii=False)), _explain_resp()])
+    resp = run_search("двушка, живём с собакой", conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker(), min_results=1)
+
+    assert {r.external_id for r in resp.results} == {"A"}
+    assert [(g.kind, g.walk_minutes) for g in resp.parsed.geo] == [("park", 15)]
+    # принятый за человека порог обязан быть назван вслух
+    assert any("парк пешком" in n and "15" in n for n in resp.notes), resp.notes
+    # и при этом нельзя утверждать, что названное место потеряно: нога-класс
+    # местом на карте не была, она стала фильтром
+    assert not any("не удалось найти на карте" in n for n in resp.notes), resp.notes
+
+
+def test_household_class_without_a_measured_layer_is_admitted(conn):
+    """Поликлинику продукт мерить не умеет — об этом говорим, а не молчим."""
+    llm = FakeLLM([LLMResponse(content=None, tool_arguments=json.dumps(
+        {"rooms": [2], "semantic_text": "", "household": [
+            {"id": "granny", "label": "Мама", "legs": [
+                {"to_label": "поликлиника", "to_kind": "poi", "mode": "walk"}]}]},
+        ensure_ascii=False)), _explain_resp()])
+    resp = run_search("двушка, маме нужна поликлиника рядом", conn, llm=llm,
+                      model=FakeModel(), reranker=FakeReranker(), min_results=1)
+    assert resp.parsed.geo == []                       # требования не выдумали
+    assert any("поликлиника" in n and "не повлияло" in n for n in resp.notes), resp.notes
