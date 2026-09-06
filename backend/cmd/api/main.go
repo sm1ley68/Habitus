@@ -111,7 +111,14 @@ func main() {
 	partnerSearchRepo := repository.NewPartnerSearchRepo(pool)
 	partnerWebhookRepo := repository.NewPartnerWebhookRepo(pool)
 
-	partnerService := service.NewPartnerService(partnerRepo, userRepo)
+	// Перец обязателен: без него хеш ключа вырождается в голый SHA-256, и
+	// любой, кто дотянулся до базы, вписывает себе рабочий ключ. Молча
+	// деградировать здесь нельзя — падаем на старте.
+	if cfg.PartnerAPIEnabled && cfg.PartnerKeyPepper == "" {
+		log.Fatal().Msg("PARTNER_KEY_PEPPER не задан — Partner API не будет запущен. " +
+			"Сгенерируйте секрет (openssl rand -hex 32) или выключите PARTNER_API_ENABLED")
+	}
+	partnerService := service.NewPartnerService(partnerRepo, userRepo, cfg.PartnerKeyPepper)
 	partnerWebhookService := service.NewPartnerWebhookService(
 		partnerWebhookRepo, partnerRepo,
 		time.Duration(cfg.PartnerWebhookTimeoutS)*time.Second,

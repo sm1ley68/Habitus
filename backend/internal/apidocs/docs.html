@@ -289,6 +289,7 @@ footer p { max-width: 68ch; }
   <h5>Начало</h5>
   <a href="#start">Что это</a>
   <a href="#quickstart">Первый запрос</a>
+  <a href="#access">Как получить доступ</a>
   <a href="#auth">Ключи и права</a>
   <h5>Соглашения</h5>
   <a href="#shape">Форма ответов</a>
@@ -438,6 +439,61 @@ req.Header.Set(<span class="s">"Idempotency-Key"</span>, <span class="s">"8f3c1a
   </div>
 </div>
 
+<div class="row" id="access">
+  <div class="prose">
+    <h2>Как получить доступ</h2>
+    <p>Самостоятельной регистрации нет. Ключи выдаются вручную, после согласования — и это не временное ограничение, а решение: ручка «создай себе ключ» — это ручка «создай себе доступ».</p>
+    <ol>
+      <li><b>Напишите нам</b> на <a href="mailto:api@habitus.city">api@habitus.city</a>. Понадобятся название компании, что вы собираетесь делать, и адреса, с которых будут уходить запросы.</li>
+      <li><b>Мы заводим партнёра.</b> Он появляется в состоянии «ожидает» — доступа у него ещё нет.</li>
+      <li><b>Кто-то у нас одобряет доступ.</b> Отдельным действием, с указанием основания. Это событие записывается вместе с именем того, кто его совершил.</li>
+      <li><b>Выпускается ключ</b> — с минимальным набором прав под вашу задачу, сроком действия и, если вы назвали адреса, списком сетей.</li>
+    </ol>
+    <p>Ключ показывается один раз, в момент выпуска. В системе хранится не он, а его отпечаток — восстановить ключ не можем ни мы, ни вы. Потеряли — выпускаем новый, старый отзываем.</p>
+
+    <h3>Срок действия</h3>
+    <p>Ключ действует <b>180 дней</b>, если не договорились иначе. Дата видна в <code>expires_at</code> ответа <code>/me</code> — поставьте напоминание за пару недель и попросите новый заранее. Бессрочные ключи выпускаются в виде исключения: ключ, утёкший год назад, работает ровно до того дня, когда кто-то заметит счёт за трафик.</p>
+
+    <h3>Адреса</h3>
+    <p>Если вы назвали адреса или подсети, ключ работает только оттуда. Запрос с любого другого адреса получит <code>403 ip_not_allowed</code> — это не проблема прав, это несовпадение сети. Список видно в <code>allowed_ips</code> ответа <code>/me</code>; пустой означает «откуда угодно».</p>
+    <div class="warn"><p>Меняете хостинг или добавляете новый регион — предупредите заранее. Иначе интеграция встанет в момент переезда, и выглядеть это будет как отказ прав.</p></div>
+
+    <h3>Что делать при утечке</h3>
+    <p>Напишите нам сразу — отзыв занимает минуту, и отозванный ключ перестаёт работать немедленно. Не ждите подтверждения утечки: выпустить новый ключ дешевле, чем разбираться, кто выкачал базу.</p>
+  </div>
+  <div class="aside">
+    <div class="code">
+      <div class="code-head"><span class="t">Что прислать в заявке</span><button class="copy" type="button">Копировать</button></div>
+<pre>Компания:   ООО «Город»
+Задача:     подбор в мобильном приложении
+Права:      search:read, leads:read
+Адреса:     203.0.113.10, 198.51.100.0/24
+Контакт:    Мария, +7 916 000-00-00</pre>
+    </div>
+    <div class="code">
+      <div class="code-head"><span class="t">Проверить срок и адреса ключа</span><button class="copy" type="button">Копировать</button></div>
+<pre data-lang="curl" class="on">curl <span class="s">"$BASE/me"</span> -H <span class="s">"Authorization: Bearer $HABITUS_KEY"</span>   | jq <span class="s">'.key | {prefix, expires_at, allowed_ips, scopes}'</span></pre>
+<pre data-lang="python">key = api.get(<span class="s">"/me"</span>).json()[<span class="s">"key"</span>]
+
+if key[<span class="s">"expires_at"</span>]:
+    left = date.fromisoformat(key[<span class="s">"expires_at"</span>][:<span class="n">10</span>]) - date.today()
+    if left.days &lt; <span class="n">14</span>:
+        alert(<span class="s">f"ключ Habitus истекает через {left.days} дн."</span>)</pre>
+<pre data-lang="node">const { key } = await api(<span class="s">"/me"</span>);
+
+if (key.expires_at) {
+  const left = (new Date(key.expires_at) - Date.now()) / <span class="n">86400000</span>;
+  if (left &lt; <span class="n">14</span>) alert(<span class="s">`ключ Habitus истекает через ${Math.floor(left)} дн.`</span>);
+}</pre>
+<pre data-lang="go"><span class="c">// Срок ключа стоит проверять на старте сервиса, а не узнавать о нём</span>
+<span class="c">// по первому 401 в проде.</span>
+if me.Key.ExpiresAt != nil &amp;&amp; time.Until(*me.Key.ExpiresAt) &lt; <span class="n">14</span>*<span class="n">24</span>*time.Hour {
+    log.Warn(<span class="s">"habitus: ключ скоро истечёт"</span>, <span class="s">"until"</span>, *me.Key.ExpiresAt)
+}</pre>
+    </div>
+  </div>
+</div>
+
 <div class="row" id="auth">
   <div class="prose">
     <h2>Ключи и права</h2>
@@ -458,6 +514,8 @@ req.Header.Set(<span class="s">"Idempotency-Key"</span>, <span class="s">"8f3c1a
         <tr><td><code>webhooks:write</code></td><td>Подписки на события</td></tr>
       </tbody>
     </table>
+    <h3>Срок и адреса</h3>
+    <p>У ключа есть дата окончания (<code>expires_at</code>) и, если вы назвали адреса, список сетей (<code>allowed_ips</code>). Оба поля приходят в <code>/me</code> — см. <a href="#access">Как получить доступ</a>.</p>
     <div class="warn"><p>Ключ — это доступ к боевым данным и к вашей витрине. Держите его на сервере, не в мобильном приложении и не в браузерном коде: оттуда его достанет любой желающий.</p></div>
   </div>
   <div class="aside">
@@ -473,7 +531,8 @@ req.Header.Set(<span class="s">"Idempotency-Key"</span>, <span class="s">"8f3c1a
     <span class="k">"prefix"</span>: <span class="s">"hab_live_k4m2rq7t"</span>,
     <span class="k">"environment"</span>: <span class="s">"live"</span>,
     <span class="k">"scopes"</span>: [<span class="s">"search:read"</span>, <span class="s">"leads:read"</span>],
-    <span class="k">"expires_at"</span>: <span class="c">null</span>,
+    <span class="k">"allowed_ips"</span>: [<span class="s">"203.0.113.10/32"</span>],
+    <span class="k">"expires_at"</span>: <span class="s">"2027-03-05T00:00:00Z"</span>,
     <span class="k">"last_used_at"</span>: <span class="s">"2026-09-06T09:14:22Z"</span>
   },
   <span class="k">"limits"</span>: {
@@ -778,6 +837,7 @@ Idempotent-Replay: <span class="k">true</span>
         <tr><td>401</td><td><code>api_key_expired</code></td><td>Срок действия ключа истёк.</td></tr>
         <tr><td>403</td><td><code>insufficient_scope</code></td><td>Ключу не хватает права; какого — в <code>message</code>.</td></tr>
         <tr><td>403</td><td><code>partner_suspended</code></td><td>Доступ партнёра приостановлен.</td></tr>
+        <tr><td>403</td><td><code>ip_not_allowed</code></td><td>Ключ пришёл с адреса вне согласованного списка.</td></tr>
         <tr><td>400</td><td><code>validation_error</code></td><td>Поле запроса не прошло проверку.</td></tr>
         <tr><td>404</td><td><code>search_not_found</code></td><td>Поиск не найден или удалён по сроку хранения.</td></tr>
         <tr><td>404</td><td><code>object_not_found</code></td><td>Объекта нет в витрине.</td></tr>

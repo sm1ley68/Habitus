@@ -171,7 +171,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -187,6 +187,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -335,7 +347,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -351,6 +363,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -499,7 +523,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -515,6 +539,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -635,7 +671,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -651,6 +687,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -792,7 +840,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -808,6 +856,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -956,7 +1016,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -972,6 +1032,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -1110,7 +1182,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1126,6 +1198,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -1252,7 +1336,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1268,6 +1352,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -1386,7 +1482,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1402,6 +1498,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -1536,7 +1644,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1552,6 +1660,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -1718,7 +1838,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1734,6 +1854,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -1824,7 +1956,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1840,6 +1972,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -1970,7 +2114,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1986,6 +2130,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -2122,7 +2278,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2138,6 +2294,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -2252,7 +2420,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2268,6 +2436,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -2405,7 +2585,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2421,6 +2601,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -2538,7 +2730,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2554,6 +2746,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -2663,7 +2867,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2679,6 +2883,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -2812,7 +3028,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2828,6 +3044,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -2918,7 +3146,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2934,6 +3162,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -3045,7 +3285,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3061,6 +3301,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -3198,7 +3450,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3214,6 +3466,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -3311,7 +3575,7 @@
             }
           },
           "403": {
-            "description": "Ключу не хватает права, либо доступ партнёра приостановлен.",
+            "description": "Ключу не хватает права, доступ партнёра приостановлен, либо запрос пришёл с адреса вне списка, разрешённого ключу.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3327,6 +3591,18 @@
                         "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
                         "doc_url": "https://api.habitus.city/docs#errors",
                         "param": "scope"
+                      }
+                    }
+                  },
+                  "ip_not_allowed": {
+                    "value": {
+                      "error": {
+                        "type": "permission_error",
+                        "code": "ip_not_allowed",
+                        "message": "Этот ключ работает только с согласованных адресов",
+                        "hint": "Проверьте, с какого адреса уходит запрос, и пришлите его нам, если он изменился",
+                        "request_id": "01J8Z5C3K9QW2Y6R7T8V9XA0BC",
+                        "doc_url": "https://api.habitus.city/docs#errors"
                       }
                     }
                   }
@@ -3424,7 +3700,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "hab_live_…",
-        "description": "Ключ передаётся заголовком `Authorization: Bearer hab_live_…`. Секрет показывается один раз при выпуске и в системе не хранится — восстановить его нельзя, только выпустить новый.\n\nПрава ключа задаются скоупами: `search:read`, `geo:read`, `listings:read`, `listings:write`, `leads:read`, `webhooks:write`."
+        "description": "Ключ передаётся заголовком `Authorization: Bearer hab_live_…`. Секрет показывается один раз при выпуске и в системе не хранится — восстановить его нельзя, только выпустить новый.\n\nКлючи выдаются вручную, после согласования: самостоятельной регистрации нет. У ключа есть права (`search:read`, `geo:read`, `listings:read`, `listings:write`, `leads:read`, `webhooks:write`), срок действия и, если вы назвали адреса, список сетей, с которых он работает. Все три видны в ответе `GET /partner/v1/me`."
       }
     },
     "parameters": {
@@ -3696,6 +3972,13 @@
                   "type": "string"
                 },
                 "description": "Права ключа."
+              },
+              "allowed_ips": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Адреса и подсети, с которых работает ключ. Пустой список означает «откуда угодно»."
               },
               "expires_at": {
                 "type": [

@@ -45,11 +45,15 @@ func scanPartner(row pgx.Row) (domain.Partner, error) {
 
 func (r *PartnerRepo) Create(ctx context.Context, p domain.Partner) (domain.Partner, error) {
 	out, err := scanPartner(r.pool.QueryRow(ctx, `
-		INSERT INTO partners(slug, name, user_id, rate_limit_per_min, llm_limit_per_hour)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO partners(slug, name, user_id, status, rate_limit_per_min, llm_limit_per_hour)
+		-- Пустой статус означает «вызывающий не выбирал» — тогда действует
+		-- pending, как и у колонки по умолчанию. Пропустить пустую строку
+		-- дальше значило бы упереться в CHECK там, где имелось в виду
+		-- «заводим как обычно».
+		VALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'pending'), $5, $6)
 		RETURNING id, slug, name, user_id, status,
 		          rate_limit_per_min, llm_limit_per_hour, created_at, updated_at`,
-		p.Slug, p.Name, p.UserID, p.RateLimitPerMin, p.LLMPerHour))
+		p.Slug, p.Name, p.UserID, p.Status, p.RateLimitPerMin, p.LLMPerHour))
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return domain.Partner{}, ErrSlugTaken
@@ -98,13 +102,16 @@ func (r *PartnerRepo) SetStatus(ctx context.Context, id uuid.UUID, status string
 func (r *PartnerRepo) CreateKey(ctx context.Context, k domain.APIKey) (domain.APIKey, error) {
 	var out domain.APIKey
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO partner_api_keys(partner_id, name, prefix, secret_hash, environment, scopes, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO partner_api_keys(partner_id, name, prefix, secret_hash, environment,
+		                             scopes, allowed_ips, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, partner_id, name, prefix, secret_hash, environment, scopes,
-		          revoked_at, expires_at, last_used_at, created_at`,
-		k.PartnerID, k.Name, k.Prefix, k.SecretHash, k.Environment, k.Scopes, k.ExpiresAt,
+		          allowed_ips, revoked_at, expires_at, last_used_at, created_at`,
+		k.PartnerID, k.Name, k.Prefix, k.SecretHash, k.Environment, k.Scopes,
+		nonNilStrings(k.AllowedIPs), k.ExpiresAt,
 	).Scan(&out.ID, &out.PartnerID, &out.Name, &out.Prefix, &out.SecretHash,
-		&out.Environment, &out.Scopes, &out.RevokedAt, &out.ExpiresAt, &out.LastUsedAt, &out.CreatedAt)
+		&out.Environment, &out.Scopes, &out.AllowedIPs, &out.RevokedAt, &out.ExpiresAt,
+		&out.LastUsedAt, &out.CreatedAt)
 	return out, err
 }
 
@@ -116,13 +123,13 @@ func (r *PartnerRepo) GetKeyWithPartner(ctx context.Context, prefix string) (dom
 	var p domain.Partner
 	err := r.pool.QueryRow(ctx, `
 		SELECT k.id, k.partner_id, k.name, k.prefix, k.secret_hash, k.environment,
-		       k.scopes, k.revoked_at, k.expires_at, k.last_used_at, k.created_at,
-		       `+partnerColumns+`
+		       k.scopes, k.allowed_ips, k.revoked_at, k.expires_at, k.last_used_at,
+		       k.created_at, `+partnerColumns+`
 		FROM partner_api_keys k
 		JOIN partners p ON p.id = k.partner_id
 		WHERE k.prefix = $1`, prefix,
 	).Scan(&k.ID, &k.PartnerID, &k.Name, &k.Prefix, &k.SecretHash, &k.Environment,
-		&k.Scopes, &k.RevokedAt, &k.ExpiresAt, &k.LastUsedAt, &k.CreatedAt,
+		&k.Scopes, &k.AllowedIPs, &k.RevokedAt, &k.ExpiresAt, &k.LastUsedAt, &k.CreatedAt,
 		&p.ID, &p.Slug, &p.Name, &p.UserID, &p.Status,
 		&p.RateLimitPerMin, &p.LLMPerHour, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -134,7 +141,7 @@ func (r *PartnerRepo) GetKeyWithPartner(ctx context.Context, prefix string) (dom
 func (r *PartnerRepo) ListKeys(ctx context.Context, partnerID uuid.UUID) ([]domain.APIKey, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, partner_id, name, prefix, secret_hash, environment, scopes,
-		       revoked_at, expires_at, last_used_at, created_at
+		       allowed_ips, revoked_at, expires_at, last_used_at, created_at
 		FROM partner_api_keys WHERE partner_id = $1 ORDER BY created_at DESC`, partnerID)
 	if err != nil {
 		return nil, err
@@ -144,8 +151,8 @@ func (r *PartnerRepo) ListKeys(ctx context.Context, partnerID uuid.UUID) ([]doma
 	for rows.Next() {
 		var k domain.APIKey
 		if err := rows.Scan(&k.ID, &k.PartnerID, &k.Name, &k.Prefix, &k.SecretHash,
-			&k.Environment, &k.Scopes, &k.RevokedAt, &k.ExpiresAt, &k.LastUsedAt,
-			&k.CreatedAt); err != nil {
+			&k.Environment, &k.Scopes, &k.AllowedIPs, &k.RevokedAt, &k.ExpiresAt,
+			&k.LastUsedAt, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, k)
@@ -227,4 +234,50 @@ func (r *PartnerRepo) SweepIdempotency(ctx context.Context, ttl time.Duration) (
 func (r *PartnerRepo) GetByUserID(ctx context.Context, userID uuid.UUID) (domain.Partner, error) {
 	return scanPartner(r.pool.QueryRow(ctx, `
 		SELECT `+partnerColumns+` FROM partners p WHERE p.user_id = $1`, userID))
+}
+
+// --- журнал выдачи доступа ---
+
+// LogAdminAction пишет строку журнала. Append-only: строку отсюда не правят и
+// не удаляют — иначе журнал перестаёт быть журналом.
+func (r *PartnerRepo) LogAdminAction(ctx context.Context, a domain.AdminAction) error {
+	details, err := json.Marshal(nonNilMap(a.Details))
+	if err != nil {
+		return err
+	}
+	_, err = r.pool.Exec(ctx, `
+		INSERT INTO partner_admin_log(partner_id, slug, action, key_prefix, operator, reason, details)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		a.PartnerID, a.Slug, a.Action, a.KeyPrefix, a.Operator, a.Reason, details)
+	return err
+}
+
+// ListAdminLog отдаёт журнал, свежее сверху. Пустой slug — по всем партнёрам.
+func (r *PartnerRepo) ListAdminLog(ctx context.Context, slug string, limit int) ([]domain.AdminAction, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, partner_id, slug, action, key_prefix, operator, reason, details, created_at
+		FROM partner_admin_log
+		WHERE ($1 = '' OR slug = $1)
+		ORDER BY created_at DESC
+		LIMIT $2`, slug, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.AdminAction{}
+	for rows.Next() {
+		var a domain.AdminAction
+		var details []byte
+		if err := rows.Scan(&a.ID, &a.PartnerID, &a.Slug, &a.Action, &a.KeyPrefix,
+			&a.Operator, &a.Reason, &details, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		if len(details) > 0 {
+			if err := json.Unmarshal(details, &a.Details); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }

@@ -7,16 +7,20 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base32"
 	"encoding/hex"
 	"errors"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 
 	"habitus-backend/internal/apperr"
 	"habitus-backend/internal/domain"
@@ -49,6 +53,11 @@ var AllScopes = []string{
 const (
 	keyPrefixLen = 8
 	keySecretLen = 32
+	// DefaultKeyTTL — срок жизни ключа по умолчанию. Бессрочный ключ живёт
+	// ровно до того дня, когда кто-то заметит утечку, — а замечают её обычно
+	// по счёту за трафик. Полгода — компромисс: достаточно редко, чтобы не
+	// раздражать партнёра, и достаточно часто, чтобы забытый ключ умер сам.
+	DefaultKeyTTL = 180 * 24 * time.Hour
 )
 
 var keyAlphabet = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
@@ -57,6 +66,8 @@ var keyAlphabet = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPad
 // тот же приём, что у chatSearchStore: проверить аутентификацию без базы.
 type PartnerStore interface {
 	Create(ctx context.Context, p domain.Partner) (domain.Partner, error)
+	LogAdminAction(ctx context.Context, a domain.AdminAction) error
+	ListAdminLog(ctx context.Context, slug string, limit int) ([]domain.AdminAction, error)
 	GetBySlug(ctx context.Context, slug string) (domain.Partner, error)
 	List(ctx context.Context) ([]domain.Partner, error)
 	SetStatus(ctx context.Context, id uuid.UUID, status string) error
@@ -76,11 +87,15 @@ type partnerUserStore interface {
 type PartnerService struct {
 	store PartnerStore
 	users partnerUserStore
-	now   func() time.Time
+	// pepper — секрет из конфига, которым перчится хеш ключа. В базе его нет
+	// и быть не должно: без него дамп базы не даёт ни рабочих ключей (нельзя
+	// вписать свой), ни возможности подобрать существующие offline.
+	pepper []byte
+	now    func() time.Time
 }
 
-func NewPartnerService(store PartnerStore, users partnerUserStore) *PartnerService {
-	return &PartnerService{store: store, users: users, now: time.Now}
+func NewPartnerService(store PartnerStore, users partnerUserStore, pepper string) *PartnerService {
+	return &PartnerService{store: store, users: users, pepper: []byte(pepper), now: time.Now}
 }
 
 // Identity — кто пришёл. Один объект вместо пары (партнёр, ключ) потому, что
@@ -102,9 +117,9 @@ func (i Identity) HasScope(scope string) bool {
 	return false
 }
 
-// NewAPIKey генерирует ключ. Возвращает открытую часть, полный секрет (его
+// newAPIKey генерирует ключ. Возвращает открытую часть, полный секрет (его
 // видно ровно один раз) и хеш для хранения.
-func NewAPIKey(environment string) (prefix, full, hash string, err error) {
+func (s *PartnerService) newAPIKey(environment string) (prefix, full, hash string, err error) {
 	prefixPart, err := randomToken(keyPrefixLen)
 	if err != nil {
 		return "", "", "", err
@@ -114,7 +129,7 @@ func NewAPIKey(environment string) (prefix, full, hash string, err error) {
 		return "", "", "", err
 	}
 	prefix = "hab_" + environment + "_" + prefixPart
-	return prefix, prefix + "_" + secret, hashSecret(secret), nil
+	return prefix, prefix + "_" + secret, s.hashSecret(secret), nil
 }
 
 func randomToken(n int) (string, error) {
@@ -125,9 +140,14 @@ func randomToken(n int) (string, error) {
 	return keyAlphabet.EncodeToString(raw)[:n], nil
 }
 
-func hashSecret(secret string) string {
-	sum := sha256.Sum256([]byte(secret))
-	return hex.EncodeToString(sum[:])
+// hashSecret — HMAC-SHA256 на перце из конфига, а не голый SHA-256. Разница
+// не косметическая: голый хеш позволяет любому, кто дотянулся до базы,
+// вписать себе рабочий ключ (посчитал SHA-256 от выдуманного секрета — и
+// вставил строку). С перцем посчитать правильный хеш без конфига нельзя.
+func (s *PartnerService) hashSecret(secret string) string {
+	mac := hmac.New(sha256.New, s.pepper)
+	mac.Write([]byte(secret))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // SplitAPIKey режет ключ на открытый префикс и секрет. Формат разбирается
@@ -162,7 +182,7 @@ func (s *PartnerService) Authenticate(ctx context.Context, raw string) (Identity
 	if err != nil {
 		return Identity{}, err
 	}
-	if subtle.ConstantTimeCompare([]byte(hashSecret(secret)), []byte(key.SecretHash)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(s.hashSecret(secret)), []byte(key.SecretHash)) != 1 {
 		return Identity{}, apperr.PartnerKeyInvalid()
 	}
 	if key.RevokedAt != nil {
@@ -200,7 +220,7 @@ const unusablePasswordHash = "!partner-api-no-password"
 // slug настолько, насколько это осмысленно: существующий партнёр возвращается
 // как есть, а не дублируется.
 func (s *PartnerService) Provision(ctx context.Context, slug, name string,
-	rateLimitPerMin, llmPerHour *int) (domain.Partner, error) {
+	rateLimitPerMin, llmPerHour *int, operator, reason string) (domain.Partner, error) {
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	if slug == "" {
 		return domain.Partner{}, apperr.Validation("slug партнёра обязателен")
@@ -220,40 +240,183 @@ func (s *PartnerService) Provision(ctx context.Context, slug, name string,
 		return domain.Partner{}, err
 	}
 
-	return s.store.Create(ctx, domain.Partner{
+	// pending, а не active: «завели партнёра» и «пустили его в бой» — разные
+	// решения, и второе должен принять человек отдельным действием.
+	partner, err := s.store.Create(ctx, domain.Partner{
 		Slug: slug, Name: name, UserID: user.ID,
+		Status:          domain.PartnerStatusPending,
 		RateLimitPerMin: rateLimitPerMin, LLMPerHour: llmPerHour,
 	})
+	if err != nil {
+		return domain.Partner{}, err
+	}
+	s.log(ctx, partner, domain.AdminActionPartnerCreated, "", operator, reason, nil)
+	return partner, nil
+}
+
+// Approve открывает партнёру доступ. Отдельное действие, а не флаг при
+// заведении: именно здесь кто-то берёт на себя ответственность, и именно эта
+// строка журнала отвечает на вопрос «кто их пустил».
+func (s *PartnerService) Approve(ctx context.Context, slug, operator, reason string) (domain.Partner, error) {
+	partner, err := s.store.GetBySlug(ctx, slug)
+	if err != nil {
+		return domain.Partner{}, err
+	}
+	if partner.Status == domain.PartnerStatusActive {
+		return partner, nil
+	}
+	if err := s.store.SetStatus(ctx, partner.ID, domain.PartnerStatusActive); err != nil {
+		return domain.Partner{}, err
+	}
+	partner.Status = domain.PartnerStatusActive
+	s.log(ctx, partner, domain.AdminActionPartnerApproved, "", operator, reason, nil)
+	return partner, nil
+}
+
+// log пишет строку журнала. Отказ записи не отменяет само действие: ключ уже
+// выпущен, и молча провалить операцию из-за журнала было бы хуже, — но и
+// потерять запись нельзя, поэтому она уходит в лог процесса.
+func (s *PartnerService) log(ctx context.Context, p domain.Partner, action, keyPrefix,
+	operator, reason string, details map[string]any) {
+	id := p.ID
+	err := s.store.LogAdminAction(ctx, domain.AdminAction{
+		PartnerID: &id, Slug: p.Slug, Action: action, KeyPrefix: keyPrefix,
+		Operator: operator, Reason: reason, Details: details,
+	})
+	if err != nil {
+		log.Error().Err(err).Str("action", action).Str("slug", p.Slug).
+			Str("operator", operator).Msg("partner admin log write failed")
+	}
+}
+
+// AdminLog отдаёт журнал выдачи доступа. Пустой slug — по всем партнёрам.
+func (s *PartnerService) AdminLog(ctx context.Context, slug string, limit int) ([]domain.AdminAction, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.store.ListAdminLog(ctx, slug, limit)
+}
+
+// IssueKeyInput — всё, что нужно для выпуска. Структурой, а не восемью
+// аргументами: половина из них строки, и перепутать их местами слишком легко.
+type IssueKeyInput struct {
+	Partner     domain.Partner
+	Name        string
+	Environment string
+	Scopes      []string
+	// AllowedIPs — адреса и подсети, с которых ключ работает. Пустой список
+	// означает «откуда угодно».
+	AllowedIPs []string
+	// TTL == 0 берёт DefaultKeyTTL. Бессрочный ключ выпускается только явным
+	// Forever: молчаливая бессрочность — это утечка, которая не истекает.
+	TTL      time.Duration
+	Forever  bool
+	Operator string
+	Reason   string
 }
 
 // IssueKey выдаёт ключ. Полный секрет возвращается ЕДИНСТВЕННЫЙ раз — в базе
 // его нет, и восстановить его потом нельзя ни нам, ни партнёру.
-func (s *PartnerService) IssueKey(ctx context.Context, partnerID uuid.UUID, name,
-	environment string, scopes []string, ttl time.Duration) (domain.APIKey, string, error) {
-	if environment != "live" && environment != "test" {
+func (s *PartnerService) IssueKey(ctx context.Context, in IssueKeyInput) (domain.APIKey, string, error) {
+	if in.Environment != "live" && in.Environment != "test" {
 		return domain.APIKey{}, "", apperr.Validation("environment должен быть live или test")
 	}
-	clean, err := NormalizeScopes(scopes)
+	// Ключ партнёру, которого не одобрили, — это доступ в обход решения.
+	if in.Partner.Status != domain.PartnerStatusActive {
+		return domain.APIKey{}, "", apperr.Validation(
+			"партнёр в состоянии " + in.Partner.Status + " — сначала approve")
+	}
+	clean, err := NormalizeScopes(in.Scopes)
 	if err != nil {
 		return domain.APIKey{}, "", err
 	}
-	prefix, full, hash, err := NewAPIKey(environment)
+	nets, err := NormalizeAllowedIPs(in.AllowedIPs)
 	if err != nil {
 		return domain.APIKey{}, "", err
 	}
+	prefix, full, hash, err := s.newAPIKey(in.Environment)
+	if err != nil {
+		return domain.APIKey{}, "", err
+	}
+
 	var expiresAt *time.Time
-	if ttl > 0 {
+	if !in.Forever {
+		ttl := in.TTL
+		if ttl <= 0 {
+			ttl = DefaultKeyTTL
+		}
 		t := s.now().Add(ttl)
 		expiresAt = &t
 	}
+
 	key, err := s.store.CreateKey(ctx, domain.APIKey{
-		PartnerID: partnerID, Name: name, Prefix: prefix, SecretHash: hash,
-		Environment: environment, Scopes: clean, ExpiresAt: expiresAt,
+		PartnerID: in.Partner.ID, Name: in.Name, Prefix: prefix, SecretHash: hash,
+		Environment: in.Environment, Scopes: clean, AllowedIPs: nets, ExpiresAt: expiresAt,
 	})
 	if err != nil {
 		return domain.APIKey{}, "", err
 	}
+	s.log(ctx, in.Partner, domain.AdminActionKeyIssued, prefix, in.Operator, in.Reason,
+		map[string]any{
+			"scopes": clean, "environment": in.Environment,
+			"allowed_ips": nets, "forever": in.Forever, "expires_at": expiresAt,
+		})
 	return key, full, nil
+}
+
+// NormalizeAllowedIPs принимает и одиночные адреса, и подсети в CIDR. Кривая
+// запись — отказ при выпуске, а не молчаливо пропущенная строка: список, из
+// которого тихо выпал адрес, запирает партнёра снаружи, и разбираться с этим
+// он будет по 403 в бою.
+func NormalizeAllowedIPs(entries []string) ([]string, error) {
+	out := make([]string, 0, len(entries))
+	for _, raw := range entries {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(entry); err == nil {
+			out = append(out, entry)
+			continue
+		}
+		ip := net.ParseIP(entry)
+		if ip == nil {
+			return nil, apperr.Validation("не адрес и не подсеть: " + entry).
+				WithParam("allowed_ips")
+		}
+		// Одиночный адрес приводится к /32 или /128: дальше проверка одна на
+		// оба случая, и незачем держать две ветки сравнения.
+		bits := 32
+		if ip.To4() == nil {
+			bits = 128
+		}
+		out = append(out, ip.String()+"/"+strconv.Itoa(bits))
+	}
+	return out, nil
+}
+
+// IPAllowed — разрешён ли адрес этим ключом. Пустой список означает «откуда
+// угодно»: это осознанный выбор при выпуске, а не забытая настройка.
+func IPAllowed(allowed []string, remote string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	ip := net.ParseIP(strings.TrimSpace(remote))
+	if ip == nil {
+		// Адрес не разобрался — считаем, что не совпал. Пропустить неизвестное
+		// значило бы обойти allowlist кривым заголовком прокси.
+		return false
+	}
+	for _, entry := range allowed {
+		_, network, err := net.ParseCIDR(entry)
+		if err != nil {
+			continue
+		}
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // NormalizeScopes отсеивает дубли и незнакомые скоупы. Незнакомый — ошибка, а
@@ -299,13 +462,32 @@ func (s *PartnerService) ListKeys(ctx context.Context, partnerID uuid.UUID) ([]d
 	return s.store.ListKeys(ctx, partnerID)
 }
 
-func (s *PartnerService) RevokeKey(ctx context.Context, prefix string) error {
-	return s.store.RevokeKey(ctx, prefix)
+// RevokeKey отзывает ключ. Партнёр нужен только журналу — сам отзыв ищет
+// ключ по префиксу.
+func (s *PartnerService) RevokeKey(ctx context.Context, p domain.Partner,
+	prefix, operator, reason string) error {
+	if err := s.store.RevokeKey(ctx, prefix); err != nil {
+		return err
+	}
+	s.log(ctx, p, domain.AdminActionKeyRevoked, prefix, operator, reason, nil)
+	return nil
 }
 
-func (s *PartnerService) SetStatus(ctx context.Context, id uuid.UUID, status string) error {
+// SetStatus приостанавливает или возвращает доступ. Одобрение живёт отдельно
+// (Approve): «впервые пустили» и «вернули после паузы» — разные события, и
+// журнал должен их различать.
+func (s *PartnerService) SetStatus(ctx context.Context, p domain.Partner,
+	status, operator, reason string) error {
 	if status != domain.PartnerStatusActive && status != domain.PartnerStatusSuspended {
 		return apperr.Validation("status должен быть active или suspended")
 	}
-	return s.store.SetStatus(ctx, id, status)
+	if err := s.store.SetStatus(ctx, p.ID, status); err != nil {
+		return err
+	}
+	action := domain.AdminActionPartnerResumed
+	if status == domain.PartnerStatusSuspended {
+		action = domain.AdminActionPartnerSuspended
+	}
+	s.log(ctx, p, action, "", operator, reason, nil)
+	return nil
 }

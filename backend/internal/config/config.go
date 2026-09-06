@@ -86,6 +86,21 @@ type Settings struct {
 	// PublicBaseURL — по нему собирается doc_url в конверте ошибки и адрес
 	// страницы документации.
 	PublicBaseURL string
+	// PartnerKeyPepper — секрет, которым перчится хеш ключа API. В базе его
+	// нет: без него дамп базы не даёт ни рабочих ключей (нельзя вписать свой),
+	// ни возможности подобрать существующие offline. Пустое значение при
+	// включённом контуре — отказ на старте, а не тихая деградация до голого
+	// SHA-256.
+	PartnerKeyPepper string
+	// PartnerAdminTokenHash — SHA-256 токена, которым администратор
+	// подтверждает право выдавать доступ. Хранится ХЕШЕМ: чтение конфига
+	// сервера не должно давать сам токен.
+	PartnerAdminTokenHash string
+	// TrustedProxies / ProxyHeader — откуда брать адрес клиента. Без них
+	// allowlist ключа за балансировщиком проверял бы адрес балансировщика,
+	// то есть не проверял бы ничего.
+	TrustedProxies []string
+	ProxyHeader    string
 }
 
 func Load() Settings {
@@ -132,7 +147,11 @@ func Load() Settings {
 		PartnerWebhookBatch:         getenvInt("PARTNER_WEBHOOK_BATCH", 20),
 		PartnerWebhookAllowInsecure: getenvBool("PARTNER_WEBHOOK_ALLOW_INSECURE", false),
 
-		PublicBaseURL: getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		PublicBaseURL:         getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		PartnerKeyPepper:      os.Getenv("PARTNER_KEY_PEPPER"),
+		PartnerAdminTokenHash: os.Getenv("PARTNER_ADMIN_TOKEN_HASH"),
+		TrustedProxies:        getenvList("TRUSTED_PROXIES"),
+		ProxyHeader:           getenv("PROXY_HEADER", ""),
 	}
 }
 

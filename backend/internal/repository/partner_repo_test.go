@@ -359,3 +359,116 @@ func TestWebhookDeliveryGivesUpAfterMaxAttempts(t *testing.T) {
 		t.Fatalf("status = %q; после исчерпания попыток доставка должна закрыться", rows[0].Status)
 	}
 }
+
+func TestKeyRemembersAllowedAddresses(t *testing.T) {
+	repo, users := partnerRepos(t)
+	ctx := context.Background()
+	partner := seedPartner(t, repo, users, "gorod")
+
+	if _, err := repo.CreateKey(ctx, domain.APIKey{
+		PartnerID: partner.ID, Prefix: "hab_live_abcd1234", SecretHash: "x",
+		Environment: "live", Scopes: []string{"search:read"},
+		AllowedIPs: []string{"203.0.113.10/32", "198.51.100.0/24"},
+	}); err != nil {
+		t.Fatalf("CreateKey() error = %v", err)
+	}
+	key, _, err := repo.GetKeyWithPartner(ctx, "hab_live_abcd1234")
+	if err != nil {
+		t.Fatalf("GetKeyWithPartner() error = %v", err)
+	}
+	if len(key.AllowedIPs) != 2 || key.AllowedIPs[0] != "203.0.113.10/32" {
+		t.Fatalf("allowed_ips = %v", key.AllowedIPs)
+	}
+}
+
+func TestKeyWithoutAllowedAddressesIsEmptyNotNull(t *testing.T) {
+	repo, users := partnerRepos(t)
+	ctx := context.Background()
+	partner := seedPartner(t, repo, users, "gorod")
+
+	if _, err := repo.CreateKey(ctx, domain.APIKey{
+		PartnerID: partner.ID, Prefix: "hab_live_abcd1234", SecretHash: "x",
+		Environment: "live", Scopes: []string{"search:read"},
+	}); err != nil {
+		t.Fatalf("CreateKey() error = %v", err)
+	}
+	key, _, err := repo.GetKeyWithPartner(ctx, "hab_live_abcd1234")
+	if err != nil {
+		t.Fatalf("GetKeyWithPartner() error = %v", err)
+	}
+	// Пустой массив, а не NULL: колонка объявлена NOT NULL, и nil-срез из Go
+	// уехал бы в неё как NULL.
+	if key.AllowedIPs == nil || len(key.AllowedIPs) != 0 {
+		t.Fatalf("allowed_ips = %#v; ожидался пустой массив", key.AllowedIPs)
+	}
+}
+
+func TestPartnerStartsPendingUntilApproved(t *testing.T) {
+	repo, users := partnerRepos(t)
+	ctx := context.Background()
+
+	user, err := users.Create(ctx, "partner+p@habitus.invalid", "!partner", "p")
+	if err != nil {
+		t.Fatalf("создание аккаунта: %v", err)
+	}
+	partner, err := repo.Create(ctx, domain.Partner{
+		Slug: "pending-one", Name: "P", UserID: user.ID,
+		Status: domain.PartnerStatusPending,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if partner.Status != domain.PartnerStatusPending {
+		t.Fatalf("status = %s; want pending", partner.Status)
+	}
+	if err := repo.SetStatus(ctx, partner.ID, domain.PartnerStatusActive); err != nil {
+		t.Fatalf("SetStatus() error = %v", err)
+	}
+	got, err := repo.GetBySlug(ctx, "pending-one")
+	if err != nil {
+		t.Fatalf("GetBySlug() error = %v", err)
+	}
+	if got.Status != domain.PartnerStatusActive {
+		t.Fatalf("status = %s; want active", got.Status)
+	}
+}
+
+func TestAdminLogSurvivesPartnerDeletion(t *testing.T) {
+	repo, users := partnerRepos(t)
+	pool := testPool(t)
+	ctx := context.Background()
+	partner := seedPartner(t, repo, users, "gorod")
+
+	id := partner.ID
+	if err := repo.LogAdminAction(ctx, domain.AdminAction{
+		PartnerID: &id, Slug: partner.Slug, Action: domain.AdminActionKeyIssued,
+		KeyPrefix: "hab_live_abcd1234", Operator: "yarik@laptop",
+		Reason: "договор №14", Details: map[string]any{"scopes": []string{"search:read"}},
+	}); err != nil {
+		t.Fatalf("LogAdminAction() error = %v", err)
+	}
+
+	entries, err := repo.ListAdminLog(ctx, "gorod", 10)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("ListAdminLog() = %v, %v", entries, err)
+	}
+	if entries[0].Operator != "yarik@laptop" || entries[0].Reason != "договор №14" {
+		t.Fatalf("запись = %+v", entries[0])
+	}
+
+	// Удалённый партнёр не должен уносить с собой запись о том, что ему
+	// когда-то выдали доступ.
+	if _, err := pool.Exec(ctx, `DELETE FROM partners WHERE id = $1`, partner.ID); err != nil {
+		t.Fatalf("удаление партнёра: %v", err)
+	}
+	entries, err = repo.ListAdminLog(ctx, "gorod", 10)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("после удаления партнёра журнал = %v, %v", entries, err)
+	}
+	if entries[0].PartnerID != nil {
+		t.Fatalf("partner_id = %v; ожидался NULL после удаления", entries[0].PartnerID)
+	}
+	if entries[0].Slug != "gorod" {
+		t.Fatalf("slug = %q; он хранится копией именно ради этого случая", entries[0].Slug)
+	}
+}

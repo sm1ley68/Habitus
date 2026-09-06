@@ -27,6 +27,11 @@ type Partner struct {
 func (p Partner) Active() bool { return p.Status == PartnerStatusActive }
 
 const (
+	// PartnerStatusPending — партнёр заведён, но доступ ему ещё не открыли.
+	// Отдельное состояние, а не отсутствие ключей: «завели» и «пустили в бой»
+	// должны быть разными решениями, иначе шага, на котором кто-то принимает
+	// второе, просто нет.
+	PartnerStatusPending   = "pending"
 	PartnerStatusActive    = "active"
 	PartnerStatusSuspended = "suspended"
 )
@@ -41,10 +46,14 @@ type APIKey struct {
 	SecretHash  string
 	Environment string
 	Scopes      []string
-	RevokedAt   *time.Time
-	ExpiresAt   *time.Time
-	LastUsedAt  *time.Time
-	CreatedAt   time.Time
+	// AllowedIPs — адреса и подсети, с которых ключ работает. Пустой список
+	// означает «откуда угодно»: это законное состояние для партнёра с
+	// плавающими адресами, а не «доступа нет».
+	AllowedIPs []string
+	RevokedAt  *time.Time
+	ExpiresAt  *time.Time
+	LastUsedAt *time.Time
+	CreatedAt  time.Time
 }
 
 // PartnerSearch — сохранённый поиск партнёра: разбор запроса, объяснение и
@@ -123,3 +132,27 @@ type IdempotencyRecord struct {
 	Response    []byte
 	CreatedAt   time.Time
 }
+
+// AdminAction — запись журнала выдачи доступа. Кто, что, кому и почему.
+type AdminAction struct {
+	ID        int64
+	PartnerID *uuid.UUID
+	Slug      string
+	Action    string
+	KeyPrefix string
+	Operator  string
+	Reason    string
+	Details   map[string]any
+	CreatedAt time.Time
+}
+
+// Действия журнала. Закрытый список: свободная строка в поле action
+// превращает журнал в набор синонимов, по которому нельзя ничего посчитать.
+const (
+	AdminActionPartnerCreated   = "partner.created"
+	AdminActionPartnerApproved  = "partner.approved"
+	AdminActionPartnerSuspended = "partner.suspended"
+	AdminActionPartnerResumed   = "partner.resumed"
+	AdminActionKeyIssued        = "key.issued"
+	AdminActionKeyRevoked       = "key.revoked"
+)

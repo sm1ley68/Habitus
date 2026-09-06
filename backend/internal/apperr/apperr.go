@@ -186,6 +186,15 @@ func PartnerKeyExpired() *Error {
 		"Срок действия ключа истёк. Выпустите новый в кабинете партнёра")
 }
 
+// PartnerIPNotAllowed — ключ рабочий, но пришёл не с того адреса. Отдельный
+// код, а не общий 403: партнёру нужно понять, что чинить — права или сеть.
+func PartnerIPNotAllowed() *Error {
+	return New(http.StatusForbidden, "ip_not_allowed",
+		"Этот ключ работает только с согласованных адресов").
+		WithHint("Проверьте, с какого адреса уходит запрос, и пришлите его нам, " +
+			"если он изменился")
+}
+
 func PartnerSuspended() *Error {
 	return New(http.StatusForbidden, "partner_suspended",
 		"Доступ партнёра приостановлен. Напишите нам, чтобы восстановить его")

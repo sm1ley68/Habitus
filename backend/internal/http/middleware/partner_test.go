@@ -407,3 +407,42 @@ func TestPartnerErrorsWrapsRouterFailures(t *testing.T) {
 		t.Fatalf("конверт = %v", errObj)
 	}
 }
+
+// Ключ, выпущенный на список адресов, не должен работать откуда попало —
+// иначе утёкший ключ живёт до тех пор, пока кто-то не заметит счёт.
+func TestPartnerAuthEnforcesIPAllowlist(t *testing.T) {
+	identity := identityWith(service.ScopeSearchRead)
+	identity.Key.AllowedIPs = []string{"203.0.113.0/24"}
+
+	app := fiber.New()
+	app.Use(PartnerErrors("https://example.test/docs"))
+	app.Get("/x", PartnerAuth(&stubAuth{identity: identity}), ok)
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer hab_live_abcd1234_secret")
+	// fiber.App.Test подставляет адрес 0.0.0.0 — он вне списка.
+	resp, body := do(t, app, req)
+
+	if resp.StatusCode != 403 {
+		t.Fatalf("status = %d; want 403", resp.StatusCode)
+	}
+	errObj := body["error"].(map[string]any)
+	// Отдельный код, а не общий 403: партнёру нужно понять, что чинить —
+	// права или сеть.
+	if errObj["code"] != "ip_not_allowed" {
+		t.Fatalf("code = %v; want ip_not_allowed", errObj["code"])
+	}
+}
+
+func TestPartnerAuthAllowsAnyAddressWhenListIsEmpty(t *testing.T) {
+	app := fiber.New()
+	app.Get("/x", PartnerAuth(&stubAuth{identity: identityWith(service.ScopeSearchRead)}), ok)
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer hab_live_abcd1234_secret")
+	resp, _ := do(t, app, req)
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d; пустой список означает «откуда угодно»", resp.StatusCode)
+	}
+}

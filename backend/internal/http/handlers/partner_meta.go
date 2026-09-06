@@ -41,11 +41,15 @@ func (h *PartnerMetaHandler) Me(c *fiber.Ctx) error {
 		"name":   p.Name,
 		"status": p.Status,
 		"key": fiber.Map{
-			"id":           identity.Key.ID,
-			"prefix":       identity.Key.Prefix,
-			"name":         nullableString(identity.Key.Name),
-			"environment":  identity.Key.Environment,
-			"scopes":       ownerStrings(identity.Key.Scopes),
+			"id":          identity.Key.ID,
+			"prefix":      identity.Key.Prefix,
+			"name":        nullableString(identity.Key.Name),
+			"environment": identity.Key.Environment,
+			"scopes":      ownerStrings(identity.Key.Scopes),
+			// Пустой список означает «ключ работает откуда угодно». Партнёр
+			// должен видеть это своими глазами: договорённость об адресах
+			// иначе живёт только в переписке.
+			"allowed_ips":  ownerStrings(identity.Key.AllowedIPs),
 			"expires_at":   identity.Key.ExpiresAt,
 			"last_used_at": identity.Key.LastUsedAt,
 			"created_at":   identity.Key.CreatedAt,

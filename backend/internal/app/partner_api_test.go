@@ -25,7 +25,7 @@ func partnerApp(t *testing.T, enabled bool) *fiber.App {
 		CORSAllowedOrigin: "http://localhost:3000",
 		PublicBaseURL:     "https://api.example.test",
 	}, Services{
-		Partners:      service.NewPartnerService(nil, nil),
+		Partners:      service.NewPartnerService(nil, nil, "test-pepper"),
 		PartnerSearch: &service.PartnerSearchService{},
 		PartnerIdem:   (*repository.PartnerRepo)(nil),
 	})

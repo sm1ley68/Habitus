@@ -113,6 +113,12 @@ services:
       PARTNER_WEBHOOK_BATCH: "${PARTNER_WEBHOOK_BATCH:-20}"
       PARTNER_WEBHOOK_ALLOW_INSECURE: "${PARTNER_WEBHOOK_ALLOW_INSECURE:-false}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:8080}"
+      # Контроль выдачи доступа. PARTNER_KEY_PEPPER обязателен при включённом
+      # контуре — без него шлюз не стартует (см. .env.example).
+      PARTNER_KEY_PEPPER: "${PARTNER_KEY_PEPPER:-}"
+      PARTNER_ADMIN_TOKEN_HASH: "${PARTNER_ADMIN_TOKEN_HASH:-}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
+      PROXY_HEADER: "${PROXY_HEADER:-}"
     ports:
       - "8080:8080"
     depends_on:

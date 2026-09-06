@@ -106,6 +106,13 @@ func New(cfg config.Settings, svc Services) *fiber.App {
 		BodyLimit:    bodyLimit,
 		ReadTimeout:  readTimeout,
 		IdleTimeout:  idleTimeout,
+		// Адрес клиента берётся из заголовка ТОЛЬКО когда запрос пришёл от
+		// доверенного прокси. Иначе allowlist ключа обходится подделкой
+		// X-Forwarded-For, а без ProxyHeader за балансировщиком он проверял
+		// бы адрес самого балансировщика — то есть не проверял бы ничего.
+		ProxyHeader:             cfg.ProxyHeader,
+		EnableTrustedProxyCheck: len(cfg.TrustedProxies) > 0,
+		TrustedProxies:          cfg.TrustedProxies,
 	})
 
 	app.Use(requestid.New())

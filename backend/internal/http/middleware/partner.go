@@ -71,6 +71,14 @@ func PartnerAuth(svc partnerAuthenticator) fiber.Handler {
 		if err != nil {
 			return err
 		}
+		// Адрес проверяется ПОСЛЕ секрета: иначе по разнице ответов с чужого
+		// адреса выясняется, существует ли ключ вообще.
+		if !service.IPAllowed(identity.Key.AllowedIPs, c.IP()) {
+			log.Warn().Str("prefix", identity.Key.Prefix).Str("ip", c.IP()).
+				Str("partner", identity.Partner.Slug).
+				Msg("partner key used from an address outside its allowlist")
+			return apperr.PartnerIPNotAllowed()
+		}
 		c.Locals(PartnerIdentityLocalsKey, identity)
 
 		now := time.Now()

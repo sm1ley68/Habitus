@@ -25,7 +25,11 @@
 и конверт ошибки), документация — `/docs`, контракт — `/partner/v1/openapi.json`.
 Спека и страница вшиты в бинарь через `internal/apidocs`; тест
 `internal/http/partner_openapi_test.go` не даёт им разъехаться с роутером.
-Ключи выдаёт `cmd/partner`, а не сам API.
+Ключи выдаёт `cmd/partner`, а не сам API: нужен админ-токен (`HABITUS_ADMIN_TOKEN`
+против `PARTNER_ADMIN_TOKEN_HASH`), партнёр заводится в `pending` и требует
+`approve`, каждое действие пишется в `partner_admin_log`. Хеш ключа перчится
+`PARTNER_KEY_PEPPER` — без него шлюз не стартует, а смена перца обнуляет все
+выпущенные ключи.
 
 БД — Postgres 16 + PostGIS + pgvector (`Dockerfile.db`), порт 5544 наружу.
 
